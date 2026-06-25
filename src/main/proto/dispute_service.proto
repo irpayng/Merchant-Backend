@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.tms.report.grpc.dispute";
+
+package dispute;
+
+service DisputeService {
+  rpc CloseDispute (CloseDisputeRequest) returns (DisputeCommandResponse);
+  rpc ResolveDispute (ResolveDisputeRequest) returns (DisputeCommandResponse);
+  rpc AddConversation (AddConversationRequest) returns (DisputeCommandResponse);
+  rpc UpdateDispute (UpdateDisputeRequest) returns (DisputeCommandResponse);
+}
+
+message CloseDisputeRequest {
+  int64 dispute_id = 1;
+  string reason = 2;
+  Actor actor = 3;
+}
+
+message ResolveDisputeRequest {
+  int64 dispute_id = 1;
+  string resolution = 2;
+  Actor actor = 3;
+}
+
+message AddConversationRequest {
+  int64 dispute_id = 1;
+  string message = 2;
+  Actor actor = 3;
+}
+
+message UpdateDisputeRequest {
+  int64 dispute_id = 1;
+  string description = 2;
+  string status_code = 3;
+  Actor actor = 4;
+}
+
+message DisputeCommandResponse {
+  bool success = 1;
+  string message = 2;
+  string reference = 3;
+  string data_json = 4;
+}
+
+message Actor {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+}

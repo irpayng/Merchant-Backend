@@ -1,0 +1,9 @@
+{
+  "//": "Used by the release job in .github/workflows/ci.yml to compute the next semver from commit history. tms-report-java is a Java/Maven project — there is no package.json — so the default semantic-release plugin set (which includes @semantic-release/npm) will fail at verifyConditions with ENOPKG. We override the plugin list to keep only what's actually needed: commit-analyzer to decide whether a release is warranted, release-notes-generator to render the body, and github to publish the GitHub Release (which also creates the git tag via the API). We deliberately do NOT use @semantic-release/git to push a CHANGELOG.md commit back to main — main is a protected branch and only accepts PRs from staging (see .github/workflows/branch-flow.yml), so a direct push from CI is rejected with GH006. Release notes live on the GitHub Releases page; semantic-release picks up the previous version from the latest git tag, not from CHANGELOG.md, so dropping the in-repo changelog has no effect on future runs.",
+  "branches": ["main"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/github"
+  ]
+}

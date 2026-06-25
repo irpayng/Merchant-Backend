@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.tms.report.grpc.settlement";
+
+package settlement;
+
+service SettlementService {
+  rpc CreateSettlement (CreateSettlementRequest) returns (SettlementCommandResponse);
+}
+
+message CreateSettlementRequest {
+  string reference = 1;
+  string terminal_id = 2;
+  string merchant_id = 3;
+  double amount = 4;
+  double acquirer_fee = 5;
+  string currency = 6;
+  string status = 7;
+  string transaction_time = 8;
+  string pan_masked = 9;
+  string stan = 10;
+  string mti = 11;
+  string source_account_number = 12;
+  string settlement_account_number = 13;
+  string card_scheme = 14;
+  string region = 15;
+  string bank = 16;
+}
+
+message SettlementCommandResponse {
+  bool success = 1;
+  string message = 2;
+  string reference = 3;
+}

@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+// Client copy of the b2b-service contract for tms-report-java admin commands.
+// Package + service + method names MUST match the server
+// (irpayng/tms-b2b b2b_service.proto).
+option java_multiple_files = true;
+option java_package = "com.tms.report.grpc.b2b";
+option java_outer_classname = "B2bProto";
+
+package b2b;
+
+service BusinessService {
+  rpc ApproveGoLive (ApproveGoLiveRequest) returns (B2bCommandResponse);
+  rpc RejectGoLive (RejectGoLiveRequest) returns (B2bCommandResponse);
+  rpc SuspendB2b (SuspendB2bRequest) returns (B2bCommandResponse);
+  rpc UnsuspendB2b (SuspendB2bRequest) returns (B2bCommandResponse);
+
+  // Admin read queries.
+  rpc ListGoLiveApplications (ListGoLiveApplicationsRequest) returns (ListGoLiveApplicationsResponse);
+  rpc GetGoLiveApplication (GetGoLiveApplicationRequest) returns (GoLiveApplicationDetail);
+}
+
+message ApproveGoLiveRequest {
+  int64 b2b_id = 1;
+  int64 kyc_application_id = 2;
+  string reviewer = 3;
+}
+
+message RejectGoLiveRequest {
+  int64 b2b_id = 1;
+  string reason = 2;
+  string reviewer = 3;
+}
+
+message SuspendB2bRequest {
+  int64 b2b_id = 1;
+  string reason = 2;
+  string actor = 3;
+}
+
+message B2bCommandResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ListGoLiveApplicationsRequest {
+  string status = 1;
+  string search = 2;
+  int32 page = 3;
+  int32 limit = 4;
+}
+
+message B2bGoLiveSummary {
+  int64 application_id = 1;
+  int64 b2b_id = 2;
+  string company_name = 3;
+  string business_email = 4;
+  string business_legal_name = 5;
+  string rc_number = 6;
+  string business_type = 7;
+  string status = 8;
+  string account_status = 9;
+  string submitted_at = 10;
+  string plan = 11;
+}
+
+message ListGoLiveApplicationsResponse {
+  repeated B2bGoLiveSummary items = 1;
+  int64 total = 2;
+  int32 page = 3;
+  int32 limit = 4;
+  int64 pending_count = 5;
+  int64 approved_count = 6;
+  int64 rejected_count = 7;
+}
+
+message GetGoLiveApplicationRequest {
+  int64 application_id = 1;
+}
+
+message GoLiveApplicationDetail {
+  int64 application_id = 1;
+  int64 b2b_id = 2;
+  string company_name = 3;
+  string business_email = 4;
+  string business_legal_name = 5;
+  string business_type = 6;
+  string rc_number = 7;
+  string contact_name = 8;
+  string contact_phone = 9;
+  string status = 10;
+  string account_status = 11;
+  string plan = 12;
+  string reason = 13;
+  string reviewed_by = 14;
+  string submitted_at = 15;
+  string decided_at = 16;
+  int64 sandbox_user_id = 17;
+  int64 live_user_id = 18;
+  string cac_url = 19;
+  string directors_id_url = 20;
+  string proof_of_address_url = 21;
+  string form_co2_url = 22;
+  string form_co7_url = 23;
+  bool found = 24;
+}

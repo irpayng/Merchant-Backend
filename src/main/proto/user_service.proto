@@ -1,0 +1,263 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.tms.report.grpc.user";
+
+package user;
+
+service UserService {
+  rpc OnboardUser (OnboardUserRequest) returns (OnboardUserResponse);
+  rpc FindUserByEmail (FindUserRequest) returns (UserExistsResponse);
+  rpc FindUserByPhoneNumber (FindUserRequest) returns (UserExistsResponse);
+  rpc FindUserByBvn (FindUserRequest) returns (UserExistsResponse);
+  rpc UpdateUserTier (UpdateUserTierRequest) returns (UpdateUserResponse);
+  rpc UpdateUserType (UpdateUserTypeRequest) returns (UpdateUserResponse);
+  rpc GetUserProfile (GetUserProfileRequest) returns (GetUserProfileResponse);
+  // Admin commands (ported from tms-api gRPC)
+  rpc CreateUser (CreateUserCommandRequest) returns (UserCommandResponse);
+  rpc UpdateUser (UpdateUserCommandRequest) returns (UserCommandResponse);
+  rpc InviteUser (InviteUserRequest) returns (UserCommandResponse);
+  rpc AssociateParent (AssociateParentRequest) returns (UserCommandResponse);
+  // Decommission an aggregator: flip every downstream agent to a chosen
+  // replacement aggregator (or unassign if replacement_aggregator_id == 0),
+  // change the old aggregator's type to 'user'. Triggered by tms-report-java's
+  // admin "Decommission aggregator" action and by the targets feature when a
+  // monthly default selects the decommission penalty.
+  rpc DecommissionAggregator (DecommissionAggregatorRequest) returns (DecommissionAggregatorResponse);
+
+  // ── Account deletion request workflow (admin) ──
+  // Mark an off-app account-deletion request (submitted via the
+  // marketing-site form) as processed by support. Idempotent.
+  rpc MarkAccountDeletionRequestProcessed (MarkAccountDeletionRequestProcessedRequest) returns (UserCommandResponse);
+
+  // ── Account suspension (admin/compliance) ──
+  // Suspend/unsuspend an account. Staff-imposed lock, distinct from the
+  // self-liftable freeze. by_type is always "admin" from tms-report-java.
+  rpc SuspendUser (SuspendUserRequest) returns (SuspendUserResponse);
+  rpc UnsuspendUser (UnsuspendUserRequest) returns (SuspendUserResponse);
+
+  // ── Account block (admin/compliance) ──
+  // Block/unblock an account. The hardest lock: a blocked user is rejected
+  // at /auth/login (no token issued) and all sessions are revoked.
+  rpc BlockUser (BlockUserRequest) returns (BlockUserResponse);
+  rpc UnblockUser (UnblockUserRequest) returns (BlockUserResponse);
+
+  // ── Admin account maintenance ──
+  // UnfreezeUser: staff override of the self-service liveness unfreeze.
+  // ResetDevice: clear bound device pointers + revoke sessions so the user
+  // can sign in on a new handset without the device-change challenge.
+  // ClearNewDeviceLimit: clear only the device-change timestamps to lift the
+  // temporary new-device transaction cap, leaving device + sessions intact.
+  rpc UnfreezeUser (UnfreezeUserRequest) returns (AccountActionResponse);
+  rpc ResetDevice (ResetDeviceRequest) returns (AccountActionResponse);
+  rpc ClearNewDeviceLimit (ClearNewDeviceLimitRequest) returns (AccountActionResponse);
+}
+
+message UnfreezeUserRequest {
+  int64 user_id = 1;
+  string by = 2;
+}
+
+message ResetDeviceRequest {
+  int64 user_id = 1;
+  string by = 2;
+}
+
+message ClearNewDeviceLimitRequest {
+  int64 user_id = 1;
+  string by = 2;
+}
+
+message AccountActionResponse {
+  bool success = 1;
+  string reason = 2;
+  string message = 3;
+}
+
+message BlockUserRequest {
+  int64 user_id = 1;
+  string reason = 2;
+  string by = 3;
+}
+
+message UnblockUserRequest {
+  int64 user_id = 1;
+  string by = 2;
+}
+
+message BlockUserResponse {
+  bool success = 1;
+  string reason = 2;
+  string message = 3;
+}
+
+message SuspendUserRequest {
+  int64 user_id = 1;
+  string reason = 2;
+  string by = 3;
+  string by_type = 4;
+  int64 actor_aggregator_id = 5;
+}
+
+message UnsuspendUserRequest {
+  int64 user_id = 1;
+  string by = 2;
+  string by_type = 3;
+  int64 actor_aggregator_id = 4;
+}
+
+message SuspendUserResponse {
+  bool success = 1;
+  string reason = 2;
+  string message = 3;
+}
+
+message OnboardUserRequest {
+  string email = 1;
+  string phone_number = 2;
+  string password = 3;
+  string bvn = 4;
+  bool bvn_is_validated = 5;
+  bool phone_number_is_validated = 6;
+  bool email_is_validated = 7;
+  Profile profile = 8;
+  Address address = 9;
+}
+
+message Profile {
+  string first_name = 1;
+  string middle_name = 2;
+  string last_name = 3;
+  string gender = 4;
+  string date_of_birth = 5;
+}
+
+message Address {
+  int64 country_id = 1;
+  int64 state_id = 2;
+  string lga = 3;
+  string address = 4;
+}
+
+message OnboardUserResponse {
+  bool success = 1;
+  string message = 2;
+  int64 user_id = 3;
+}
+
+message FindUserRequest {
+  string value = 1;
+}
+
+message UserExistsResponse {
+  bool exists = 1;
+}
+
+message UpdateUserTierRequest {
+  int64 user_id = 1;
+  int32 tier = 2;
+}
+
+message UpdateUserTypeRequest {
+  int64 user_id = 1;
+  string type = 2;
+}
+
+message UpdateUserResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GetUserProfileRequest {
+  int64 user_id = 1;
+}
+
+message GetUserProfileResponse {
+  int64 user_id = 1;
+  string first_name = 2;
+  string middle_name = 3;
+  string last_name = 4;
+  string gender = 5;
+  string date_of_birth = 6;
+  int32 tier = 7;
+  string type = 8;
+  string email = 9;
+  int64 parent_id = 10;
+}
+
+// Admin command messages
+message Actor {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+}
+
+message CreateUserCommandRequest {
+  string reference = 1;
+  string email = 2;
+  string phone_number = 3;
+  string password = 4;
+  string type = 5;
+  Actor actor = 6;
+  map<string, string> metadata = 7;
+}
+
+message UpdateUserCommandRequest {
+  string reference = 1;
+  string user_id = 2;
+  string email = 3;
+  string phone_number = 4;
+  bool is_active = 5;
+  string password = 6;
+  string type = 7;
+  Actor actor = 8;
+  map<string, string> metadata = 9;
+}
+
+message InviteUserRequest {
+  string reference = 1;
+  repeated string emails = 2;
+  repeated string phone_numbers = 3;
+  Actor actor = 4;
+}
+
+message UserCommandResponse {
+  bool success = 1;
+  string message = 2;
+  string reference = 3;
+  string data_json = 4;
+}
+
+message AssociateParentRequest {
+  string reference = 1;
+  int64 user_id = 2;
+  int64 parent_id = 3;
+  Actor actor = 4;
+}
+
+message DecommissionAggregatorRequest {
+  string reference = 1;
+  int64 old_aggregator_id = 2;
+  // 0 means "no replacement" — every affected agent is unassigned.
+  int64 replacement_aggregator_id = 3;
+  string reason = 4;
+  Actor actor = 5;
+}
+
+message DecommissionAggregatorResponse {
+  bool success = 1;
+  string reference = 2;
+  int32 affected_agent_count = 3;
+  string message = 4;
+  // JSON: {"old_aggregator_id":N,"replacement_aggregator_id":M|null,"affected_agent_count":K}
+  string data_json = 5;
+}
+
+message MarkAccountDeletionRequestProcessedRequest {
+  string reference = 1;
+  // Database id of the row in account_deletion_requests.
+  int64 request_id = 2;
+  // Optional support note; kept on the row for audit.
+  string note = 3;
+  Actor actor = 4;
+}

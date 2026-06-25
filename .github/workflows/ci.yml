@@ -1,0 +1,156 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [staging, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  packages: read
+
+jobs:
+  # ============================================
+  # LINT (code formatting check)
+  # ============================================
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+          cache: maven
+
+      - name: Check code formatting
+        run: mvn spotless:check -B
+
+  # ============================================
+  # BUILD & TEST
+  # ============================================
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Clone and install shared libraries
+        run: |
+          git clone https://x-access-token:${{ secrets.GH_PACKAGES_TOKEN }}@github.com/irpayng/tms-core-utils.git /tmp/core-utils
+          mvn -f /tmp/core-utils/pom.xml install -q -B
+
+      - name: Build
+        run: mvn package -B -q -DskipTests
+
+  # ============================================
+  # PUSH STAGING IMAGE
+  # ============================================
+  push-staging:
+    needs: [lint, test]
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push staging image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          build-args: |
+            CACHE_BUST=${{ github.sha }}
+          tags: |
+            irpaytech/super-merchant:staging
+            irpaytech/super-merchant:staging-${{ github.sha }}
+          secrets: |
+            GH_PAT=${{ secrets.GH_PACKAGES_TOKEN }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================
+  # SEMANTIC RELEASE (main only)
+  # ============================================
+  release:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
+    outputs:
+      new_release_published: ${{ steps.semantic.outputs.new_release_published }}
+      new_release_version: ${{ steps.semantic.outputs.new_release_version }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Semantic Release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          semantic_version: 24
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================
+  # PUSH PRODUCTION IMAGE (every push to main)
+  # ============================================
+  push-production:
+    needs: [lint, test]
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push production image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            irpaytech/super-merchant:latest
+            irpaytech/super-merchant:production
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          secrets: |
+            GH_PAT=${{ secrets.GH_PACKAGES_TOKEN }}

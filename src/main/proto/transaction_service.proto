@@ -1,0 +1,189 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.tms.report.grpc.transaction";
+
+package transaction;
+
+service TransactionService {
+  rpc UpdateStatus (UpdateStatusRequest) returns (UpdateStatusResponse);
+  rpc GetTransaction (GetTransactionRequest) returns (TransactionResponse);
+  // Admin commands (ported from tms-api gRPC)
+  rpc RequeryProvider (RequeryProviderRequest) returns (TransactionCommandResponse);
+  rpc MarkCompleted (MarkTransactionRequest) returns (TransactionCommandResponse);
+  rpc MarkFailed (MarkTransactionRequest) returns (TransactionCommandResponse);
+  rpc ReplayVirtualFunding (ReplayVirtualFundingRequest) returns (TransactionCommandResponse);
+  rpc CreateAdminTransfer (CreateAdminTransferRequest) returns (TransactionCommandResponse);
+  rpc NameEnquiry (NameEnquiryGrpcRequest) returns (TransactionCommandResponse);
+  // Bulk payment RPCs
+  rpc CreateBulkPayment (CreateBulkPaymentRequest) returns (TransactionCommandResponse);
+  rpc DisburseBulkPayment (DisburseBulkPaymentRequest) returns (TransactionCommandResponse);
+  rpc ReprocessBulkPaymentItem (ReprocessBulkPaymentItemRequest) returns (TransactionCommandResponse);
+  // Reconciliation RPCs
+  rpc CreateReconciliationUpload (CreateReconciliationUploadRequest) returns (TransactionCommandResponse);
+  rpc ReconcileUpload (ReconcileUploadRequest) returns (TransactionCommandResponse);
+  rpc ReconcileItem (ReconcileItemRequest) returns (TransactionCommandResponse);
+  rpc CreateReconciliationConfig (CreateReconciliationConfigRequest) returns (TransactionCommandResponse);
+  rpc UpdateReconciliationConfig (UpdateReconciliationConfigRequest) returns (TransactionCommandResponse);
+  rpc DeleteReconciliationConfig (DeleteReconciliationConfigRequest) returns (TransactionCommandResponse);
+}
+
+message UpdateStatusRequest {
+  string reference = 1;
+  string status = 2;
+  string message = 3;
+}
+
+message UpdateStatusResponse {
+  bool success = 1;
+  string message = 2;
+  string reference = 3;
+  string status = 4;
+}
+
+message GetTransactionRequest {
+  string reference = 1;
+}
+
+message TransactionResponse {
+  int64 id = 1;
+  string reference = 2;
+  int64 user_id = 3;
+  string product_code = 4;
+  double amount = 5;
+  string status_code = 6;
+  string status_message = 7;
+  string channel = 8;
+  string payment_method = 9;
+}
+
+// Admin command messages
+message Actor {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+}
+
+message RequeryProviderRequest {
+  string reference = 1;
+  string transaction_reference = 2;
+  Actor actor = 3;
+}
+
+message MarkTransactionRequest {
+  string reference = 1;
+  string transaction_reference = 2;
+  Actor actor = 3;
+}
+
+message ReplayVirtualFundingRequest {
+  string reference = 1;
+  string transaction_reference = 2;
+  Actor actor = 3;
+}
+
+message TransactionCommandResponse {
+  bool success = 1;
+  string message = 2;
+  string reference = 3;
+  string data_json = 4;
+}
+
+// ── Bulk payment messages ──
+
+message CreateBulkPaymentRequest {
+  string file_name = 1;
+  string narration = 2;
+  string dispatch_type = 3;
+  string payment_type = 4;
+  string scheduled_at = 5;
+  repeated BulkPaymentRow rows = 6;
+  string idempotency_key = 7;
+  string created_by = 8;
+}
+
+message BulkPaymentRow {
+  string account_number = 1;
+  string bank_code = 2;
+  double amount = 3;
+  string narration = 4;
+  string email = 5;
+}
+
+message DisburseBulkPaymentRequest {
+  int64 bulk_payment_id = 1;
+}
+
+message ReprocessBulkPaymentItemRequest {
+  int64 item_id = 1;
+}
+
+// ── Reconciliation messages ──
+
+message CreateReconciliationUploadRequest {
+  string file_name = 1;
+  string file_path = 2;
+  string product_id = 3;
+  string provider_id = 4;
+  string column_mapping_json = 5;
+  string match_field = 6;
+  string status_mapping_json = 7;
+  repeated string rows_json = 8;
+  string created_by = 9;
+}
+
+message ReconcileUploadRequest {
+  int64 upload_id = 1;
+}
+
+message ReconcileItemRequest {
+  int64 upload_id = 1;
+  int64 item_id = 2;
+}
+
+message CreateReconciliationConfigRequest {
+  string name = 1;
+  string provider_id = 2;
+  string product_id = 3;
+  string column_mapping_json = 4;
+  string match_field = 5;
+  string status_mapping_json = 6;
+  string file_headers_json = 7;
+}
+
+message UpdateReconciliationConfigRequest {
+  int64 config_id = 1;
+  string name = 2;
+  string provider_id = 3;
+  string product_id = 4;
+  string match_field = 5;
+  string column_mapping_json = 6;
+  string status_mapping_json = 7;
+  string file_headers_json = 8;
+}
+
+message DeleteReconciliationConfigRequest {
+  int64 config_id = 1;
+}
+
+// ── Admin transfer messages ──
+
+message CreateAdminTransferRequest {
+  string reference = 1;
+  double amount = 2;
+  string account_number = 3;
+  string bank_code = 4;
+  string account_name = 5;
+  string narration = 6;
+  string expense_category = 7;
+  Actor actor = 8;
+  // When set, this admin transfer is a manual reversal/refund of the given
+  // original transaction; the original is flipped to 'reversed' on a completed
+  // transfer. See transaction service transaction_service.proto.
+  string original_reference = 9;
+}
+
+message NameEnquiryGrpcRequest {
+  string account_number = 1;
+  string bank_code = 2;
+}

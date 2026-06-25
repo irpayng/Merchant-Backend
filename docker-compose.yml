@@ -1,0 +1,53 @@
+services:
+  super-merchant:
+    build: .
+    ports:
+      - "${APP_PORT:-8110}:8080"
+    environment:
+      DB_HOST: super-merchant-db
+      DB_PORT: 5432
+      DB_DATABASE: super_merchant
+      DB_USERNAME: tms
+      DB_PASSWORD: secret
+      GRPC_API_KEY: ${GRPC_API_KEY:-tms-grpc-secret-key-2024}
+      GRPC_TIMEOUT: 30
+      JWT_SECRET: ${JWT_SECRET:-dGVzdC1zZWNyZXQta2V5LWZvci1qd3QtdG9rZW4tZ2VuZXJhdGlvbi1pbi10ZXN0cw==}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      super-merchant-db:
+        condition: service_healthy
+    networks:
+      - tms-network
+
+  super-merchant-db:
+    image: imresamu/postgis:16-3.5-alpine
+    container_name: super-merchant-db
+    restart: unless-stopped
+    ports:
+      - "5471:5432"
+    environment:
+      POSTGRES_USER: tms
+      POSTGRES_DB: super_merchant
+      POSTGRES_PASSWORD: secret
+    command: >
+      postgres
+      -c wal_level=logical
+      -c max_replication_slots=30
+      -c max_wal_senders=30
+    volumes:
+      - super-merchant-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tms -d super_merchant"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tms-network
+
+volumes:
+  super-merchant-postgres-data:
+
+networks:
+  tms-network:
+    external: true

@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.tms.report.grpc.wallet";
+
+package wallet;
+
+service WalletService {
+  rpc CreditWallet (WalletOperationRequest) returns (WalletOperationResponse);
+  rpc DebitWallet (WalletOperationRequest) returns (WalletOperationResponse);
+  rpc GetBalance (GetBalanceRequest) returns (GetBalanceResponse);
+  rpc GetUserBalances (GetUserBalancesRequest) returns (GetUserBalancesResponse);
+  // Admin commands (ported from tms-api gRPC)
+  rpc CreateManualFunding (CreateManualFundingRequest) returns (WalletCommandResponse);
+  rpc ApproveManualFunding (ApproveManualFundingRequest) returns (WalletCommandResponse);
+  rpc RejectManualFunding (RejectManualFundingRequest) returns (WalletCommandResponse);
+  rpc CreateCommissionTransfer (CreateCommissionTransferRequest) returns (WalletCommandResponse);
+  // PND (Post No Debit)
+  rpc SetPnd (SetPndRequest) returns (SetPndResponse);
+  // Balance reconciliation — recalculates from statements, resets checksum, clears PND
+  rpc ReconcileBalance (ReconcileBalanceRequest) returns (WalletCommandResponse);
+}
+
+message WalletOperationRequest {
+  double amount = 1;
+  reserved 2;
+  int64 user_id = 3;
+  string source_type = 4;
+  int64 source_id = 5;
+  string category = 6;
+  string wallet_type = 7;
+  string description = 8;
+  string reference = 9;
+}
+
+message WalletOperationResponse {
+  bool success = 1;
+  string message = 2;
+  double balance = 3;
+}
+
+message GetBalanceRequest {
+  reserved 1;
+  int64 user_id = 2;
+  string wallet_type = 3;
+}
+
+message GetBalanceResponse {
+  double balance = 1;
+}
+
+message GetUserBalancesRequest {
+  int64 user_id = 1;
+}
+
+message GetUserBalancesResponse {
+  string main_balance = 1;
+  string commission_balance = 2;
+}
+
+// Admin command messages
+message Actor {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+}
+
+message CreateManualFundingRequest {
+  string reference = 1;
+  string beneficiary = 2;
+  string user_id = 3;
+  double amount = 4;
+  string wallet_type = 5;
+  string narration = 6;
+  string entry_type = 7;
+  Actor actor = 8;
+}
+
+message ApproveManualFundingRequest {
+  string reference = 1;
+  string manual_funding_id = 2;
+  Actor actor = 3;
+}
+
+message RejectManualFundingRequest {
+  string reference = 1;
+  string manual_funding_id = 2;
+  string reason = 3;
+  Actor actor = 4;
+}
+
+message CreateCommissionTransferRequest {
+  string reference = 1;
+  double amount = 2;
+  string payment_method = 3;
+  Actor actor = 4;
+}
+
+message WalletCommandResponse {
+  bool success = 1;
+  string message = 2;
+  string reference = 3;
+  string data_json = 4;
+}
+
+// PND (Post No Debit) messages
+message SetPndRequest {
+  reserved 1;
+  int64 user_id = 2;
+  bool pnd = 3;
+  string reason = 4;
+  // Source of the hold. tms-report-java sets this to 'admin' so admin
+  // restrictions are kept distinct from automated holds (target_default,
+  // fraud, max_balance, tamper). Lifting an admin hold does not touch
+  // any other source's holds.
+  string source = 5;
+  string source_reference = 6;
+  int64 applied_by_user_id = 7;
+  string release_note = 8;
+  // When true and pnd=false, release every active hold for the user except
+  // tamper holds (still gated by their own force-clear flow). source and
+  // source_reference are ignored. Used by the admin Remove PND endpoint so
+  // a single click lifts every restriction the admin is allowed to lift,
+  // regardless of which subsystem applied it.
+  bool release_all = 9;
+}
+
+message SetPndResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+
+// Balance reconciliation messages
+message ReconcileBalanceRequest {
+  int64 user_id = 1;
+  string wallet_type = 2;
+  Actor actor = 3;
+  bool skip_hold_release = 4;
+}

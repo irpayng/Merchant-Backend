@@ -1,0 +1,101 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.tms.report.grpc.kyc";
+
+package kyc;
+
+service KycService {
+  rpc UpdateAddress (UpdateAddressRequest) returns (KycCommandResponse);
+  rpc ApproveAddress (ApproveAddressRequest) returns (KycCommandResponse);
+  rpc RejectAddress (RejectAddressRequest) returns (KycCommandResponse);
+  // Admin document commands
+  rpc ApproveDocument (ApproveDocumentRequest) returns (KycCommandResponse);
+  rpc RejectDocument (RejectDocumentRequest) returns (KycCommandResponse);
+  // Admin verification commands (BVN/NIN)
+  rpc ApproveVerification (ApproveVerificationRequest) returns (KycCommandResponse);
+  rpc RejectVerification (RejectVerificationRequest) returns (KycCommandResponse);
+  // Admin business application commands (agent / merchant)
+  rpc ApproveBusinessApplication (ApproveBusinessApplicationRequest) returns (KycCommandResponse);
+  rpc RejectBusinessApplication (RejectBusinessApplicationRequest) returns (KycCommandResponse);
+  // Re-runs the merchant business_name propagation step of approve, without
+  // changing the application's status. Used for backfill and recovery.
+  rpc ResyncBusinessName (ResyncBusinessNameRequest) returns (KycCommandResponse);
+
+  // Compliance secondary review of an aggregator-approved/-rejected record.
+  // type is "address" or "business_application"; cleared=true confirms,
+  // cleared=false overturns (reverses) the aggregator's decision.
+  rpc SecondaryReview (SecondaryReviewRequest) returns (KycCommandResponse);
+}
+
+message SecondaryReviewRequest {
+  string type = 1;
+  int64 record_id = 2;
+  bool cleared = 3;
+  string reviewer = 4;
+}
+
+message KycCommandResponse {
+  bool success = 1;
+  string message = 2;
+  string reference = 3;
+  string data_json = 4;
+}
+
+message UpdateAddressRequest {
+  int64 address_id = 1;
+  string address = 2;
+  string state_id = 3;
+  string lga = 4;
+}
+
+message ApproveAddressRequest {
+  int64 address_id = 1;
+}
+
+message RejectAddressRequest {
+  int64 address_id = 1;
+  string reason = 2;
+}
+
+// ── Admin document command messages ──
+
+message ApproveDocumentRequest {
+  int64 document_id = 1;
+}
+
+message RejectDocumentRequest {
+  int64 document_id = 1;
+  string reason = 2;
+}
+
+// ── Admin verification command messages (BVN/NIN) ──
+
+message ApproveVerificationRequest {
+  int64 verification_id = 1;
+  string type = 2;
+}
+
+message RejectVerificationRequest {
+  int64 verification_id = 1;
+  string type = 2;
+  string reason = 3;
+}
+
+// ── Admin business application command messages ──
+
+message ApproveBusinessApplicationRequest {
+  int64 application_id = 1;
+  string reviewer = 2;
+}
+
+message RejectBusinessApplicationRequest {
+  int64 application_id = 1;
+  string reason = 2;
+  string reviewer = 3;
+}
+
+message ResyncBusinessNameRequest {
+  int64 application_id = 1;
+  string reviewer = 2;
+}
