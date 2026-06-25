@@ -319,12 +319,9 @@ public class DashboardService {
         return ((Number) q.getSingleResult()).longValue();
     }
 
-    private Map<String, Object> pctChange(double current, double previous) {
-        Map<String, Object> m = new LinkedHashMap<>();
+    private double pctChange(double current, double previous) {
         double change = previous == 0 ? (current > 0 ? 100 : 0) : (current - previous) / previous * 100;
-        m.put("value", round2(change));
-        m.put("direction", change >= 0 ? "up" : "down");
-        return m;
+        return round2(change);
     }
 
     private double round2(double v) {
