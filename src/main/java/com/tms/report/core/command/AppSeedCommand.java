@@ -80,6 +80,8 @@ public class AppSeedCommand implements CommandLineRunner {
                         "Allows the user to manage privileges and related configurations."},
                 new String[]{"manage_admin", "Manage Admin", "[\"admin\"]",
                         "Allows the user to manage admin accounts."},
+                new String[]{"manage_bank_users", "Manage Bank Users", "[\"admin\"]",
+                        "Allows a bank admin to create and view portal users within their own bank."},
                 new String[]{"manage_role", "Manage Role", "[\"role\"]", "Allows the user to manage roles."},
                 new String[]{"manage_settlement", "Manage Settlement", "[\"settlement\"]",
                         "Allows the user to manage settlements."},
@@ -121,7 +123,7 @@ public class AppSeedCommand implements CommandLineRunner {
         List<RoleDef> defaults = List.of(new RoleDef("super_admin", "Super Admin", List.of("*")),
                 new RoleDef("bank_admin", "Bank Admin",
                         List.of("view_dashboard", "view_transaction", "manage_terminal", "manage_user_profile",
-                                "manage_kyc")),
+                                "manage_kyc", "manage_bank_users")),
                 new RoleDef("bank_operator", "Bank Operator",
                         List.of("view_dashboard", "view_transaction", "manage_terminal")));
 

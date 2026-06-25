@@ -1,5 +1,7 @@
 package com.tms.report.modules.admin.service;
 
+import com.tms.report.core.exception.AppException;
+import com.tms.report.core.security.TenantScope;
 import com.tms.report.modules.admin.dto.AdminDto;
 import com.tms.report.modules.admin.dto.CreateAdminRequest;
 import com.tms.report.modules.admin.dto.RoleDto;
@@ -20,6 +22,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +34,7 @@ public class AdminService {
     private final AdminRepository adminRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final TenantScope tenantScope;
 
     public Page<AdminDto> index(Map<String, String> params) {
         int page = Integer.parseInt(params.getOrDefault("page", "1")) - 1;
@@ -62,6 +66,13 @@ public class AdminService {
             spec = spec.and((root, query, cb) -> cb.isNull(root.get("blockedAt")));
         }
 
+        // Bank admins only see portal users belonging to their own bank.
+        if (!tenantScope.isGlobal()) {
+            String bank = tenantScope.bankCode();
+            spec = spec.and((root, query,
+                    cb) -> (bank == null || bank.isBlank()) ? cb.disjunction() : cb.equal(root.get("bankCode"), bank));
+        }
+
         return adminRepository.findAll(spec, pageable).map(this::toDto);
     }
 
@@ -72,12 +83,26 @@ public class AdminService {
 
     @Transactional
     public AdminDto store(CreateAdminRequest request) {
+        Set<Role> roles = resolveRoles(request.getRoles());
+
+        String bankCode;
+        if (tenantScope.isGlobal()) {
+            bankCode = request.getBankCode() != null && !request.getBankCode().isBlank()
+                    ? request.getBankCode().trim()
+                    : null;
+        } else {
+            if (roles.stream().anyMatch(r -> "super_admin".equals(r.getCode()))) {
+                throw new AppException("You cannot assign the super admin role.", HttpStatus.FORBIDDEN);
+            }
+            bankCode = tenantScope.bankCode();
+            if (bankCode == null || bankCode.isBlank()) {
+                throw new AppException("Your account is not assigned to a bank.", HttpStatus.FORBIDDEN);
+            }
+        }
+
         Admin admin = Admin.builder().name(request.getName()).email(request.getEmail().toLowerCase())
                 .phoneNumber(request.getPhoneNumber()).password(passwordEncoder.encode(request.getPassword()))
-                .bankCode(request.getBankCode() != null && !request.getBankCode().isBlank()
-                        ? request.getBankCode().trim()
-                        : null)
-                .roles(resolveRoles(request.getRoles())).build();
+                .bankCode(bankCode).roles(roles).build();
         return toDto(adminRepository.save(admin));
     }
 

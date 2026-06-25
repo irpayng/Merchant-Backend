@@ -112,6 +112,17 @@ CREATE TABLE IF NOT EXISTS supermerchant.otps (
     updated_at  TIMESTAMP DEFAULT NOW()
 );
 
+-- Enrolled tenant banks (the portal's bank registry).
+CREATE TABLE IF NOT EXISTS supermerchant.banks (
+    id            BIGSERIAL PRIMARY KEY,
+    code          VARCHAR(20) UNIQUE NOT NULL,
+    name          VARCHAR(255),
+    contact_email VARCHAR(255),
+    status        VARCHAR(20) DEFAULT 'active',
+    created_at    TIMESTAMP DEFAULT NOW(),
+    updated_at    TIMESTAMP DEFAULT NOW()
+);
+
 -- Seed roles
 INSERT INTO supermerchant.roles (id, name, code) VALUES
     (1, 'Super Admin', 'super_admin'),

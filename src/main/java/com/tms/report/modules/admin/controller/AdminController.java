@@ -59,7 +59,7 @@ public class AdminController {
 
     @LogActivity(action = "create", description = "{admin} created a new admin account for {body.name}")
     @PostMapping
-    @PreAuthorize("hasAuthority('manage_privilege')")
+    @PreAuthorize("hasAnyAuthority('manage_privilege', 'manage_bank_users')")
     public ApiResponse<AdminDto> store(@Valid @RequestBody CreateAdminRequest request) {
         return ApiResponse.success(adminService.store(request));
     }
