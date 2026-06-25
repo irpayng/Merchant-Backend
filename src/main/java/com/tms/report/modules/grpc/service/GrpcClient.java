@@ -2,6 +2,7 @@ package com.tms.report.modules.grpc.service;
 
 import com.shared.util.Ulid;
 import com.tms.report.core.security.AdminDetails;
+import com.tms.report.grpc.config.CheckInstantSettlementRequest;
 import com.tms.report.grpc.config.ConfigCommandResponse;
 import com.tms.report.grpc.config.ConfigServiceGrpc;
 import com.tms.report.grpc.config.CreateConfigurationRequest;
@@ -31,6 +32,7 @@ import com.tms.report.grpc.config.TerminalEntry;
 import com.tms.report.grpc.config.UnmapTerminalRequest;
 import com.tms.report.grpc.config.UpdateConfigurationRequest;
 import com.tms.report.grpc.config.UpdateFundingAlertRequest;
+import com.tms.report.grpc.config.UpdateSettlementWindowRequest;
 import com.tms.report.grpc.config.UpdateTerminalRequest;
 import com.tms.report.grpc.config.UpdateTidRequest;
 import com.tms.report.grpc.dispute.Actor;
@@ -1184,6 +1186,9 @@ public class GrpcClient {
             var builder = EnrollInstantSettlementRequest.newBuilder().setUserId(Long.parseLong(str(data, "user_id")));
             if (data.containsKey("notes"))
                 builder.setNotes(str(data, "notes"));
+            applyWindowFields(data, builder::setWindowEnabled, builder::setSettlementTimes,
+                    builder::setDestinationAccountNumber, builder::setDestinationBankCode,
+                    builder::setDestinationAccountName);
             builder.setApprovedBy(currentAdminName());
 
             var resp = configStub.enrollInstantSettlement(builder.build());
@@ -1191,6 +1196,61 @@ public class GrpcClient {
         } catch (StatusRuntimeException e) {
             throw grpcError("EnrollInstantSettlement", ref, e);
         }
+    }
+
+    public Map<String, Object> updateSettlementWindow(Map<String, Object> data) {
+        String ref = ref(data);
+        logRequest("UpdateSettlementWindow", ref);
+        try {
+            var builder = UpdateSettlementWindowRequest.newBuilder().setUserId(Long.parseLong(str(data, "user_id")));
+            applyWindowFields(data, builder::setWindowEnabled, builder::setSettlementTimes,
+                    builder::setDestinationAccountNumber, builder::setDestinationBankCode,
+                    builder::setDestinationAccountName);
+            var resp = configStub.updateSettlementWindow(builder.build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("UpdateSettlementWindow", ref, e);
+        }
+    }
+
+    public Map<String, Object> checkInstantSettlement(long userId) {
+        String ref = Ulid.generate();
+        logRequest("CheckInstantSettlement", ref);
+        try {
+            var resp = configStub
+                    .checkInstantSettlement(CheckInstantSettlementRequest.newBuilder().setUserId(userId).build());
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("active", resp.getActive());
+            m.put("status", resp.getStatus());
+            m.put("window_enabled", resp.getWindowEnabled());
+            m.put("settlement_times", resp.getSettlementTimes());
+            m.put("destination_account_number", resp.getDestinationAccountNumber());
+            m.put("destination_bank_code", resp.getDestinationBankCode());
+            m.put("destination_account_name", resp.getDestinationAccountName());
+            return m;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("CheckInstantSettlement", ref, e);
+        }
+    }
+
+    /**
+     * Apply the optional settlement-window fields from a request map onto a
+     * builder.
+     */
+    private void applyWindowFields(Map<String, Object> data, java.util.function.Consumer<Boolean> setEnabled,
+            java.util.function.Consumer<String> setTimes, java.util.function.Consumer<String> setAccount,
+            java.util.function.Consumer<String> setBank, java.util.function.Consumer<String> setName) {
+        if (data.containsKey("window_enabled")) {
+            setEnabled.accept(Boolean.parseBoolean(String.valueOf(data.get("window_enabled"))));
+        }
+        if (data.containsKey("settlement_times"))
+            setTimes.accept(str(data, "settlement_times"));
+        if (data.containsKey("destination_account_number"))
+            setAccount.accept(str(data, "destination_account_number"));
+        if (data.containsKey("destination_bank_code"))
+            setBank.accept(str(data, "destination_bank_code"));
+        if (data.containsKey("destination_account_name"))
+            setName.accept(str(data, "destination_account_name"));
     }
 
     public Map<String, Object> suspendInstantSettlement(Map<String, Object> data) {

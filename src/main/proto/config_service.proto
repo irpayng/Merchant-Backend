@@ -44,6 +44,8 @@ service ConfigService {
   rpc SuspendInstantSettlement (SuspendInstantSettlementRequest) returns (ConfigCommandResponse);
   rpc RevokeInstantSettlement (RevokeInstantSettlementRequest) returns (ConfigCommandResponse);
   rpc ReactivateInstantSettlement (ReactivateInstantSettlementRequest) returns (ConfigCommandResponse);
+  rpc UpdateSettlementWindow (UpdateSettlementWindowRequest) returns (ConfigCommandResponse);
+  rpc CheckInstantSettlement (CheckInstantSettlementRequest) returns (CheckInstantSettlementResponse);
 }
 
 message ValidateTransactionRequest {
@@ -298,6 +300,34 @@ message EnrollInstantSettlementRequest {
   string notes = 4;
   // Optional. See config_service.proto in tms-config for full semantics.
   string email = 5;
+  bool window_enabled = 6;
+  string settlement_times = 7;
+  string destination_account_number = 8;
+  string destination_bank_code = 9;
+  string destination_account_name = 10;
+}
+
+message UpdateSettlementWindowRequest {
+  int64 user_id = 1;
+  bool window_enabled = 2;
+  string settlement_times = 3;
+  string destination_account_number = 4;
+  string destination_bank_code = 5;
+  string destination_account_name = 6;
+}
+
+message CheckInstantSettlementRequest {
+  int64 user_id = 1;
+}
+
+message CheckInstantSettlementResponse {
+  bool active = 1;
+  string status = 2;
+  bool window_enabled = 3;
+  string settlement_times = 4;
+  string destination_account_number = 5;
+  string destination_bank_code = 6;
+  string destination_account_name = 7;
 }
 
 message SuspendInstantSettlementRequest {
