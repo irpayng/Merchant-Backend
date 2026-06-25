@@ -263,7 +263,9 @@ public class UserService {
 
         // Location (from address)
         data.put("location", loadLocation(id));
-        data.put("number_of_terminals", 0);
+        long terminalCount = ((Number) entityManager.createNativeQuery("SELECT COUNT(*) FROM tids WHERE user_id = :id")
+                .setParameter("id", id).getSingleResult()).longValue();
+        data.put("number_of_terminals", terminalCount);
 
         // Commissions
         Map<String, Object> commissions = new LinkedHashMap<>();
