@@ -85,8 +85,9 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:3000", "http://127.0.0.1:3000", "http://tms.irpay.local",
-                "https://tms.irpay.local", "http://report.irpay.local", "https://report.irpay.local"));
+        config.setAllowedOrigins(List.of("http://localhost:3000", "http://127.0.0.1:3000",
+                "http://super-merchant.irpay.local", "https://super-merchant.irpay.local",
+                "http://super-merchant-api.irpay.local", "https://super-merchant-api.irpay.local"));
         config.setAllowedMethods(List.of("*"));
         config.setAllowedHeaders(List.of("*"));
         config.setExposedHeaders(List.of("Authorization"));
