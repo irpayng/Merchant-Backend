@@ -1,6 +1,7 @@
 package com.tms.report.modules.user.service;
 
 import com.tms.report.core.filter.QueryFilterHelper;
+import com.tms.report.core.security.TenantScope;
 import com.tms.report.core.util.Avatars;
 import com.tms.report.modules.user.dto.TierDto;
 import com.tms.report.modules.user.dto.UserDto;
@@ -25,6 +26,25 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final EntityManager entityManager;
+    private final TenantScope tenantScope;
+
+    /**
+     * Throws {@link EntityNotFoundException} if the given user is not one of the
+     * caller's bank's direct merchants. No-op for global users.
+     */
+    private void assertUserInScope(Long userId) {
+        if (tenantScope.isGlobal()) {
+            return;
+        }
+        String bank = tenantScope.bankCode();
+        boolean ok = bank != null && !bank.isBlank() && userId != null
+                && ((Number) entityManager
+                        .createNativeQuery("SELECT COUNT(*) FROM tids WHERE bank_code = :bank AND user_id = :uid")
+                        .setParameter("bank", bank).setParameter("uid", userId).getSingleResult()).longValue() > 0;
+        if (!ok) {
+            throw new EntityNotFoundException("User not found");
+        }
+    }
 
     @Transactional(readOnly = true)
     @SuppressWarnings("unchecked")
@@ -82,6 +102,8 @@ public class UserService {
         }
 
         QueryFilterHelper.applyDates(where, qp, params, "u.created_at");
+        // Per-bank tenant scope: only this bank's direct merchants.
+        tenantScope.appendUserScope(where, qp, "u.id");
 
         LocalDateTime sevenDaysAgo = LocalDateTime.now().minusDays(7);
 
@@ -129,6 +151,7 @@ public class UserService {
     }
 
     public UserDto show(Long id) {
+        assertUserInScope(id);
         User user = userRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("User not found"));
         return toDto(user);
     }
@@ -136,6 +159,7 @@ public class UserService {
     @Transactional(readOnly = true)
     @SuppressWarnings("unchecked")
     public Map<String, Object> showDetail(Long id) {
+        assertUserInScope(id);
         // Main user query with profile, tier
         Query q = entityManager.createNativeQuery("SELECT u.id, u.email, u.phone_number, u.type, u.account_number, "
                 + "u.parent_id, u.created_at, u.onboarding_id, "

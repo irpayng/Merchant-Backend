@@ -74,6 +74,9 @@ public class AdminService {
     public AdminDto store(CreateAdminRequest request) {
         Admin admin = Admin.builder().name(request.getName()).email(request.getEmail().toLowerCase())
                 .phoneNumber(request.getPhoneNumber()).password(passwordEncoder.encode(request.getPassword()))
+                .bankCode(request.getBankCode() != null && !request.getBankCode().isBlank()
+                        ? request.getBankCode().trim()
+                        : null)
                 .roles(resolveRoles(request.getRoles())).build();
         return toDto(adminRepository.save(admin));
     }
@@ -94,6 +97,9 @@ public class AdminService {
         }
         if (request.getRoles() != null) {
             admin.setRoles(resolveRoles(request.getRoles()));
+        }
+        if (request.getBankCode() != null) {
+            admin.setBankCode(request.getBankCode().isBlank() ? null : request.getBankCode().trim());
         }
 
         return toDto(adminRepository.save(admin));
@@ -137,7 +143,7 @@ public class AdminService {
 
     private AdminDto toDto(Admin admin) {
         return AdminDto.builder().id(admin.getId()).name(admin.getName()).email(admin.getEmail())
-                .phoneNumber(admin.getPhoneNumber())
+                .phoneNumber(admin.getPhoneNumber()).bankCode(admin.getBankCode())
                 .roles(admin.getRoles().stream()
                         .map(r -> RoleDto.builder().id(r.getId()).name(r.getName()).code(r.getCode()).build()).toList())
                 .status(admin.getStatus()).blockedReason(admin.getBlockedReason()).createdAt(admin.getCreatedAt())

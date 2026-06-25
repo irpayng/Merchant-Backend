@@ -36,6 +36,14 @@ public class Admin {
     @Column(name = "phone_number")
     private String phoneNumber;
 
+    /**
+     * Tenant key — the bank this portal user belongs to. {@code null} together with
+     * the {@code super_admin} role means a global (IRPay) user who sees all banks.
+     * A non-super user is scoped to this bank's direct merchants.
+     */
+    @Column(name = "bank_code")
+    private String bankCode;
+
     @JsonIgnore
     private String password;
 

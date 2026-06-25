@@ -10,5 +10,6 @@ public class UpdateAdminRequest {
     private String email;
     private String phoneNumber;
     private String password;
+    private String bankCode;
     private List<String> roles;
 }

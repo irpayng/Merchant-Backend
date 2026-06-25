@@ -20,5 +20,8 @@ public class CreateAdminRequest {
     @NotBlank
     private String password;
 
+    /** Optional tenant assignment — the bank this portal user belongs to. */
+    private String bankCode;
+
     private List<String> roles;
 }

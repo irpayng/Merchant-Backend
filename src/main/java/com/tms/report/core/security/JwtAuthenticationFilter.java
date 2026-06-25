@@ -48,7 +48,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final ObjectMapper objectMapper;
 
     private static final Duration CACHE_TTL = Duration.ofMinutes(1);
-    private static final String KEY_PREFIX = "tms-report:admin-details:";
+    private static final String KEY_PREFIX = "super-merchant:admin-details:";
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response,
@@ -144,16 +144,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * flattened to just the codes used by {@link AdminDetails#getAuthorities()}.
      */
     public record AdminSnapshot(Long id, String name, String email, String phoneNumber, String password,
-            LocalDateTime blockedAt, String blockedReason, LocalDateTime emailVerifiedAt, List<String> roleCodes,
-            List<String> privilegeCodes, LocalDateTime createdAt, LocalDateTime updatedAt) {
+            String bankCode, LocalDateTime blockedAt, String blockedReason, LocalDateTime emailVerifiedAt,
+            List<String> roleCodes, List<String> privilegeCodes, LocalDateTime createdAt, LocalDateTime updatedAt) {
 
         public static AdminSnapshot from(Admin admin) {
             List<String> roleCodes = admin.getRoles().stream().map(Role::getCode).toList();
             List<String> privilegeCodes = admin.getRoles().stream().flatMap(r -> r.getPrivileges().stream())
                     .map(Privilege::getCode).distinct().toList();
             return new AdminSnapshot(admin.getId(), admin.getName(), admin.getEmail(), admin.getPhoneNumber(),
-                    admin.getPassword(), admin.getBlockedAt(), admin.getBlockedReason(), admin.getEmailVerifiedAt(),
-                    roleCodes, privilegeCodes, admin.getCreatedAt(), admin.getUpdatedAt());
+                    admin.getPassword(), admin.getBankCode(), admin.getBlockedAt(), admin.getBlockedReason(),
+                    admin.getEmailVerifiedAt(), roleCodes, privilegeCodes, admin.getCreatedAt(), admin.getUpdatedAt());
         }
 
         /**
@@ -170,6 +170,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             admin.setEmail(email);
             admin.setPhoneNumber(phoneNumber);
             admin.setPassword(password);
+            admin.setBankCode(bankCode);
             admin.setBlockedAt(blockedAt);
             admin.setBlockedReason(blockedReason);
             admin.setEmailVerifiedAt(emailVerifiedAt);

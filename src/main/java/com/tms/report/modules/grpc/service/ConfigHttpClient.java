@@ -66,10 +66,25 @@ public class ConfigHttpClient {
      * /tids/upload (multipart with 'file', 'internal' and 'processor' fields).
      */
     public Map<String, Object> uploadTids(MultipartFile file, boolean internal, String processor) {
+        return uploadTids(file, internal, processor, null);
+    }
+
+    /**
+     * Forward a TID file upload, stamping the uploading bank's code on every row
+     * (enforced server-side in config — the sheet cannot override it). POST
+     * /tids/upload (multipart with 'file', 'internal', 'processor', 'bank_code').
+     */
+    public Map<String, Object> uploadTids(MultipartFile file, boolean internal, String processor, String bankCode) {
+        Map<String, String> fields = new java.util.LinkedHashMap<>();
         if (processor != null && !processor.isBlank()) {
-            return uploadFile("/tids/upload", file, internal, Map.of("processor", processor.trim()));
+            fields.put("processor", processor.trim());
         }
-        return uploadFile("/tids/upload", file, internal);
+        if (bankCode != null && !bankCode.isBlank()) {
+            fields.put("bank_code", bankCode.trim());
+        }
+        return fields.isEmpty()
+                ? uploadFile("/tids/upload", file, internal)
+                : uploadFile("/tids/upload", file, internal, fields);
     }
 
     /**

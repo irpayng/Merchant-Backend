@@ -1,6 +1,7 @@
 package com.tms.report.modules.onboarding.service;
 
 import com.tms.report.core.filter.QueryFilterHelper;
+import com.tms.report.core.security.TenantScope;
 import com.tms.report.core.storage.S3UrlGenerator;
 import com.tms.report.core.util.Dates;
 import com.tms.report.modules.onboarding.dto.OnboardingDto;
@@ -36,6 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class OnboardingService {
 
     private final EntityManager entityManager;
+    private final TenantScope tenantScope;
 
     @Value("${AWS_BUCKET:ircms-public-images}")
     private String s3Bucket;
@@ -91,6 +93,8 @@ public class OnboardingService {
         }
 
         QueryFilterHelper.applyDates(where, qp, params, "o.created_at");
+        // Per-bank tenant scope: only onboardings that produced this bank's merchants.
+        tenantScope.appendOnboardingScope(where, qp, "o.id");
 
         String sql = """
                 SELECT o.id, o.reference,
@@ -124,6 +128,7 @@ public class OnboardingService {
         StringBuilder where = new StringBuilder("WHERE 1=1");
         Map<String, Object> qp = new HashMap<>();
         QueryFilterHelper.applyDates(where, qp, params, "o.created_at");
+        tenantScope.appendOnboardingScope(where, qp, "o.id");
 
         String sql = """
                 SELECT
@@ -167,9 +172,16 @@ public class OnboardingService {
                 WHERE o.id = :id
                 """;
 
+        Map<String, Object> scopeBinds = new HashMap<>();
+        StringBuilder scope = new StringBuilder();
+        tenantScope.appendOnboardingScope(scope, scopeBinds, "o.id");
+        sql += scope.toString();
+
         Object[] r;
         try {
-            r = (Object[]) entityManager.createNativeQuery(sql).setParameter("id", id).getSingleResult();
+            Query dq = entityManager.createNativeQuery(sql).setParameter("id", id);
+            scopeBinds.forEach(dq::setParameter);
+            r = (Object[]) dq.getSingleResult();
         } catch (NoResultException e) {
             throw new jakarta.persistence.EntityNotFoundException("Onboarding not found: " + id);
         }

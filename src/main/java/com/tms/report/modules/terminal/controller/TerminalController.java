@@ -3,6 +3,7 @@ package com.tms.report.modules.terminal.controller;
 import com.tms.report.core.dto.ApiResponse;
 import com.tms.report.core.dto.PagedResponse;
 import com.tms.report.core.export.XlsxExporter;
+import com.tms.report.core.security.TenantScope;
 import com.tms.report.modules.activity.annotation.LogActivity;
 import com.tms.report.modules.grpc.service.ConfigHttpClient;
 import com.tms.report.modules.grpc.service.GrpcClient;
@@ -36,6 +37,19 @@ public class TerminalController {
     private final ProviderKeyStatusRepository providerKeyStatusRepository;
     private final TerminalMetricRepository terminalMetricRepository;
     private final EntityManager entityManager;
+    private final TenantScope tenantScope;
+
+    /**
+     * Bank scope value for the repository query: null = global, the bank code when
+     * scoped, or a non-matching sentinel for an unmapped non-global user.
+     */
+    private String bankScope() {
+        if (tenantScope.isGlobal()) {
+            return null;
+        }
+        String b = tenantScope.bankCode();
+        return (b == null || b.isBlank()) ? "__no_bank__" : b;
+    }
 
     @GetMapping
     @PreAuthorize("hasAuthority('manage_terminal')")
@@ -72,7 +86,7 @@ public class TerminalController {
         // in the native column space.
         var pageable = PageRequest.of(page, limit);
         var result = terminalRepository.findFiltered(searchPattern, make, os, networkType, batteryBelow, printerStatus,
-                staleSince, mapped, parseLocked(params.get("status")), pageable);
+                staleSince, mapped, parseLocked(params.get("status")), bankScope(), pageable);
         attachMappedUsers(result.getContent());
         return PagedResponse.from(result, "/terminals", extra);
     }
@@ -101,12 +115,13 @@ public class TerminalController {
         final LocalDateTime staleSince = parseStaleCutoff(params.get("stale"));
         final String mapped = parseMapped(params.get("mapped"));
         final String locked = parseLocked(params.get("status"));
+        final String scope = bankScope();
 
         XlsxExporter.streamPaged(response, "terminals",
                 new String[]{"ID", "Serial", "OS", "Model", "Make", "User ID", "Agent", "Active", "Created At"}, 1000,
                 (page, size) -> {
                     var content = terminalRepository.findFiltered(searchPattern, make, os, networkType, batteryBelow,
-                            printerStatus, staleSince, mapped, locked, PageRequest.of(page, size)).getContent();
+                            printerStatus, staleSince, mapped, locked, scope, PageRequest.of(page, size)).getContent();
                     attachMappedUsers(content);
                     return content;
                 },
@@ -120,6 +135,17 @@ public class TerminalController {
     @GetMapping("/{id}")
     public ApiResponse<Terminal> show(@PathVariable Long id) {
         Terminal terminal = terminalRepository.findById(id).orElseThrow();
+        if (!tenantScope.isGlobal()) {
+            String bank = tenantScope.bankCode();
+            boolean ok = bank != null && !bank.isBlank() && terminal.getUserId() != null
+                    && ((Number) entityManager
+                            .createNativeQuery("SELECT COUNT(*) FROM tids WHERE bank_code = :bank AND user_id = :uid")
+                            .setParameter("bank", bank).setParameter("uid", terminal.getUserId()).getSingleResult())
+                            .longValue() > 0;
+            if (!ok) {
+                throw new java.util.NoSuchElementException("Terminal not found");
+            }
+        }
         attachMappedUsers(List.of(terminal));
         return ApiResponse.success(terminal);
     }

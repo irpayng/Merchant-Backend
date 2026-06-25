@@ -2,6 +2,7 @@ package com.tms.report.modules.transaction.service;
 
 import com.tms.report.core.exception.AppException;
 import com.tms.report.core.filter.QueryFilterHelper;
+import com.tms.report.core.security.TenantScope;
 import com.tms.report.modules.product.model.Product;
 import com.tms.report.modules.product.repository.ProductRepository;
 import com.tms.report.modules.status.StatusUtil;
@@ -66,6 +67,7 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final ProductRepository productRepository;
     private final EntityManager entityManager;
+    private final TenantScope tenantScope;
 
     /**
      * Builds the {@code WHERE} clause (search + filters + dates) shared by the
@@ -241,6 +243,8 @@ public class TransactionService {
         if ("true".equalsIgnoreCase(params.get("indoubt_reversal"))) {
             where.append(" AND t.metadata->>'indoubt_reversal_unconfirmed' = 'true'");
         }
+        // Per-bank tenant scope: restrict to the bank's direct merchants.
+        tenantScope.appendUserScope(where, qParams, "t.user_id");
         return where;
     }
 
@@ -513,8 +517,16 @@ public class TransactionService {
             sql += " WHERE t.reference = :val";
         }
 
+        // Per-bank tenant scope: a record outside the caller's bank resolves to
+        // no row → 404, so a bank user can't fetch another bank's transaction.
+        Map<String, Object> scopeBinds = new HashMap<>();
+        StringBuilder scope = new StringBuilder();
+        tenantScope.appendUserScope(scope, scopeBinds, "t.user_id");
+        sql += scope.toString();
+
         Query q = entityManager.createNativeQuery(sql);
         q.setParameter("val", paramValue);
+        scopeBinds.forEach(q::setParameter);
 
         // Retry up to 3 times with short delays to handle PostgreSQL logical
         // replication lag — recently-created transactions may not be in the
@@ -526,7 +538,7 @@ public class TransactionService {
                 break;
             } catch (jakarta.persistence.NoResultException e) {
                 if (attempt == 2)
-                    throw e;
+                    throw new AppException("Transaction not found: " + idOrRef, HttpStatus.NOT_FOUND);
                 try {
                     Thread.sleep(300);
                 } catch (InterruptedException ie) {
@@ -886,6 +898,7 @@ public class TransactionService {
         addFilter(sql, qp, params, "channel_id", "t.channel");
         addFilter(sql, qp, params, "payment_method", "t.payment_method");
         addFilter(sql, qp, params, "payment_method_id", "t.payment_method");
+        tenantScope.appendUserScope(sql, qp, "t.user_id");
         sql.append(" GROUP BY t.status_code");
 
         Query q = entityManager.createNativeQuery(sql.toString());

@@ -3,6 +3,7 @@ package com.tms.report.modules.tid.controller;
 import com.tms.report.core.dto.ApiResponse;
 import com.tms.report.core.dto.PagedResponse;
 import com.tms.report.core.filter.QueryFilterHelper;
+import com.tms.report.core.security.TenantScope;
 import com.tms.report.modules.activity.annotation.LogActivity;
 import com.tms.report.modules.grpc.service.ConfigHttpClient;
 import com.tms.report.modules.grpc.service.GrpcClient;
@@ -30,6 +31,7 @@ public class TidController {
     private final TidRepository tidRepository;
     private final ConfigHttpClient configHttpClient;
     private final GrpcClient grpcClient;
+    private final TenantScope tenantScope;
 
     @GetMapping
     public Map<String, Object> index(@RequestParam Map<String, String> params) {
@@ -44,6 +46,15 @@ public class TidController {
     private Specification<Tid> buildSpec(Map<String, String> params) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
+
+            // Per-bank tenant scope: a bank sees only TIDs it issued.
+            if (!tenantScope.isGlobal()) {
+                String bank = tenantScope.bankCode();
+                if (bank == null || bank.isBlank()) {
+                    return cb.disjunction(); // unmapped non-global → nothing
+                }
+                predicates.add(cb.equal(root.get("bankCode"), bank));
+            }
 
             String terminalId = trim(params.get("terminal_id"));
             if (terminalId != null) {
@@ -103,8 +114,14 @@ public class TidController {
 
     @GetMapping("/{id}")
     public ApiResponse<Tid> show(@PathVariable Long id) {
-        return ApiResponse
-                .success(tidRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Not found")));
+        Tid tid = tidRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Not found"));
+        if (!tenantScope.isGlobal()) {
+            String bank = tenantScope.bankCode();
+            if (bank == null || !bank.equals(tid.getBankCode())) {
+                throw new EntityNotFoundException("Not found");
+            }
+        }
+        return ApiResponse.success(tid);
     }
 
     @LogActivity(action = "create", description = "{admin} uploaded TIDs file")
@@ -121,7 +138,7 @@ public class TidController {
                 || (!filename.endsWith(".xlsx") && !filename.endsWith(".xls") && !filename.endsWith(".csv"))) {
             throw new RuntimeException("File must be xlsx, xls, or csv");
         }
-        var result = configHttpClient.uploadTids(file, internal, processor);
+        var result = configHttpClient.uploadTids(file, internal, processor, tenantScope.bankCode());
         return ApiResponse.success((Map<String, Object>) result.get("data"));
     }
 

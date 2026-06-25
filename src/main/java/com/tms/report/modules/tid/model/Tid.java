@@ -24,6 +24,10 @@ public class Tid {
     @JsonProperty("user_id")
     private Long userId;
 
+    @Column(name = "bank_code")
+    @JsonProperty("bank_code")
+    private String bankCode;
+
     @Builder.Default
     private Boolean internal = false;
 

@@ -1,5 +1,6 @@
 package com.tms.report.modules.dashboard.service;
 
+import com.tms.report.core.security.TenantScope;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import java.time.Duration;
@@ -16,28 +17,60 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Slim overview for the super-merchant (bank) portal.
- *
- * <p>
- * Unlike the internal admin dashboard, this deliberately excludes platform
- * finance (revenue, liquidity, provider balances, double-entry ledger
- * integrity). A bank using this portal cares about its terminal estate, the
- * merchants it has onboarded, and the health of the transactions flowing
- * through those terminals — nothing about platform economics or provider
- * routing.
- *
- * <p>
- * Every figure is sourced from the replicated {@code transactions},
- * {@code users}, {@code terminals} and {@code tids} tables only.
+ * Slim, per-bank-scoped overview for the super-merchant portal. Every figure is
+ * restricted to the caller's bank via {@link TenantScope} — a bank sees only
+ * its direct merchants' terminals/TIDs/transactions; a global (IRPay) user sees
+ * everything. No platform finance (revenue/liquidity/ledger).
  */
 @Service
 @RequiredArgsConstructor
 public class DashboardService {
 
     private final EntityManager entityManager;
+    private final TenantScope tenantScope;
 
     private static final DateTimeFormatter LABEL_FMT = DateTimeFormatter.ofPattern("MMM d");
     private static final List<String> TREND_STATUSES = List.of("completed", "processing", "reversed");
+
+    // ---------------------------------------------------------------------
+    // Scope helpers
+    // ---------------------------------------------------------------------
+
+    /** Scope fragment for a query whose user-id column is {@code col}. */
+    private String userScope(String col) {
+        if (tenantScope.isGlobal()) {
+            return "";
+        }
+        String bank = tenantScope.bankCode();
+        if (bank == null || bank.isBlank()) {
+            return " AND 1=0";
+        }
+        return " AND " + col + " IN (SELECT user_id FROM tids WHERE bank_code = :smBank)";
+    }
+
+    /** Scope fragment for the {@code tids} table (alias {@code td}). */
+    private String tidScope(String alias) {
+        if (tenantScope.isGlobal()) {
+            return "";
+        }
+        String bank = tenantScope.bankCode();
+        if (bank == null || bank.isBlank()) {
+            return " AND 1=0";
+        }
+        return " AND " + alias + ".bank_code = :smBank";
+    }
+
+    private boolean bankBound() {
+        String bank = tenantScope.bankCode();
+        return !tenantScope.isGlobal() && bank != null && !bank.isBlank();
+    }
+
+    private Query bindScope(Query q) {
+        if (bankBound()) {
+            q.setParameter("smBank", tenantScope.bankCode());
+        }
+        return q;
+    }
 
     @Transactional(readOnly = true)
     public Map<String, Object> getDashboardData(Map<String, String> params) {
@@ -58,7 +91,7 @@ public class DashboardService {
     }
 
     // ---------------------------------------------------------------------
-    // Stats — headline volume & estate size
+    // Stats
     // ---------------------------------------------------------------------
 
     private Map<String, Object> getStats(StatusAgg current) {
@@ -66,9 +99,9 @@ public class DashboardService {
         Map<String, Object> stats = new LinkedHashMap<>();
         stats.put("total_processed_value", completed.amount);
         stats.put("total_transactions", completed.count);
-        stats.put("total_merchants", countScalar("SELECT COUNT(*) FROM users", Map.of()));
-        stats.put("total_terminals", countScalar("SELECT COUNT(*) FROM terminals", Map.of()));
-        stats.put("total_tids", countScalar("SELECT COUNT(*) FROM tids", Map.of()));
+        stats.put("total_merchants", scalar("SELECT COUNT(*) FROM users WHERE 1=1" + userScope("id")));
+        stats.put("total_terminals", scalar("SELECT COUNT(*) FROM terminals WHERE 1=1" + userScope("user_id")));
+        stats.put("total_tids", scalar("SELECT COUNT(*) FROM tids td WHERE 1=1" + tidScope("td")));
         return stats;
     }
 
@@ -109,8 +142,12 @@ public class DashboardService {
     }
 
     private long stuckCount() {
-        return countScalar("SELECT COUNT(*) FROM transactions WHERE status_code = 'processing' AND created_at < :cut",
-                Map.of("cut", LocalDateTime.now().minusHours(1)));
+        Query q = entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM transactions WHERE status_code = 'processing' AND created_at < :cut"
+                        + userScope("user_id"));
+        q.setParameter("cut", LocalDateTime.now().minusHours(1));
+        bindScope(q);
+        return ((Number) q.getSingleResult()).longValue();
     }
 
     // ---------------------------------------------------------------------
@@ -119,32 +156,36 @@ public class DashboardService {
 
     private Map<String, Object> getTerminalStats(Period period) {
         Map<String, Object> terminals = new LinkedHashMap<>();
-        terminals.put("total", countScalar("SELECT COUNT(*) FROM terminals", Map.of()));
-        terminals.put("assigned_tids", countScalar("SELECT COUNT(*) FROM tids", Map.of()));
-        terminals.put("transacting", countScalar("""
+        terminals.put("total", scalar("SELECT COUNT(*) FROM terminals WHERE 1=1" + userScope("user_id")));
+        terminals.put("assigned_tids", scalar("SELECT COUNT(*) FROM tids td WHERE 1=1" + tidScope("td")));
+        Query q = entityManager.createNativeQuery("""
                 SELECT COUNT(DISTINCT t.terminal_id)
                 FROM transactions t
                 WHERE t.terminal_id IS NOT NULL AND t.status_code = 'completed'
                   AND t.created_at >= :s AND t.created_at <= :e
-                """, Map.of("s", period.start, "e", period.end)));
+                """ + userScope("t.user_id"));
+        q.setParameter("s", period.start);
+        q.setParameter("e", period.end);
+        bindScope(q);
+        terminals.put("transacting", ((Number) q.getSingleResult()).longValue());
         return terminals;
     }
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> topTerminals(Period period) {
         Query q = entityManager.createNativeQuery("""
-                SELECT t.terminal_id,
-                       COUNT(*) as cnt,
-                       COALESCE(SUM(t.amount), 0) as total
+                SELECT t.terminal_id, COUNT(*) as cnt, COALESCE(SUM(t.amount), 0) as total
                 FROM transactions t
                 WHERE t.terminal_id IS NOT NULL AND t.status_code = 'completed'
                   AND t.created_at >= :s AND t.created_at <= :e
-                GROUP BY t.terminal_id
+                """ + userScope("t.user_id") + """
+                 GROUP BY t.terminal_id
                 ORDER BY total DESC
                 LIMIT 10
                 """);
         q.setParameter("s", period.start);
         q.setParameter("e", period.end);
+        bindScope(q);
         List<Object[]> rows = q.getResultList();
         List<Map<String, Object>> out = new ArrayList<>();
         for (Object[] row : rows) {
@@ -174,11 +215,13 @@ public class DashboardService {
                 SELECT CAST(created_at AS date) as d, status_code, COALESCE(SUM(amount), 0)
                 FROM transactions
                 WHERE created_at >= :s AND created_at <= :e AND status_code IN ('completed', 'processing', 'reversed')
-                GROUP BY CAST(created_at AS date), status_code
+                """ + userScope("user_id") + """
+                 GROUP BY CAST(created_at AS date), status_code
                 ORDER BY d
                 """);
         q.setParameter("s", period.start);
         q.setParameter("e", period.end);
+        bindScope(q);
         List<Object[]> rows = q.getResultList();
 
         Map<String, Map<LocalDate, Double>> byStatus = new HashMap<>();
@@ -197,11 +240,11 @@ public class DashboardService {
         List<Map<String, Object>> series = new ArrayList<>();
         for (String status : TREND_STATUSES) {
             Map<LocalDate, Double> bucketMap = byStatus.getOrDefault(status, Map.of());
-            List<Double> series_data = new ArrayList<>();
+            List<Double> seriesData = new ArrayList<>();
             for (LocalDate d : ordered) {
-                series_data.add(bucketMap.getOrDefault(d, 0.0));
+                seriesData.add(bucketMap.getOrDefault(d, 0.0));
             }
-            series.add(Map.of("name", capitalize(status), "data", series_data));
+            series.add(Map.of("name", capitalize(status), "data", seriesData));
         }
         return Map.of("categories", categories, "series", series);
     }
@@ -214,12 +257,14 @@ public class DashboardService {
                 FROM transactions t
                 JOIN products p ON p.id = t.product_id
                 WHERE t.created_at >= :s AND t.created_at <= :e
-                GROUP BY t.product_id, p.name
+                """ + userScope("t.user_id") + """
+                 GROUP BY t.product_id, p.name
                 HAVING COALESCE(SUM(CASE WHEN t.status_code != 'failed' THEN t.amount ELSE 0 END), 0) > 0
                 ORDER BY total DESC
                 """);
         q.setParameter("s", period.start);
         q.setParameter("e", period.end);
+        bindScope(q);
         List<Object[]> rows = q.getResultList();
         return rows.stream().map(row -> {
             Map<String, Object> item = new LinkedHashMap<>();
@@ -231,21 +276,21 @@ public class DashboardService {
     }
 
     // ---------------------------------------------------------------------
-    // Status aggregation (one query powers stats / health)
+    // Status aggregation
     // ---------------------------------------------------------------------
 
     @SuppressWarnings("unchecked")
     private StatusAgg statusAgg(LocalDateTime start, LocalDateTime end) {
         Query q = entityManager.createNativeQuery("""
-                SELECT status_code,
-                       COUNT(*) as cnt,
-                       COALESCE(SUM(amount), 0) as amt
+                SELECT status_code, COUNT(*) as cnt, COALESCE(SUM(amount), 0) as amt
                 FROM transactions
                 WHERE created_at >= :s AND created_at <= :e
-                GROUP BY status_code
+                """ + userScope("user_id") + """
+                 GROUP BY status_code
                 """);
         q.setParameter("s", start);
         q.setParameter("e", end);
+        bindScope(q);
         List<Object[]> rows = q.getResultList();
 
         StatusAgg agg = new StatusAgg();
@@ -260,13 +305,18 @@ public class DashboardService {
     }
 
     // ---------------------------------------------------------------------
-    // Period handling
+    // Period / helpers
     // ---------------------------------------------------------------------
+
+    private long scalar(String sql) {
+        Query q = entityManager.createNativeQuery(sql);
+        bindScope(q);
+        return ((Number) q.getSingleResult()).longValue();
+    }
 
     private Period resolvePeriod(Map<String, String> params) {
         LocalDateTime start = parseDate(params.get("start_date"), true);
         LocalDateTime end = parseDate(params.get("end_date"), false);
-
         if (start == null && end == null) {
             start = LocalDate.now().withDayOfMonth(1).atStartOfDay();
             end = LocalDateTime.now();
@@ -275,7 +325,6 @@ public class DashboardService {
         } else if (end == null) {
             end = LocalDateTime.now();
         }
-
         Period period = new Period();
         period.start = start;
         period.end = end;
@@ -308,17 +357,6 @@ public class DashboardService {
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------------------
-
-    @SuppressWarnings("unchecked")
-    private long countScalar(String sql, Map<String, Object> params) {
-        Query q = entityManager.createNativeQuery(sql);
-        params.forEach(q::setParameter);
-        return ((Number) q.getSingleResult()).longValue();
-    }
-
     private double pctChange(double current, double previous) {
         double change = previous == 0 ? (current > 0 ? 100 : 0) : (current - previous) / previous * 100;
         return round2(change);
@@ -344,10 +382,6 @@ public class DashboardService {
         }
         return LocalDate.parse(o.toString());
     }
-
-    // ---------------------------------------------------------------------
-    // Value holders
-    // ---------------------------------------------------------------------
 
     private static class Period {
         LocalDateTime start;

@@ -119,24 +119,11 @@ public class AppSeedCommand implements CommandLineRunner {
         }
 
         List<RoleDef> defaults = List.of(new RoleDef("super_admin", "Super Admin", List.of("*")),
-                new RoleDef("compliance", "Compliance", List.of("manage_kyc")),
-                new RoleDef("aggregator", "Aggregator", List.of("manage_user_profile", "access_financial_report")),
-                new RoleDef("settlement", "Settlement",
-                        List.of("manage_inventory", "manage_user_wallet", "access_financial_report", "view_transaction",
-                                "manage_transaction", "manage_manual_funding")),
-                new RoleDef("support", "Technical Support",
-                        List.of("manage_dispute", "manage_terminal", "manage_user_profile")),
-                new RoleDef("customer_care", "Customer care", List.of("manage_dispute", "manage_user_profile")),
-                new RoleDef("reconciliation", "Reconciliation",
-                        List.of("access_financial_report", "manage_user_wallet")),
-                new RoleDef("audit", "Audit", List.of("audit", "view_system_configuration")),
-                new RoleDef("operations", "Operations", List.of()),
-                new RoleDef("finance", "Finance",
-                        List.of("access_financial_report", "manage_user_wallet", "manage_settlement",
-                                "manage_manual_funding", "view_transaction", "manage_stock_purchase",
-                                "view_system_configuration")),
-                new RoleDef("admin", "Admin", List.of()),
-                new RoleDef("quality_assurance", "Quality Assurance", List.of()));
+                new RoleDef("bank_admin", "Bank Admin",
+                        List.of("view_dashboard", "view_transaction", "manage_terminal", "manage_user_profile",
+                                "manage_kyc")),
+                new RoleDef("bank_operator", "Bank Operator",
+                        List.of("view_dashboard", "view_transaction", "manage_terminal")));
 
         for (RoleDef r : defaults) {
             Role role = roleRepository.findByCode(r.code()).orElse(null);
