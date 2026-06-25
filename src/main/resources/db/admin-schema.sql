@@ -103,6 +103,15 @@ CREATE TABLE IF NOT EXISTS supermerchant.invitations (
     updated_at      TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS supermerchant.otps (
+    id          BIGSERIAL PRIMARY KEY,
+    identifier  VARCHAR(255),
+    token       VARCHAR(255),
+    expires_at  TIMESTAMP,
+    created_at  TIMESTAMP DEFAULT NOW(),
+    updated_at  TIMESTAMP DEFAULT NOW()
+);
+
 -- Seed roles
 INSERT INTO supermerchant.roles (id, name, code) VALUES
     (1, 'Super Admin', 'super_admin'),

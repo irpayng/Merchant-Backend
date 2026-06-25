@@ -15,7 +15,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 @Entity
-@Table(name = "admins")
+@Table(name = "admins", schema = "supermerchant")
 @Data
 @Builder
 @NoArgsConstructor
@@ -60,7 +60,7 @@ public class Admin {
     private LocalDateTime emailVerifiedAt;
 
     @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(name = "admin_role", joinColumns = @JoinColumn(name = "admin_id"), inverseJoinColumns = @JoinColumn(name = "role_id"))
+    @JoinTable(name = "admin_role", schema = "supermerchant", joinColumns = @JoinColumn(name = "admin_id"), inverseJoinColumns = @JoinColumn(name = "role_id"))
     @Builder.Default
     @JsonIgnoreProperties({"privileges"})
     private Set<Role> roles = new HashSet<>();

@@ -14,7 +14,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "roles")
+@Table(name = "roles", schema = "supermerchant")
 @Data
 @Builder
 @NoArgsConstructor
@@ -35,7 +35,7 @@ public class Role {
     private String description;
 
     @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(name = "role_privilege", joinColumns = @JoinColumn(name = "role_id"), inverseJoinColumns = @JoinColumn(name = "privilege_id"))
+    @JoinTable(name = "role_privilege", schema = "supermerchant", joinColumns = @JoinColumn(name = "role_id"), inverseJoinColumns = @JoinColumn(name = "privilege_id"))
     @Builder.Default
     private Set<Privilege> privileges = new HashSet<>();
 

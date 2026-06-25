@@ -14,7 +14,7 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 @Entity
-@Table(name = "privileges")
+@Table(name = "privileges", schema = "supermerchant")
 @Data
 @Builder
 @NoArgsConstructor
