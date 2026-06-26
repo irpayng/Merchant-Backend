@@ -2,9 +2,11 @@ package com.tms.report.core.security;
 
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -34,6 +36,18 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final AdminDetailsService adminDetailsService;
     private final ObjectMapper objectMapper;
+
+    /**
+     * Comma-separated list of browser origins allowed to call this API. Defaults
+     * cover local dev, the internal *.irpay.local ingress, and the public portal
+     * hosts (staging-sm / sm). Override per-environment with CORS_ALLOWED_ORIGINS
+     * if a new host is added.
+     */
+    @Value("${app.cors.allowed-origins:" + "http://localhost:3000,http://127.0.0.1:3000,"
+            + "http://super-merchant.irpay.local,https://super-merchant.irpay.local,"
+            + "http://super-merchant-api.irpay.local,https://super-merchant-api.irpay.local,"
+            + "https://staging-sm.irpay.dev,https://sm.irpay.dev}")
+    private String allowedOrigins;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -85,9 +99,8 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:3000", "http://127.0.0.1:3000",
-                "http://super-merchant.irpay.local", "https://super-merchant.irpay.local",
-                "http://super-merchant-api.irpay.local", "https://super-merchant-api.irpay.local"));
+        config.setAllowedOrigins(
+                Arrays.stream(allowedOrigins.split(",")).map(String::trim).filter(s -> !s.isBlank()).toList());
         config.setAllowedMethods(List.of("*"));
         config.setAllowedHeaders(List.of("*"));
         config.setExposedHeaders(List.of("Authorization"));
