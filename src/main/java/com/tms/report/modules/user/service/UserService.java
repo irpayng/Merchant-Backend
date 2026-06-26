@@ -120,7 +120,8 @@ public class UserService {
                        TRIM(COALESCE(pp.first_name, '') || ' ' || COALESCE(pp.last_name, '')) as parent_name,
                        u.bvn_photo_url,
                        (SELECT w.pnd_reason FROM wallets w WHERE w.user_id = u.id AND w.pnd = true AND w.pnd_reason IS NOT NULL LIMIT 1) as pnd_reason,
-                       u.frozen_at, u.suspended_at, u.blocked_at
+                       u.frozen_at, u.suspended_at, u.blocked_at,
+                       CASE WHEN EXISTS (SELECT 1 FROM instant_settlements ist WHERE ist.user_id = u.id AND ist.status = 'active') THEN true ELSE false END as instant_settlement
                 FROM users u
                 LEFT JOIN profiles p ON p.user_id = u.id
                 LEFT JOIN tiers t ON t.code = CAST(u.tier_id AS text)
@@ -629,13 +630,17 @@ public class UserService {
         boolean frozen = row.length > 16 && row[16] != null;
         boolean suspended = row.length > 17 && row[17] != null;
         boolean blocked = row.length > 18 && row[18] != null;
+        // row[19]=instant_settlement — whether the merchant has an active
+        // instant-settlement enrollment. Surfaced as a column on the Merchants
+        // list so a bank can see at a glance who is enrolled.
+        boolean instantSettlement = row.length > 19 && Boolean.TRUE.equals(row[19]);
 
         return UserDto.builder().id(((Number) row[0]).longValue()).name(name)
                 .email(row[2] != null ? row[2].toString() : null).avatar(avatar)
                 .phoneNumber(row[3] != null ? row[3].toString() : null).tier(tierDto)
                 .type(row[4] != null ? row[4].toString() : null).lastTransactionDate(lastTxDate)
                 .active((Boolean) row[8]).pnd((Boolean) row[9]).pndReason(pndReason).frozen(frozen).suspended(suspended)
-                .blocked(blocked).parent(parent).createdAt(createdAt).build();
+                .blocked(blocked).instantSettlement(instantSettlement).parent(parent).createdAt(createdAt).build();
     }
 
     private UserDto toDto(User user) {

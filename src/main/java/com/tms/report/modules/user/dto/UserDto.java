@@ -39,6 +39,9 @@ public class UserDto {
     private Boolean suspended;
     private Boolean blocked;
 
+    @JsonProperty("instant_settlement")
+    private Boolean instantSettlement;
+
     private Object parent;
 
     @JsonProperty("created_at")
