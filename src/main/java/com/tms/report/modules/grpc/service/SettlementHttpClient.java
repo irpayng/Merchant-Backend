@@ -1,7 +1,7 @@
 package com.tms.report.modules.grpc.service;
 
 import com.shared.util.Ulid;
-import com.tms.report.core.security.AdminDetails;
+import com.tms.report.core.security.MerchantUserDetails;
 import com.tms.report.modules.grpc.config.GrpcProperties;
 import com.tms.report.modules.grpc.config.ServiceEndpoint;
 import com.tms.report.modules.grpc.exception.GrpcException;
@@ -87,10 +87,10 @@ public class SettlementHttpClient {
     private Map<String, Object> buildActor() {
         Map<String, Object> actor = new LinkedHashMap<>();
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof AdminDetails details) {
-            actor.put("id", String.valueOf(details.getAdmin().getId()));
-            actor.put("name", details.getAdmin().getName());
-            actor.put("email", details.getAdmin().getEmail());
+        if (auth != null && auth.getPrincipal() instanceof MerchantUserDetails details) {
+            actor.put("id", String.valueOf(details.getMerchantUser().getId()));
+            actor.put("name", details.getMerchantUser().getName());
+            actor.put("email", details.getMerchantUser().getEmail());
         } else {
             actor.put("id", "system");
             actor.put("name", "System");

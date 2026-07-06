@@ -1,61 +1,15 @@
 -- =============================================================================
--- Tables OWNED by super-merchant, isolated in the `supermerchant` schema so they
--- never collide with tms-report-java's `public` auth tables (the two services
--- share the tms_report_java database). The JDBC search_path is
--- `supermerchant, public`, so unqualified reads of replicated business tables
--- (transactions, users, tids, terminals, products) fall through to `public`,
--- while super-merchant's own auth/admin tables resolve here.
+-- Tables OWNED by the merchant service (not replicated). The merchant dashboard
+-- authenticates its own owner/cashier logins (merchant schema) and keeps a few
+-- shared support tables in the `supermerchant` schema, isolated from the
+-- replicated `public` business tables. The JDBC search_path resolves owned
+-- tables here and falls through to `public` for replicated reads.
+--
+-- The former bank-portal auth model (admins / roles / privileges / banks) was
+-- removed in the merchant conversion — see the `merchant` schema below.
 -- =============================================================================
 
 CREATE SCHEMA IF NOT EXISTS supermerchant;
-
-CREATE TABLE IF NOT EXISTS supermerchant.admins (
-    id              BIGSERIAL PRIMARY KEY,
-    name            VARCHAR(255),
-    email           VARCHAR(255) UNIQUE,
-    phone_number    VARCHAR(255),
-    password        VARCHAR(255),
-    -- Tenant key: the bank this portal user belongs to. NULL = global (IRPay
-    -- staff) when combined with the super_admin role. A non-super user with a
-    -- bank_code is scoped to that bank's direct merchants.
-    bank_code       VARCHAR(20),
-    blocked_at      TIMESTAMP,
-    blocked_reason  TEXT,
-    email_verified_at TIMESTAMP,
-    created_at      TIMESTAMP DEFAULT NOW(),
-    updated_at      TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS supermerchant.roles (
-    id          BIGSERIAL PRIMARY KEY,
-    name        VARCHAR(255),
-    code        VARCHAR(255) UNIQUE,
-    description TEXT,
-    created_at  TIMESTAMP DEFAULT NOW(),
-    updated_at  TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS supermerchant.privileges (
-    id          BIGSERIAL PRIMARY KEY,
-    name        VARCHAR(255),
-    code        VARCHAR(255) UNIQUE,
-    description TEXT,
-    modules     JSONB,
-    created_at  TIMESTAMP DEFAULT NOW(),
-    updated_at  TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS supermerchant.admin_role (
-    admin_id    BIGINT NOT NULL REFERENCES supermerchant.admins(id) ON DELETE CASCADE,
-    role_id     BIGINT NOT NULL REFERENCES supermerchant.roles(id) ON DELETE CASCADE,
-    PRIMARY KEY (admin_id, role_id)
-);
-
-CREATE TABLE IF NOT EXISTS supermerchant.role_privilege (
-    role_id         BIGINT NOT NULL REFERENCES supermerchant.roles(id) ON DELETE CASCADE,
-    privilege_id    BIGINT NOT NULL REFERENCES supermerchant.privileges(id) ON DELETE CASCADE,
-    PRIMARY KEY (role_id, privilege_id)
-);
 
 CREATE TABLE IF NOT EXISTS supermerchant.password_resets (
     id          BIGSERIAL PRIMARY KEY,
@@ -65,9 +19,12 @@ CREATE TABLE IF NOT EXISTS supermerchant.password_resets (
     created_at  TIMESTAMP DEFAULT NOW()
 );
 
+-- Activity/audit log. actor_id references a merchant_users login (no FK — the
+-- actor may be a system action). Column kept as admin_id for entity mapping
+-- compatibility.
 CREATE TABLE IF NOT EXISTS supermerchant.admin_activities (
     id              BIGSERIAL PRIMARY KEY,
-    admin_id        BIGINT REFERENCES supermerchant.admins(id) ON DELETE SET NULL,
+    admin_id        BIGINT,
     action          VARCHAR(255) NOT NULL,
     description     TEXT NOT NULL,
     actionable_type VARCHAR(255),
@@ -112,34 +69,41 @@ CREATE TABLE IF NOT EXISTS supermerchant.otps (
     updated_at  TIMESTAMP DEFAULT NOW()
 );
 
--- Enrolled tenant banks (the portal's bank registry).
-CREATE TABLE IF NOT EXISTS supermerchant.banks (
-    id            BIGSERIAL PRIMARY KEY,
-    code          VARCHAR(20) UNIQUE NOT NULL,
-    name          VARCHAR(255),
-    contact_email VARCHAR(255),
-    status        VARCHAR(20) DEFAULT 'active',
-    created_at    TIMESTAMP DEFAULT NOW(),
-    updated_at    TIMESTAMP DEFAULT NOW()
+-- =============================================================================
+-- MERCHANT identity — per-merchant dashboard logins (owner + cashiers).
+-- A login is bound to a merchant (users.id); a cashier may be locked to one
+-- terminal. Onboarding (document upload) captures no password, so accounts
+-- start `pending` and are activated via link or OTP (activation_tokens).
+-- =============================================================================
+CREATE SCHEMA IF NOT EXISTS merchant;
+
+CREATE TABLE IF NOT EXISTS merchant.merchant_users (
+    id                BIGSERIAL PRIMARY KEY,
+    merchant_id       BIGINT NOT NULL,
+    terminal_id       BIGINT,
+    role              VARCHAR(20)  NOT NULL DEFAULT 'owner',   -- owner | cashier
+    name              VARCHAR(255),
+    email             VARCHAR(255) UNIQUE,
+    phone_number      VARCHAR(255),
+    password          VARCHAR(255),
+    status            VARCHAR(20)  NOT NULL DEFAULT 'pending', -- pending | active | revoked
+    email_verified_at TIMESTAMP,
+    invited_by        BIGINT REFERENCES merchant.merchant_users(id) ON DELETE SET NULL,
+    created_at        TIMESTAMP DEFAULT NOW(),
+    updated_at        TIMESTAMP DEFAULT NOW()
 );
 
--- Seed roles
-INSERT INTO supermerchant.roles (id, name, code) VALUES
-    (1, 'Super Admin', 'super_admin'),
-    (2, 'Bank Admin', 'bank_admin'),
-    (3, 'Bank Operator', 'bank_operator')
-ON CONFLICT (code) DO NOTHING;
+CREATE INDEX IF NOT EXISTS merchant_users_merchant_id_idx ON merchant.merchant_users(merchant_id);
 
--- Seed default global super admin (password: milimatr). bank_code NULL = global.
-INSERT INTO supermerchant.admins (id, name, email, password, email_verified_at, created_at, updated_at)
-VALUES (1, 'Admin', 'admin@irpay.ng',
-        '$2a$10$h.DJQ.4RR6M/ZeN.kLBWr.1xA2gRO5edlbzzpJKWZGrYHreyT2AwG',
-        NOW(), NOW(), NOW())
-ON CONFLICT (email) DO NOTHING;
+CREATE TABLE IF NOT EXISTS merchant.activation_tokens (
+    id                BIGSERIAL PRIMARY KEY,
+    merchant_user_id  BIGINT NOT NULL REFERENCES merchant.merchant_users(id) ON DELETE CASCADE,
+    token             VARCHAR(255) UNIQUE,        -- link channel (opaque, emailed)
+    otp               VARCHAR(10),                -- otp channel (SMS/email code)
+    channel           VARCHAR(10) NOT NULL,       -- link | otp
+    expires_at        TIMESTAMP NOT NULL,
+    consumed_at       TIMESTAMP,
+    created_at        TIMESTAMP DEFAULT NOW()
+);
 
-INSERT INTO supermerchant.admin_role (admin_id, role_id) VALUES (1, 1)
-ON CONFLICT DO NOTHING;
-
--- Realign sequences after explicit-id seeds (idempotent).
-SELECT setval('supermerchant.admins_id_seq', GREATEST((SELECT COALESCE(MAX(id), 1) FROM supermerchant.admins), (SELECT last_value FROM supermerchant.admins_id_seq)), true);
-SELECT setval('supermerchant.roles_id_seq',  GREATEST((SELECT COALESCE(MAX(id), 1) FROM supermerchant.roles),  (SELECT last_value FROM supermerchant.roles_id_seq)),  true);
+CREATE INDEX IF NOT EXISTS activation_tokens_user_idx ON merchant.activation_tokens(merchant_user_id);

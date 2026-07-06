@@ -3,10 +3,12 @@ package com.tms.report.modules.terminal.controller;
 import com.tms.report.core.dto.ApiResponse;
 import com.tms.report.core.dto.PagedResponse;
 import com.tms.report.core.export.XlsxExporter;
-import com.tms.report.core.security.TenantScope;
+import com.tms.report.core.filter.QueryFilterHelper;
+import com.tms.report.core.security.MerchantScope;
 import com.tms.report.modules.activity.annotation.LogActivity;
 import com.tms.report.modules.grpc.service.ConfigHttpClient;
 import com.tms.report.modules.grpc.service.GrpcClient;
+import com.tms.report.modules.transaction.service.TransactionService;
 import com.tms.report.modules.terminal.model.ProviderKeyStatus;
 import com.tms.report.modules.terminal.model.Terminal;
 import com.tms.report.modules.terminal.model.TerminalMetric;
@@ -14,6 +16,7 @@ import com.tms.report.modules.terminal.repository.ProviderKeyStatusRepository;
 import com.tms.report.modules.terminal.repository.TerminalMetricRepository;
 import com.tms.report.modules.terminal.repository.TerminalRepository;
 import jakarta.persistence.EntityManager;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
@@ -37,18 +40,17 @@ public class TerminalController {
     private final ProviderKeyStatusRepository providerKeyStatusRepository;
     private final TerminalMetricRepository terminalMetricRepository;
     private final EntityManager entityManager;
-    private final TenantScope tenantScope;
+    private final MerchantScope merchantScope;
+    private final TransactionService transactionService;
 
     /**
-     * Bank scope value for the repository query: null = global, the bank code when
-     * scoped, or a non-matching sentinel for an unmapped non-global user.
+     * Merchant id for the repository query. Fails closed to a non-matching sentinel
+     * ({@code -1}) when there is no merchant in context, so the estate is never
+     * leaked. The endpoints require authentication, so this is normally set.
      */
-    private String bankScope() {
-        if (tenantScope.isGlobal()) {
-            return null;
-        }
-        String b = tenantScope.bankCode();
-        return (b == null || b.isBlank()) ? "__no_bank__" : b;
+    private Long merchantScopeId() {
+        Long m = merchantScope.merchantId();
+        return m != null ? m : -1L;
     }
 
     @GetMapping
@@ -86,21 +88,10 @@ public class TerminalController {
         // in the native column space.
         var pageable = PageRequest.of(page, limit);
         var result = terminalRepository.findFiltered(searchPattern, make, os, networkType, batteryBelow, printerStatus,
-                staleSince, mapped, parseLocked(params.get("status")), bankScope(), pageable);
+                staleSince, mapped, parseLocked(params.get("status")), merchantScopeId(), merchantScope.terminalId(),
+                pageable);
         attachMappedUsers(result.getContent());
         return PagedResponse.from(result, "/terminals", extra);
-    }
-
-    @GetMapping("/download-sample")
-    public void downloadSample(HttpServletResponse response) throws Exception {
-        var stream = getClass().getClassLoader().getResourceAsStream("sample/pos_terminals.xlsx");
-        if (stream == null) {
-            response.sendError(404, "Sample file not found");
-            return;
-        }
-        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        response.setHeader("Content-Disposition", "attachment; filename=terminal_sample_document.xlsx");
-        stream.transferTo(response.getOutputStream());
     }
 
     @GetMapping("/download")
@@ -115,13 +106,15 @@ public class TerminalController {
         final LocalDateTime staleSince = parseStaleCutoff(params.get("stale"));
         final String mapped = parseMapped(params.get("mapped"));
         final String locked = parseLocked(params.get("status"));
-        final String scope = bankScope();
+        final Long merchantId = merchantScopeId();
+        final Long terminalId = merchantScope.terminalId();
 
         XlsxExporter.streamPaged(response, "terminals",
                 new String[]{"ID", "Serial", "OS", "Model", "Make", "User ID", "Agent", "Active", "Created At"}, 1000,
                 (page, size) -> {
                     var content = terminalRepository.findFiltered(searchPattern, make, os, networkType, batteryBelow,
-                            printerStatus, staleSince, mapped, locked, scope, PageRequest.of(page, size)).getContent();
+                            printerStatus, staleSince, mapped, locked, merchantId, terminalId, PageRequest.of(page, size))
+                            .getContent();
                     attachMappedUsers(content);
                     return content;
                 },
@@ -134,47 +127,87 @@ public class TerminalController {
 
     @GetMapping("/{id}")
     public ApiResponse<Terminal> show(@PathVariable Long id) {
-        Terminal terminal = terminalRepository.findById(id).orElseThrow();
-        if (!tenantScope.isGlobal()) {
-            String bank = tenantScope.bankCode();
-            boolean ok = bank != null && !bank.isBlank() && terminal.getUserId() != null
-                    && ((Number) entityManager
-                            .createNativeQuery("SELECT COUNT(*) FROM tids WHERE bank_code = :bank AND user_id = :uid")
-                            .setParameter("bank", bank).setParameter("uid", terminal.getUserId()).getSingleResult())
-                            .longValue() > 0;
-            if (!ok) {
-                throw new java.util.NoSuchElementException("Terminal not found");
-            }
-        }
+        Terminal terminal = loadScopedTerminal(id);
         attachMappedUsers(List.of(terminal));
         return ApiResponse.success(terminal);
     }
 
-    @LogActivity(action = "create", description = "{admin} uploaded terminals file")
-    @PostMapping(consumes = "multipart/form-data")
-    @PreAuthorize("hasAuthority('manage_terminal')")
-    public ApiResponse<Map<String, Object>> store(@RequestParam("file") MultipartFile file) {
-        if (file.isEmpty()) {
-            throw new RuntimeException("File is required");
+    /**
+     * Loads a terminal by id and enforces merchant scope: the terminal must belong
+     * to the authenticated merchant ({@code terminals.user_id = merchant_id}), and
+     * for a cashier locked to one terminal, it must be that terminal. Throws
+     * {@link java.util.NoSuchElementException} (rendered 404) otherwise, so a
+     * merchant can't probe another merchant's estate by id.
+     */
+    private Terminal loadScopedTerminal(Long id) {
+        Terminal terminal = terminalRepository.findById(id)
+                .orElseThrow(() -> new java.util.NoSuchElementException("Terminal not found"));
+        Long merchantId = merchantScope.merchantId();
+        boolean ok = merchantId != null && merchantId.equals(terminal.getUserId());
+        Long terminalScope = merchantScope.terminalId();
+        if (ok && terminalScope != null) {
+            ok = terminalScope.equals(terminal.getId());
         }
-        String filename = file.getOriginalFilename();
-        if (filename == null
-                || (!filename.endsWith(".xlsx") && !filename.endsWith(".xls") && !filename.endsWith(".csv"))) {
-            throw new RuntimeException("File must be xlsx, xls, or csv");
+        if (!ok) {
+            throw new java.util.NoSuchElementException("Terminal not found");
         }
-        var result = configHttpClient.uploadTerminals(file);
-        return ApiResponse.success((Map<String, Object>) result.get("data"));
+        return terminal;
     }
 
-    @GetMapping("/all-with-details")
-    public ApiResponse<List<Terminal>> allWithDetails() {
-        return ApiResponse.success(terminalRepository.findAll());
+    /**
+     * GET /terminals/{id}/transactions — all transactions done on this terminal.
+     * Powers the "Transactions" tab on the terminal-detail page. Matches on the
+     * device serial (transactions.terminal_id / metadata serial) and is further
+     * constrained by tenant scope inside {@link TransactionService}, so a bank only
+     * ever sees its own merchants' activity on the device.
+     */
+    @GetMapping("/{id}/transactions")
+    public Map<String, Object> transactions(@PathVariable Long id, @RequestParam Map<String, String> params,
+            HttpServletRequest request) {
+        Terminal terminal = loadScopedTerminal(id);
+        applyTerminalScope(params, terminal);
+        extractDates(request, params);
+        return PagedResponse.from(transactionService.index(params), "/terminals/" + id + "/transactions",
+                Map.of("filters", transactionService.filters(), "stats", transactionService.getSummary(params)));
     }
 
-    @LogActivity(action = "unmap", description = "{admin} unmapped the terminal of {user}", userFrom = "entity:Terminal")
-    @PatchMapping("/{id}/unmap")
-    public ApiResponse<Map<String, Object>> unmap(@PathVariable Long id) {
-        return ApiResponse.success(grpcClient.unmapTerminal(id.toString()));
+    /**
+     * GET /terminals/{id}/transactions/download — XLSX export of the same
+     * terminal-scoped, filtered transaction set shown in the tab.
+     */
+    @GetMapping("/{id}/transactions/download")
+    public void downloadTransactions(@PathVariable Long id, @RequestParam Map<String, String> params,
+            HttpServletRequest request, HttpServletResponse response) throws Exception {
+        Terminal terminal = loadScopedTerminal(id);
+        applyTerminalScope(params, terminal);
+        extractDates(request, params);
+        XlsxExporter.streamPaged(response, "terminal-transactions",
+                new String[]{"Reference", "Amount", "Product", "Provider", "Channel", "Status", "Date"}, 1000,
+                (page, size) -> transactionService.index(QueryFilterHelper.pageParams(params, page, size)).getContent(),
+                row -> new String[]{row.getReference(), row.getAmount(),
+                        row.getProduct() != null ? row.getProduct().getName() : "",
+                        row.getProvider() != null ? row.getProvider().getName() : "",
+                        row.getChannel() != null ? row.getChannel().getName() : "",
+                        row.getStatus() != null ? row.getStatus().getName() : "",
+                        row.getCreatedAt() != null ? row.getCreatedAt().toString() : ""});
+    }
+
+    /**
+     * Stamps the terminal's device serial as the {@code terminal_serial} filter. A
+     * terminal with no serial gets a sentinel that matches nothing, so the tab
+     * fails closed to an empty list rather than leaking the bank's whole feed.
+     */
+    private void applyTerminalScope(Map<String, String> params, Terminal terminal) {
+        String serial = terminal.getSerial();
+        params.put("terminal_serial", serial != null && !serial.isBlank() ? serial : "__no_serial__");
+    }
+
+    private void extractDates(HttpServletRequest request, Map<String, String> params) {
+        String[] dates = request.getParameterValues("dates[]");
+        if (dates != null && dates.length >= 2) {
+            params.put("dates[0]", dates[0]);
+            params.put("dates[1]", dates[1]);
+        }
     }
 
     // ── Provider Key Health ─────────────────────────────────
@@ -478,89 +511,5 @@ public class TerminalController {
             }
         }
         return LocalDateTime.now().minusHours(hours);
-    }
-
-    // ── Lock / Unlock ─────────────────────────────────────────
-
-    /**
-     * POST /terminals/{id}/lock — Admin lock with a reason message. The POS polls
-     * config-service's {@code /terminals/serial/{serial}/status} on launch and
-     * after every transaction, and renders a block screen with the supplied message
-     * until an admin clears the lock.
-     */
-    @LogActivity(action = "lockTerminal", description = "{admin} locked terminal {body.serial}")
-    @PreAuthorize("hasAuthority('manage_terminal')")
-    @PostMapping("/{id}/lock")
-    public ApiResponse<Map<String, Object>> lockTerminal(@PathVariable Long id, @RequestBody Map<String, Object> body) {
-        String message = body != null && body.get("message") != null ? body.get("message").toString().trim() : "";
-        if (message.isEmpty()) {
-            return ApiResponse.error(422, "message is required");
-        }
-        Map<String, Object> response = configHttpClient.postJson("/terminals/" + id + "/lock",
-                Map.of("message", message));
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) response.getOrDefault("data", Map.of());
-        return ApiResponse.success(data);
-    }
-
-    /**
-     * POST /terminals/{id}/unlock — Admin clears the lock. The POS resumes normal
-     * operation on its next status poll.
-     */
-    @LogActivity(action = "unlockTerminal", description = "{admin} unlocked terminal {id}")
-    @PreAuthorize("hasAuthority('manage_terminal')")
-    @PostMapping("/{id}/unlock")
-    public ApiResponse<Map<String, Object>> unlockTerminal(@PathVariable Long id) {
-        Map<String, Object> response = configHttpClient.postJson("/terminals/" + id + "/unlock", Map.of());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) response.getOrDefault("data", Map.of());
-        return ApiResponse.success(data);
-    }
-
-    /**
-     * POST /terminals/{id}/request-prep — Admin remotely triggers a key re-prep on
-     * the device. config-service publishes a {@code pos_prep_requested} MQTT
-     * envelope to the agent's user topic; the POS app's notification dispatcher
-     * invokes {@code TerminalPrepController.forcePrep} on receipt, which downloads
-     * a fresh TMK/TPK pair and re-injects them into the secure pin pad. No agent
-     * action is required — the swap completes in the background.
-     */
-    @LogActivity(action = "requestTerminalPrep", description = "{admin} requested re-prep on terminal {id}")
-    @PreAuthorize("hasAuthority('manage_terminal')")
-    @PostMapping("/{id}/request-prep")
-    public ApiResponse<Map<String, Object>> requestTerminalPrep(@PathVariable Long id) {
-        Map<String, Object> response = configHttpClient.postJson("/terminals/" + id + "/request-prep", Map.of());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) response.getOrDefault("data", Map.of());
-        return ApiResponse.success(data);
-    }
-
-    // ── Per-POS device VA backfill ───────────────────────────
-
-    /**
-     * POST /terminals/backfill-device-accounts — Re-emits a {@code terminal-mapped}
-     * event for every terminal currently bound to a user, so
-     * virtual-account-service can provision a dedicated VA per active provider for
-     * terminals that were mapped <em>before</em> the device-VA feature shipped.
-     * Idempotent — safe to run any number of times.
-     *
-     * <p>
-     * Optional body filters:
-     * <ul>
-     * <li>{@code user_id} — re-emit only for one agent's terminals (surgical
-     * recovery).</li>
-     * <li>{@code limit} — cap how many rows are processed in one call (page a large
-     * fleet).</li>
-     * </ul>
-     */
-    @LogActivity(action = "backfillTerminalMapped", description = "{admin} backfilled per-POS-device virtual accounts")
-    @PreAuthorize("hasAuthority('manage_terminal')")
-    @PostMapping("/backfill-device-accounts")
-    public ApiResponse<Map<String, Object>> backfillDeviceAccounts(
-            @RequestBody(required = false) Map<String, Object> body) {
-        Map<String, Object> payload = body != null ? body : Map.of();
-        Map<String, Object> response = configHttpClient.postGrpcCommand("BackfillTerminalMapped", payload);
-        return ApiResponse.success(Map.of("message", response.getOrDefault("message", ""), "reference",
-                response.getOrDefault("reference", "0")));
     }
 }

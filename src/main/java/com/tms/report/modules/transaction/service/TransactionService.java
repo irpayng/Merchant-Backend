@@ -2,7 +2,7 @@ package com.tms.report.modules.transaction.service;
 
 import com.tms.report.core.exception.AppException;
 import com.tms.report.core.filter.QueryFilterHelper;
-import com.tms.report.core.security.TenantScope;
+import com.tms.report.core.security.MerchantScope;
 import com.tms.report.modules.product.model.Product;
 import com.tms.report.modules.product.repository.ProductRepository;
 import com.tms.report.modules.status.StatusUtil;
@@ -67,7 +67,26 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final ProductRepository productRepository;
     private final EntityManager entityManager;
-    private final TenantScope tenantScope;
+    private final MerchantScope merchantScope;
+
+    /**
+     * Device serial of the cashier's locked terminal, or {@code null} for an owner
+     * (no terminal narrowing). Resolves {@code terminals.id} -> serial; an unknown
+     * terminal yields a non-matching sentinel so a mis-scoped cashier sees nothing.
+     */
+    private String cashierTerminalSerial() {
+        Long terminalId = merchantScope.terminalId();
+        if (terminalId == null) {
+            return null;
+        }
+        try {
+            Object s = entityManager.createNativeQuery("SELECT serial FROM terminals WHERE id = :tid")
+                    .setParameter("tid", terminalId).getResultStream().findFirst().orElse(null);
+            return s != null ? s.toString() : "__no_serial__";
+        } catch (RuntimeException e) {
+            return "__no_serial__";
+        }
+    }
 
     /**
      * Builds the {@code WHERE} clause (search + filters + dates) shared by the
@@ -231,6 +250,15 @@ public class TransactionService {
         addFilter(where, qParams, params, "payment_method_id", "t.payment_method");
         addFilter(where, qParams, params, "payment_method", "t.payment_method");
         addFilter(where, qParams, params, "user_id", "t.user_id");
+        // Terminal scope: match a device serial against either the dedicated
+        // transactions.terminal_id column or the card metadata `serial` — both are
+        // populated depending on the transaction source, so an OR covers every row
+        // done on that physical terminal. Powers the terminal-detail transactions tab.
+        String terminalSerial = params.get("terminal_serial");
+        if (terminalSerial != null && !terminalSerial.isBlank()) {
+            where.append(" AND (t.terminal_id = :terminal_serial OR t.metadata->>'serial' = :terminal_serial)");
+            qParams.put("terminal_serial", terminalSerial.trim());
+        }
         addFilter(where, qParams, params, "location_state", "t.location_state");
         addFilter(where, qParams, params, "location_lga", "t.location_lga");
         QueryFilterHelper.applyDates(where, qParams, params, "t.created_at");
@@ -244,7 +272,8 @@ public class TransactionService {
             where.append(" AND t.metadata->>'indoubt_reversal_unconfirmed' = 'true'");
         }
         // Per-bank tenant scope: restrict to the bank's direct merchants.
-        tenantScope.appendUserScope(where, qParams, "t.user_id");
+        merchantScope.appendTransactionScope(where, qParams, "t.user_id", cashierTerminalSerial(), "t.terminal_id",
+                "t.metadata->>'serial'");
         return where;
     }
 
@@ -521,7 +550,7 @@ public class TransactionService {
         // no row → 404, so a bank user can't fetch another bank's transaction.
         Map<String, Object> scopeBinds = new HashMap<>();
         StringBuilder scope = new StringBuilder();
-        tenantScope.appendUserScope(scope, scopeBinds, "t.user_id");
+        merchantScope.appendUserScope(scope, scopeBinds, "t.user_id");
         sql += scope.toString();
 
         Query q = entityManager.createNativeQuery(sql);
@@ -889,6 +918,12 @@ public class TransactionService {
             sql.append(" AND t.user_id = :uid");
             qp.put("uid", Long.parseLong(userId));
         }
+        // Keep the terminal-scoped stat cards in step with the listing (see buildWhere).
+        String terminalSerial = params.get("terminal_serial");
+        if (terminalSerial != null && !terminalSerial.isBlank()) {
+            sql.append(" AND (t.terminal_id = :terminal_serial OR t.metadata->>'serial' = :terminal_serial)");
+            qp.put("terminal_serial", terminalSerial.trim());
+        }
         appendSearch(sql, qp, params);
         addFilter(sql, qp, params, "status", "t.status_code");
         addFilter(sql, qp, params, "status_code", "t.status_code");
@@ -898,7 +933,8 @@ public class TransactionService {
         addFilter(sql, qp, params, "channel_id", "t.channel");
         addFilter(sql, qp, params, "payment_method", "t.payment_method");
         addFilter(sql, qp, params, "payment_method_id", "t.payment_method");
-        tenantScope.appendUserScope(sql, qp, "t.user_id");
+        merchantScope.appendTransactionScope(sql, qp, "t.user_id", cashierTerminalSerial(), "t.terminal_id",
+                "t.metadata->>'serial'");
         sql.append(" GROUP BY t.status_code");
 
         Query q = entityManager.createNativeQuery(sql.toString());

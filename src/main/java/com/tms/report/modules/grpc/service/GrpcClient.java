@@ -1,7 +1,8 @@
 package com.tms.report.modules.grpc.service;
 
 import com.shared.util.Ulid;
-import com.tms.report.core.security.AdminDetails;
+import com.tms.report.core.security.MerchantUserDetails;
+import com.tms.report.modules.merchantuser.model.MerchantUser;
 import com.tms.report.grpc.config.CheckInstantSettlementRequest;
 import com.tms.report.grpc.config.ConfigCommandResponse;
 import com.tms.report.grpc.config.ConfigServiceGrpc;
@@ -1106,8 +1107,8 @@ public class GrpcClient {
     private String currentReviewer() {
         try {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth != null && auth.getPrincipal() instanceof AdminDetails admin) {
-                return admin.getUsername();
+            if (auth != null && auth.getPrincipal() instanceof MerchantUserDetails details) {
+                return details.getUsername();
             }
         } catch (Exception ignored) {
             // fall through
@@ -2037,12 +2038,12 @@ public class GrpcClient {
     }
 
     private com.tms.report.grpc.user.Actor buildUserActor() {
-        AdminDetails admin = currentAdmin();
+        MerchantUser admin = currentAdmin();
         var builder = com.tms.report.grpc.user.Actor.newBuilder();
         if (admin != null) {
-            builder.setId(String.valueOf(admin.getAdmin().getId()));
-            builder.setName(admin.getAdmin().getName());
-            builder.setEmail(admin.getAdmin().getEmail());
+            builder.setId(String.valueOf(admin.getId()));
+            builder.setName(admin.getName());
+            builder.setEmail(admin.getEmail());
         } else {
             builder.setId("system").setName("System").setEmail("system@tms.local");
         }
@@ -2050,12 +2051,12 @@ public class GrpcClient {
     }
 
     private com.tms.report.grpc.wallet.Actor buildWalletActor() {
-        AdminDetails admin = currentAdmin();
+        MerchantUser admin = currentAdmin();
         var builder = com.tms.report.grpc.wallet.Actor.newBuilder();
         if (admin != null) {
-            builder.setId(String.valueOf(admin.getAdmin().getId()));
-            builder.setName(admin.getAdmin().getName());
-            builder.setEmail(admin.getAdmin().getEmail());
+            builder.setId(String.valueOf(admin.getId()));
+            builder.setName(admin.getName());
+            builder.setEmail(admin.getEmail());
         } else {
             builder.setId("system").setName("System").setEmail("system@tms.local");
         }
@@ -2063,12 +2064,12 @@ public class GrpcClient {
     }
 
     private com.tms.report.grpc.transaction.Actor buildTransactionActor() {
-        AdminDetails admin = currentAdmin();
+        MerchantUser admin = currentAdmin();
         var builder = com.tms.report.grpc.transaction.Actor.newBuilder();
         if (admin != null) {
-            builder.setId(String.valueOf(admin.getAdmin().getId()));
-            builder.setName(admin.getAdmin().getName());
-            builder.setEmail(admin.getAdmin().getEmail());
+            builder.setId(String.valueOf(admin.getId()));
+            builder.setName(admin.getName());
+            builder.setEmail(admin.getEmail());
         } else {
             builder.setId("system").setName("System").setEmail("system@tms.local");
         }
@@ -2076,12 +2077,12 @@ public class GrpcClient {
     }
 
     private com.tms.report.grpc.notification.Actor buildNotificationActor() {
-        AdminDetails admin = currentAdmin();
+        MerchantUser admin = currentAdmin();
         var builder = com.tms.report.grpc.notification.Actor.newBuilder();
         if (admin != null) {
-            builder.setId(String.valueOf(admin.getAdmin().getId()));
-            builder.setName(admin.getAdmin().getName());
-            builder.setEmail(admin.getAdmin().getEmail());
+            builder.setId(String.valueOf(admin.getId()));
+            builder.setName(admin.getName());
+            builder.setEmail(admin.getEmail());
         } else {
             builder.setId("system").setName("System").setEmail("system@tms.local");
         }
@@ -2089,12 +2090,12 @@ public class GrpcClient {
     }
 
     private Actor buildDisputeActor() {
-        AdminDetails admin = currentAdmin();
+        MerchantUser admin = currentAdmin();
         var builder = Actor.newBuilder();
         if (admin != null) {
-            builder.setId(String.valueOf(admin.getAdmin().getId()));
-            builder.setName(admin.getAdmin().getName());
-            builder.setEmail(admin.getAdmin().getEmail());
+            builder.setId(String.valueOf(admin.getId()));
+            builder.setName(admin.getName());
+            builder.setEmail(admin.getEmail());
         } else {
             builder.setId("system").setName("System").setEmail("system@tms.local");
         }
@@ -2128,17 +2129,17 @@ public class GrpcClient {
         return builder.build();
     }
 
-    private AdminDetails currentAdmin() {
+    private MerchantUser currentAdmin() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof AdminDetails details) {
-            return details;
+        if (auth != null && auth.getPrincipal() instanceof MerchantUserDetails details) {
+            return details.getMerchantUser();
         }
         return null;
     }
 
     private String currentAdminName() {
-        AdminDetails admin = currentAdmin();
-        return admin != null ? admin.getAdmin().getName() : "System";
+        MerchantUser admin = currentAdmin();
+        return admin != null ? admin.getName() : "System";
     }
 
 }

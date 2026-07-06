@@ -1,10 +1,9 @@
 package com.tms.report.modules.activity.aspect;
 
-import com.tms.report.core.security.AdminDetails;
+import com.tms.report.core.security.MerchantUserDetails;
 import com.tms.report.modules.activity.annotation.LogActivity;
 import com.tms.report.modules.activity.model.Activity;
 import com.tms.report.modules.activity.repository.ActivityRepository;
-import com.tms.report.modules.admin.repository.AdminRepository;
 import com.tms.report.modules.user.repository.ProfileRepository;
 import com.tms.report.modules.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
@@ -44,7 +43,6 @@ public class ActivityLoggingAspect {
     private final ActivityRepository activityRepository;
     private final UserRepository userRepository;
     private final ProfileRepository profileRepository;
-    private final AdminRepository adminRepository;
     private final EntityManager entityManager;
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{([^}]+)}");
@@ -56,9 +54,10 @@ public class ActivityLoggingAspect {
             String adminName = "System";
 
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth != null && auth.getPrincipal() instanceof AdminDetails details) {
-                adminId = details.getAdmin().getId();
-                adminName = details.getAdmin().getName() != null ? details.getAdmin().getName() : "Admin";
+            if (auth != null && auth.getPrincipal() instanceof MerchantUserDetails details) {
+                adminId = details.getMerchantUser().getId();
+                adminName = details.getMerchantUser().getName() != null ? details.getMerchantUser().getName()
+                        : "Merchant";
             }
 
             MethodSignature sig = (MethodSignature) joinPoint.getSignature();
@@ -125,13 +124,6 @@ public class ActivityLoggingAspect {
                     return null;
                 return userRepository.findByEmail(email.toLowerCase().trim())
                         .map(u -> profileFullName(u.getId(), u.getEmail())).orElse(email);
-            }
-            if (userFrom.equals("admin:id")) {
-                if (pathId == null)
-                    return null;
-                Long id = Long.parseLong(pathId.toString());
-                return adminRepository.findById(id).map(a -> a.getName() != null ? a.getName() : a.getEmail())
-                        .orElse(null);
             }
             if (userFrom.startsWith("entity:")) {
                 String entityName = userFrom.substring("entity:".length());

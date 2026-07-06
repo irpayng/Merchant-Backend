@@ -1,6 +1,6 @@
 package com.tms.report.modules.dashboard.service;
 
-import com.tms.report.core.security.TenantScope;
+import com.tms.report.core.security.MerchantScope;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import java.time.Duration;
@@ -17,17 +17,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Slim, per-bank-scoped overview for the super-merchant portal. Every figure is
- * restricted to the caller's bank via {@link TenantScope} — a bank sees only
- * its direct merchants' terminals/TIDs/transactions; a global (IRPay) user sees
- * everything. No platform finance (revenue/liquidity/ledger).
+ * Slim, per-merchant overview for the merchant dashboard. Every figure is
+ * restricted to the authenticated merchant via {@link MerchantScope} — the
+ * business sees only its own terminals/TIDs/transactions. No platform finance
+ * (revenue/liquidity/ledger).
  */
 @Service
 @RequiredArgsConstructor
 public class DashboardService {
 
     private final EntityManager entityManager;
-    private final TenantScope tenantScope;
+    private final MerchantScope merchantScope;
 
     private static final DateTimeFormatter LABEL_FMT = DateTimeFormatter.ofPattern("MMM d");
     private static final List<String> TREND_STATUSES = List.of("completed", "processing", "reversed");
@@ -36,38 +36,27 @@ public class DashboardService {
     // Scope helpers
     // ---------------------------------------------------------------------
 
-    /** Scope fragment for a query whose user-id column is {@code col}. */
+    /**
+     * Scope fragment for a query whose user-id column is {@code col} — locks it to
+     * the authenticated merchant. Fails closed to an empty result set when there is
+     * no merchant in context.
+     */
     private String userScope(String col) {
-        if (tenantScope.isGlobal()) {
-            return "";
-        }
-        String bank = tenantScope.bankCode();
-        if (bank == null || bank.isBlank()) {
-            return " AND 1=0";
-        }
-        return " AND " + col + " IN (SELECT user_id FROM tids WHERE bank_code = :smBank)";
+        return merchantScope.merchantId() == null ? " AND 1=0" : " AND " + col + " = :smMerchant";
     }
 
-    /** Scope fragment for the {@code tids} table (alias {@code td}). */
+    /** Scope fragment for the {@code tids} table (alias {@code td}) — the merchant's own TIDs. */
     private String tidScope(String alias) {
-        if (tenantScope.isGlobal()) {
-            return "";
-        }
-        String bank = tenantScope.bankCode();
-        if (bank == null || bank.isBlank()) {
-            return " AND 1=0";
-        }
-        return " AND " + alias + ".bank_code = :smBank";
+        return merchantScope.merchantId() == null ? " AND 1=0" : " AND " + alias + ".user_id = :smMerchant";
     }
 
-    private boolean bankBound() {
-        String bank = tenantScope.bankCode();
-        return !tenantScope.isGlobal() && bank != null && !bank.isBlank();
+    private boolean merchantBound() {
+        return merchantScope.merchantId() != null;
     }
 
     private Query bindScope(Query q) {
-        if (bankBound()) {
-            q.setParameter("smBank", tenantScope.bankCode());
+        if (merchantBound()) {
+            q.setParameter("smMerchant", merchantScope.merchantId());
         }
         return q;
     }

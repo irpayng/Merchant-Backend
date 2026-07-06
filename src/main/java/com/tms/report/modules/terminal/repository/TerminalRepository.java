@@ -85,7 +85,8 @@ public interface TerminalRepository extends JpaRepository<Terminal, Long>, JpaSp
               AND (CAST(:locked AS text) IS NULL
                 OR (CAST(:locked AS text) = 'true' AND t.locked IS TRUE)
                 OR (CAST(:locked AS text) = 'false' AND (t.locked IS FALSE OR t.locked IS NULL)))
-              AND (CAST(:bankScope AS text) IS NULL OR t.user_id IN (SELECT td.user_id FROM tids td WHERE td.bank_code = CAST(:bankScope AS text)))
+              AND (CAST(:merchantId AS bigint) IS NULL OR t.user_id = CAST(:merchantId AS bigint))
+              AND (CAST(:terminalId AS bigint) IS NULL OR t.id = CAST(:terminalId AS bigint))
             ORDER BY t.created_at DESC
             """, countQuery = """
             SELECT COUNT(*) FROM terminals t
@@ -113,13 +114,14 @@ public interface TerminalRepository extends JpaRepository<Terminal, Long>, JpaSp
               AND (CAST(:locked AS text) IS NULL
                 OR (CAST(:locked AS text) = 'true' AND t.locked IS TRUE)
                 OR (CAST(:locked AS text) = 'false' AND (t.locked IS FALSE OR t.locked IS NULL)))
-              AND (CAST(:bankScope AS text) IS NULL OR t.user_id IN (SELECT td.user_id FROM tids td WHERE td.bank_code = CAST(:bankScope AS text)))
+              AND (CAST(:merchantId AS bigint) IS NULL OR t.user_id = CAST(:merchantId AS bigint))
+              AND (CAST(:terminalId AS bigint) IS NULL OR t.id = CAST(:terminalId AS bigint))
             """, nativeQuery = true)
     Page<Terminal> findFiltered(@Param("search") String search, @Param("make") String make, @Param("os") String os,
             @Param("networkType") String networkType, @Param("batteryBelow") Integer batteryBelow,
             @Param("printerStatus") Integer printerStatus, @Param("staleSince") LocalDateTime staleSince,
-            @Param("mapped") String mapped, @Param("locked") String locked, @Param("bankScope") String bankScope,
-            Pageable pageable);
+            @Param("mapped") String mapped, @Param("locked") String locked, @Param("merchantId") Long merchantId,
+            @Param("terminalId") Long terminalId, Pageable pageable);
 
     /**
      * All terminals tied to a user. Used by the user-detail page on tms-ui to

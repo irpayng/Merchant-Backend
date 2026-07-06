@@ -1,7 +1,7 @@
 package com.tms.report.modules.user.service;
 
 import com.tms.report.core.filter.QueryFilterHelper;
-import com.tms.report.core.security.TenantScope;
+import com.tms.report.core.security.MerchantScope;
 import com.tms.report.core.util.Avatars;
 import com.tms.report.modules.user.dto.TierDto;
 import com.tms.report.modules.user.dto.UserDto;
@@ -26,22 +26,16 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final EntityManager entityManager;
-    private final TenantScope tenantScope;
+    private final MerchantScope merchantScope;
 
     /**
-     * Throws {@link EntityNotFoundException} if the given user is not one of the
-     * caller's bank's direct merchants. No-op for global users.
+     * Throws {@link EntityNotFoundException} unless {@code userId} is the
+     * authenticated merchant themselves — a merchant may only read its own
+     * profile/statements/wallets.
      */
     private void assertUserInScope(Long userId) {
-        if (tenantScope.isGlobal()) {
-            return;
-        }
-        String bank = tenantScope.bankCode();
-        boolean ok = bank != null && !bank.isBlank() && userId != null
-                && ((Number) entityManager
-                        .createNativeQuery("SELECT COUNT(*) FROM tids WHERE bank_code = :bank AND user_id = :uid")
-                        .setParameter("bank", bank).setParameter("uid", userId).getSingleResult()).longValue() > 0;
-        if (!ok) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null || !merchantId.equals(userId)) {
             throw new EntityNotFoundException("User not found");
         }
     }
@@ -102,8 +96,8 @@ public class UserService {
         }
 
         QueryFilterHelper.applyDates(where, qp, params, "u.created_at");
-        // Per-bank tenant scope: only this bank's direct merchants.
-        tenantScope.appendUserScope(where, qp, "u.id");
+        // Merchant scope: the listing resolves to just the authenticated merchant.
+        merchantScope.appendUserScope(where, qp, "u.id");
 
         LocalDateTime sevenDaysAgo = LocalDateTime.now().minusDays(7);
 

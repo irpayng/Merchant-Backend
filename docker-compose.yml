@@ -1,34 +1,41 @@
 services:
-  super-merchant:
-    build: .
+  merchant:
+    build:
+      context: .
+      secrets:
+        - GH_PAT
     ports:
-      - "${APP_PORT:-8110}:8080"
+      - "${APP_PORT:-8120}:8080"
     environment:
-      DB_HOST: super-merchant-db
+      DB_HOST: merchant-db
       DB_PORT: 5432
-      DB_DATABASE: super_merchant
+      DB_DATABASE: merchant
       DB_USERNAME: tms
       DB_PASSWORD: secret
       GRPC_API_KEY: ${GRPC_API_KEY:-tms-grpc-secret-key-2024}
       GRPC_TIMEOUT: 30
       JWT_SECRET: ${JWT_SECRET:-dGVzdC1zZWNyZXQta2V5LWZvci1qd3QtdG9rZW4tZ2VuZXJhdGlvbi1pbi10ZXN0cw==}
+      # The dev owner login (owner@irpay.ng / milimatr) is bound to this
+      # replicated merchant (users.id). Point it at a real merchant once data
+      # is replicated in.
+      APP_SEED_MERCHANT_ID: ${APP_SEED_MERCHANT_ID:-1}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      super-merchant-db:
+      merchant-db:
         condition: service_healthy
     networks:
       - tms-network
 
-  super-merchant-db:
+  merchant-db:
     image: imresamu/postgis:16-3.5-alpine
-    container_name: super-merchant-db
+    container_name: merchant-db
     restart: unless-stopped
     ports:
-      - "5471:5432"
+      - "5472:5432"
     environment:
       POSTGRES_USER: tms
-      POSTGRES_DB: super_merchant
+      POSTGRES_DB: merchant
       POSTGRES_PASSWORD: secret
     command: >
       postgres
@@ -36,9 +43,9 @@ services:
       -c max_replication_slots=30
       -c max_wal_senders=30
     volumes:
-      - super-merchant-postgres-data:/var/lib/postgresql/data
+      - merchant-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tms -d super_merchant"]
+      test: ["CMD-SHELL", "pg_isready -U tms -d merchant"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -46,8 +53,15 @@ services:
       - tms-network
 
 volumes:
-  super-merchant-postgres-data:
+  merchant-postgres-data:
 
 networks:
   tms-network:
     external: true
+
+# Build-time secret used by the Dockerfile to clone the private tms-core-utils
+# repo (resolves the com.shared:core-utils dependency). Sourced from the GH_PAT
+# environment variable at build time — export it before `docker compose build`.
+secrets:
+  GH_PAT:
+    environment: GH_PAT

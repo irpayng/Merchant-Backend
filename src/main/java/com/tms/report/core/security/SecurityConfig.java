@@ -34,7 +34,7 @@ import tools.jackson.databind.ObjectMapper;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
-    private final AdminDetailsService adminDetailsService;
+    private final MerchantUserDetailsService merchantUserDetailsService;
     private final ObjectMapper objectMapper;
 
     /**
@@ -65,7 +65,10 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/prometheus", "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/forgot-password").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/auth/reset-password").permitAll().anyRequest()
+                        .requestMatchers(HttpMethod.POST, "/auth/reset-password").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/request-activation").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/activate").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/activate-otp").permitAll().anyRequest()
                         .authenticated())
                 .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) -> {
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -86,7 +89,7 @@ public class SecurityConfig {
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
-        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(adminDetailsService);
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(merchantUserDetailsService);
         provider.setPasswordEncoder(passwordEncoder());
         return provider;
     }
