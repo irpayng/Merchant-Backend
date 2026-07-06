@@ -41,8 +41,8 @@ Starts the app on **8110** with a local PostgreSQL on **5471**.
 
 ## API Endpoints
 
-JWT Bearer auth. The default seeded admin is `admin@irpay.ng` / `milimatr`
-(change in production).
+JWT Bearer auth. A default admin is seeded on first run; set its credentials
+via environment variables (see `.env.example`) and change them in production.
 
 ```bash
 # Health (no auth)
@@ -51,7 +51,7 @@ curl http://localhost:8110/health
 # Login
 curl -X POST http://localhost:8110/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@irpay.ng","password":"milimatr"}'
+  -d '{"email":"<admin-email>","password":"<admin-password>"}'
 
 TOKEN="<token from login>"
 
