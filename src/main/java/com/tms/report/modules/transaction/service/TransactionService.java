@@ -299,7 +299,13 @@ public class TransactionService {
                        t.service_fee, t.agent_commission, t.aggregator_commission,
                        t.super_aggregator_commission, t.company_commission, t.amount_to_pay,
                        0 as provider_cost,
-                       (t.reversal_blob IS NOT NULL AND COALESCE(t.metadata->>'card_reversal_exhausted','') <> 'true') as has_reversal
+                       (t.reversal_blob IS NOT NULL AND COALESCE(t.metadata->>'card_reversal_exhausted','') <> 'true') as has_reversal,
+                       t.metadata->>'rrn' as rrn,
+                       t.metadata->>'card_holder' as card_holder,
+                       t.metadata->>'pan' as masked_pan,
+                       t.metadata->>'stan' as stan,
+                       t.metadata->>'auth_code' as auth_code,
+                       COALESCE(t.metadata->>'serial', t.terminal_id) as terminal_serial
                 FROM transactions t
                 LEFT JOIN users u ON u.id = t.user_id
                 LEFT JOIN profiles p2 ON p2.user_id = u.id
@@ -1378,7 +1384,11 @@ public class TransactionService {
         // 8=prof_id, 9=prof_uid, 10=first_name, 11=last_name,
         // 12=prod_id, 13=prod_name, 14=prod_code,
         // 15=prov_id, 16=prov_name, 17=prov_code,
-        // 18=channel, 19=payment_method, 20=initiator_name
+        // 18=channel, 19=payment_method, 20=initiator_name,
+        // 21=service_fee, 22=agent_commission, 23=aggregator_commission,
+        // 24=super_aggregator_commission, 25=company_commission, 26=amount_to_pay,
+        // 27=provider_cost, 28=has_reversal,
+        // 29=rrn, 30=card_holder, 31=masked_pan, 32=stan, 33=auth_code, 34=terminal_serial
         String email = str(r[6]);
         String firstName = str(r[10]);
         String lastName = str(r[11]);
@@ -1434,6 +1444,12 @@ public class TransactionService {
                 .amountToPay(plainAmount(r.length > 26 ? r[26] : null))
                 .providerCost(plainAmount(r.length > 27 ? r[27] : null))
                 .reversible(r.length > 28 && Boolean.TRUE.equals(r[28]) && "failed".equals(statusCode))
+                .rrn(r.length > 29 ? str(r[29]) : null)
+                .cardHolder(r.length > 30 ? str(r[30]) : null)
+                .maskedPan(r.length > 31 ? maskPan(str(r[31])) : null)
+                .stan(r.length > 32 ? str(r[32]) : null)
+                .authCode(r.length > 33 ? str(r[33]) : null)
+                .terminalSerial(r.length > 34 ? str(r[34]) : null)
                 .createdAt(r[4] != null ? toLocalDateTime(r[4]) : null).build();
     }
 

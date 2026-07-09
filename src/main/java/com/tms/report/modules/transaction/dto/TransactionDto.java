@@ -63,4 +63,20 @@ public class TransactionDto {
 
     @JsonProperty("created_at")
     private LocalDateTime createdAt;
+
+    private String rrn;
+
+    @JsonProperty("card_holder")
+    private String cardHolder;
+
+    @JsonProperty("masked_pan")
+    private String maskedPan;
+
+    private String stan;
+
+    @JsonProperty("auth_code")
+    private String authCode;
+
+    @JsonProperty("terminal_serial")
+    private String terminalSerial;
 }

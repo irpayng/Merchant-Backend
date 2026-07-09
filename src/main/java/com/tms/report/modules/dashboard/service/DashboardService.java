@@ -71,11 +71,19 @@ public class DashboardService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("period", periodInfo(period));
         data.put("stats", getStats(current));
+        data.put("transaction_stats", getTransactionStats(current));
         data.put("deltas", getDeltas(current, previous));
         data.put("transaction_health", getTransactionHealth(current));
         data.put("terminals", getTerminalStats(period));
         data.put("charts", getCharts(period));
         data.put("top_terminals", topTerminals(period));
+
+        try {
+            data.put("alerts", getAlerts());
+        } catch (Exception e) {
+            data.put("alerts", List.of());
+        }
+
         return data;
     }
 
@@ -101,6 +109,87 @@ public class DashboardService {
         deltas.put("processed_value", pctChange(cur.amount, prev.amount));
         deltas.put("transactions", pctChange(cur.count, prev.count));
         return deltas;
+    }
+
+    // ---------------------------------------------------------------------
+    // Transaction stats (shaped for frontend TransactionStats component)
+    // ---------------------------------------------------------------------
+
+    /**
+     * Returns transaction stats shaped as the frontend expects:
+     * { total: {count, total, percentage}, completed: {...}, failed: {...}, processing: {...}, reversed: {...} }
+     */
+    private Map<String, Object> getTransactionStats(StatusAgg current) {
+        Bucket completed = current.bucket("completed");
+        Bucket failed = current.bucket("failed");
+        Bucket processing = current.bucket("processing");
+        Bucket reversed = current.bucket("reversed");
+
+        long totalCount = completed.count + failed.count + processing.count + reversed.count;
+        double totalAmount = completed.amount + failed.amount + processing.amount + reversed.amount;
+        double denom = totalCount > 0 ? totalCount : 1;
+
+        Map<String, Object> stats = new LinkedHashMap<>();
+        stats.put("total", statBucket(totalCount, totalAmount, 0));
+        stats.put("completed", statBucket(completed.count, completed.amount, round2(completed.count / denom * 100)));
+        stats.put("failed", statBucket(failed.count, failed.amount, round2(failed.count / denom * 100)));
+        stats.put("processing", statBucket(processing.count, processing.amount, round2(processing.count / denom * 100)));
+        stats.put("reversed", statBucket(reversed.count, reversed.amount, round2(reversed.count / denom * 100)));
+        return stats;
+    }
+
+    private Map<String, Object> statBucket(long count, double total, double percentage) {
+        Map<String, Object> bucket = new LinkedHashMap<>();
+        bucket.put("count", count);
+        bucket.put("total", total);
+        bucket.put("percentage", percentage);
+        return bucket;
+    }
+
+    // ---------------------------------------------------------------------
+    // Alerts (offline terminals, stuck transactions)
+    // ---------------------------------------------------------------------
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> getAlerts() {
+        List<Map<String, Object>> alerts = new ArrayList<>();
+
+        // Offline terminals (not seen in the last 30 minutes)
+        try {
+            String sql = "SELECT t.serial, t.last_seen_at FROM terminals t WHERE t.active = true"
+                    + " AND (t.last_seen_at IS NULL OR t.last_seen_at < :cut)"
+                    + userScope("t.user_id")
+                    + " ORDER BY t.last_seen_at ASC NULLS FIRST LIMIT 10";
+            Query q = entityManager.createNativeQuery(sql);
+            q.setParameter("cut", LocalDateTime.now().minusMinutes(30));
+            bindScope(q);
+            List<Object[]> offlineRows = q.getResultList();
+            for (Object[] row : offlineRows) {
+                Map<String, Object> alert = new LinkedHashMap<>();
+                alert.put("type", "terminal_offline");
+                alert.put("details", "Terminal " + (row[0] != null ? row[0].toString() : "unknown") + " is offline");
+                alert.put("date", row[1] != null ? row[1].toString() : null);
+                alerts.add(alert);
+            }
+        } catch (Exception e) {
+            // Don't let alerts query failure break the entire dashboard
+        }
+
+        // Stuck transactions (processing for more than 1 hour)
+        try {
+            long stuck = stuckCount();
+            if (stuck > 0) {
+                Map<String, Object> alert = new LinkedHashMap<>();
+                alert.put("type", "stuck_transactions");
+                alert.put("details", stuck + " transaction" + (stuck > 1 ? "s" : "") + " stuck in processing");
+                alert.put("date", LocalDateTime.now().toString());
+                alerts.add(alert);
+            }
+        } catch (Exception e) {
+            // Don't let stuck count failure break the entire dashboard
+        }
+
+        return alerts;
     }
 
     // ---------------------------------------------------------------------
