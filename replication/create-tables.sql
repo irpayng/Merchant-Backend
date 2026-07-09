@@ -404,3 +404,29 @@ CREATE TABLE IF NOT EXISTS public.instant_settlements (
     created_at  TIMESTAMPTZ,
     updated_at  TIMESTAMPTZ
 );
+
+-- ─── disputes ────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.disputes (
+    id                      BIGSERIAL PRIMARY KEY,
+    user_id                 BIGINT NOT NULL,
+    transaction_reference   VARCHAR(255),
+    subject                 VARCHAR(255) NOT NULL,
+    message                 TEXT,
+    status_code             VARCHAR(20) NOT NULL DEFAULT 'open',
+    status_description      VARCHAR(255),
+    resolved_at             TIMESTAMPTZ,
+    attachment_url          VARCHAR(500),
+    created_at              TIMESTAMPTZ,
+    updated_at              TIMESTAMPTZ
+);
+
+-- ─── conversations (dispute messages) ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.conversations (
+    id                      BIGSERIAL PRIMARY KEY,
+    dispute_id              BIGINT NOT NULL,
+    user_id                 BIGINT,
+    sender_type             VARCHAR(20) NOT NULL,
+    sender_name             VARCHAR(255),
+    message                 TEXT NOT NULL,
+    created_at              TIMESTAMPTZ
+);

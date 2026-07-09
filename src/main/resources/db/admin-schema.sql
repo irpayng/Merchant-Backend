@@ -107,3 +107,38 @@ CREATE TABLE IF NOT EXISTS merchant.activation_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS activation_tokens_user_idx ON merchant.activation_tokens(merchant_user_id);
+
+-- =============================================================================
+-- ROLES & PRIVILEGES — database-driven RBAC for merchant dashboard users.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS merchant.privileges (
+    id          BIGSERIAL PRIMARY KEY,
+    code        VARCHAR(100) NOT NULL UNIQUE,
+    name        VARCHAR(150) NOT NULL,
+    module      VARCHAR(80),
+    description VARCHAR(500),
+    created_at  TIMESTAMP DEFAULT NOW(),
+    updated_at  TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS merchant.roles (
+    id          BIGSERIAL PRIMARY KEY,
+    merchant_id BIGINT,
+    name        VARCHAR(100) NOT NULL,
+    slug        VARCHAR(100) NOT NULL,
+    description VARCHAR(500),
+    system_role BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMP DEFAULT NOW(),
+    updated_at  TIMESTAMP DEFAULT NOW(),
+    UNIQUE(merchant_id, slug)
+);
+
+CREATE TABLE IF NOT EXISTS merchant.role_privileges (
+    role_id      BIGINT NOT NULL REFERENCES merchant.roles(id) ON DELETE CASCADE,
+    privilege_id BIGINT NOT NULL REFERENCES merchant.privileges(id) ON DELETE CASCADE,
+    PRIMARY KEY (role_id, privilege_id)
+);
+
+-- Add role_id FK to merchant_users (nullable for backward compat)
+ALTER TABLE merchant.merchant_users ADD COLUMN IF NOT EXISTS role_id BIGINT REFERENCES merchant.roles(id) ON DELETE SET NULL;

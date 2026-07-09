@@ -1,6 +1,7 @@
 package com.tms.report.modules.merchantuser.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.tms.report.modules.role.model.Role;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
@@ -54,6 +55,11 @@ public class MerchantUser {
 
     @Builder.Default
     private String role = ROLE_OWNER;
+
+    /** The database-driven role assigned to this user. */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "role_id")
+    private Role roleEntity;
 
     private String name;
 

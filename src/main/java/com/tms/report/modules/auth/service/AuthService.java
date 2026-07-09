@@ -22,6 +22,7 @@ import com.tms.report.modules.merchantuser.repository.MerchantUserRepository;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -84,9 +85,18 @@ public class AuthService {
 
         String token = jwtService.generateToken(new MerchantUserDetails(user));
         boolean verified = user.getEmailVerifiedAt() != null;
+
+        // Resolve privilege codes from the role entity (or fallback)
+        MerchantUserDetails details = new MerchantUserDetails(user);
+        List<String> privileges = details.getAuthorities().stream()
+                .map(a -> a.getAuthority())
+                .sorted()
+                .toList();
+
         return LoginResponse.builder().token(token).emailIsVerified(verified)
                 .user(UserData.builder().name(user.getName()).email(user.getEmail()).role(user.getRole())
                         .merchantId(user.getMerchantId()).terminalId(user.getTerminalId()).emailIsVerified(verified)
+                        .privileges(privileges)
                         .build())
                 .build();
     }
