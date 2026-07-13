@@ -8,7 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "settings", schema = "supermerchant")
+@Table(name = "settings", schema = "merchant")
 @Data
 @Builder
 @NoArgsConstructor

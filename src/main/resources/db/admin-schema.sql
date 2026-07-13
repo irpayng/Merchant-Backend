@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Tables OWNED by the merchant service (not replicated). The merchant dashboard
 -- authenticates its own owner/cashier logins (merchant schema) and keeps a few
--- shared support tables in the `supermerchant` schema, isolated from the
+-- support tables in the `merchant` schema, isolated from the
 -- replicated `public` business tables. The JDBC search_path resolves owned
 -- tables here and falls through to `public` for replicated reads.
 --
@@ -9,9 +9,9 @@
 -- removed in the merchant conversion — see the `merchant` schema below.
 -- =============================================================================
 
-CREATE SCHEMA IF NOT EXISTS supermerchant;
+CREATE SCHEMA IF NOT EXISTS merchant;
 
-CREATE TABLE IF NOT EXISTS supermerchant.password_resets (
+CREATE TABLE IF NOT EXISTS merchant.password_resets (
     id          BIGSERIAL PRIMARY KEY,
     email       VARCHAR(255) NOT NULL,
     token       VARCHAR(255) NOT NULL UNIQUE,
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS supermerchant.password_resets (
 -- Activity/audit log. actor_id references a merchant_users login (no FK — the
 -- actor may be a system action). Column kept as admin_id for entity mapping
 -- compatibility.
-CREATE TABLE IF NOT EXISTS supermerchant.admin_activities (
+CREATE TABLE IF NOT EXISTS merchant.admin_activities (
     id              BIGSERIAL PRIMARY KEY,
     admin_id        BIGINT,
     action          VARCHAR(255) NOT NULL,
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS supermerchant.admin_activities (
     updated_at      TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS supermerchant.settings (
+CREATE TABLE IF NOT EXISTS merchant.settings (
     id          BIGSERIAL PRIMARY KEY,
     key         VARCHAR(255) UNIQUE NOT NULL,
     value       TEXT,
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS supermerchant.settings (
     updated_at  TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS supermerchant.uploads (
+CREATE TABLE IF NOT EXISTS merchant.uploads (
     id          BIGSERIAL PRIMARY KEY,
     name        VARCHAR(255),
     path        VARCHAR(500),
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS supermerchant.uploads (
     updated_at  TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS supermerchant.invitations (
+CREATE TABLE IF NOT EXISTS merchant.invitations (
     id              BIGSERIAL PRIMARY KEY,
     email           VARCHAR(255),
     phone_number    VARCHAR(255),
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS supermerchant.invitations (
     updated_at      TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS supermerchant.otps (
+CREATE TABLE IF NOT EXISTS merchant.otps (
     id          BIGSERIAL PRIMARY KEY,
     identifier  VARCHAR(255),
     token       VARCHAR(255),

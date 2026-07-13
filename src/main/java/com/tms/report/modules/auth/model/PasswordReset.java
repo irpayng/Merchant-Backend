@@ -9,7 +9,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
 @Entity
-@Table(name = "password_resets", schema = "supermerchant")
+@Table(name = "password_resets", schema = "merchant")
 @Data
 @Builder
 @NoArgsConstructor
