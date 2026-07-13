@@ -46,14 +46,8 @@ public class RoleService {
             privileges.addAll(privilegeRepository.findAllById(privilegeIds));
         }
 
-        Role role = Role.builder()
-                .merchantId(merchantId)
-                .name(name)
-                .slug(slug)
-                .description(description)
-                .systemRole(false)
-                .privileges(privileges)
-                .build();
+        Role role = Role.builder().merchantId(merchantId).name(name).slug(slug).description(description)
+                .systemRole(false).privileges(privileges).build();
 
         return roleRepository.save(role);
     }
@@ -88,8 +82,7 @@ public class RoleService {
         // Prevent deletion if users are still assigned
         List<MerchantUser> assigned = merchantUserRepository.findByRoleEntity(role);
         if (!assigned.isEmpty()) {
-            throw new AppException(
-                    "Cannot delete role — " + assigned.size() + " user(s) are still assigned to it",
+            throw new AppException("Cannot delete role — " + assigned.size() + " user(s) are still assigned to it",
                     HttpStatus.CONFLICT);
         }
 

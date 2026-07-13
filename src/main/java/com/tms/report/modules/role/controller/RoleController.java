@@ -34,8 +34,8 @@ public class RoleController {
     @PostMapping
     @PreAuthorize("hasAuthority('manage_role')")
     public ApiResponse<Role> create(@Valid @RequestBody CreateRoleRequest request) {
-        Role role = roleService.createRole(
-                request.getName(), request.getSlug(), request.getDescription(), request.getPrivilegeIds());
+        Role role = roleService.createRole(request.getName(), request.getSlug(), request.getDescription(),
+                request.getPrivilegeIds());
         return ApiResponse.success(role);
     }
 

@@ -7,9 +7,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * Read-only service for privileges. Privileges are system-defined and seeded
- * on startup — merchants cannot create or delete them, only assign them to
- * roles.
+ * Read-only service for privileges. Privileges are system-defined and seeded on
+ * startup — merchants cannot create or delete them, only assign them to roles.
  */
 @Service
 @RequiredArgsConstructor

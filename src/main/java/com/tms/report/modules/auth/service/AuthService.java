@@ -88,16 +88,12 @@ public class AuthService {
 
         // Resolve privilege codes from the role entity (or fallback)
         MerchantUserDetails details = new MerchantUserDetails(user);
-        List<String> privileges = details.getAuthorities().stream()
-                .map(a -> a.getAuthority())
-                .sorted()
-                .toList();
+        List<String> privileges = details.getAuthorities().stream().map(a -> a.getAuthority()).sorted().toList();
 
         return LoginResponse.builder().token(token).emailIsVerified(verified)
                 .user(UserData.builder().name(user.getName()).email(user.getEmail()).role(user.getRole())
                         .merchantId(user.getMerchantId()).terminalId(user.getTerminalId()).emailIsVerified(verified)
-                        .privileges(privileges)
-                        .build())
+                        .privileges(privileges).build())
                 .build();
     }
 
@@ -116,8 +112,7 @@ public class AuthService {
     @Transactional
     public void changePassword(ChangePasswordRequest request) {
         MerchantUser user = getCurrentMerchantUser();
-        if (user.getPassword() == null
-                || !passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+        if (user.getPassword() == null || !passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
             throw new AppException("Current password is incorrect", HttpStatus.BAD_REQUEST);
         }
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
@@ -127,8 +122,8 @@ public class AuthService {
     // ── Activation (link + OTP) ─────────────────────────────
 
     /**
-     * Issue an activation challenge to a pending account via the requested
-     * channel. Idempotent-ish: any prior challenges for the account are cleared.
+     * Issue an activation challenge to a pending account via the requested channel.
+     * Idempotent-ish: any prior challenges for the account are cleared.
      */
     @Transactional
     public void requestActivation(RequestActivationRequest request) {
@@ -190,14 +185,14 @@ public class AuthService {
         if (ActivationToken.CHANNEL_LINK.equals(ch)) {
             String token = UUID.randomUUID().toString().replace("-", "");
             activationTokenRepository.save(ActivationToken.builder().merchantUserId(user.getId()).token(token)
-                    .channel(ActivationToken.CHANNEL_LINK)
-                    .expiresAt(LocalDateTime.now().plusHours(LINK_EXPIRY_HOURS)).build());
+                    .channel(ActivationToken.CHANNEL_LINK).expiresAt(LocalDateTime.now().plusHours(LINK_EXPIRY_HOURS))
+                    .build());
             sendActivationLink(user, token);
         } else if (ActivationToken.CHANNEL_OTP.equals(ch)) {
             String otp = generateOtp();
-            activationTokenRepository.save(ActivationToken.builder().merchantUserId(user.getId()).otp(otp)
-                    .channel(ActivationToken.CHANNEL_OTP)
-                    .expiresAt(LocalDateTime.now().plusMinutes(OTP_EXPIRY_MINUTES)).build());
+            activationTokenRepository.save(
+                    ActivationToken.builder().merchantUserId(user.getId()).otp(otp).channel(ActivationToken.CHANNEL_OTP)
+                            .expiresAt(LocalDateTime.now().plusMinutes(OTP_EXPIRY_MINUTES)).build());
             sendActivationOtp(user, otp);
         } else {
             throw new AppException("channel must be 'link' or 'otp'", HttpStatus.BAD_REQUEST);
@@ -240,9 +235,8 @@ public class AuthService {
     public void forgotPassword(ForgotPasswordRequest request) {
         String identifier = request.getIdentifier().trim().toLowerCase();
         boolean isEmail = EMAIL_PATTERN.matcher(identifier).matches();
-        MerchantUser user = findByIdentifier(identifier)
-                .orElseThrow(() -> new AppException("No account found with this "
-                        + (isEmail ? "email" : "phone number"), HttpStatus.NOT_FOUND));
+        MerchantUser user = findByIdentifier(identifier).orElseThrow(() -> new AppException(
+                "No account found with this " + (isEmail ? "email" : "phone number"), HttpStatus.NOT_FOUND));
 
         String resetKey = user.getEmail();
         passwordResetRepository.findTopByEmailOrderByCreatedAtDesc(resetKey).ifPresent(existing -> {

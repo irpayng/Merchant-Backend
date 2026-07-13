@@ -56,7 +56,8 @@ public class ActivityLoggingAspect {
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth != null && auth.getPrincipal() instanceof MerchantUserDetails details) {
                 adminId = details.getMerchantUser().getId();
-                adminName = details.getMerchantUser().getName() != null ? details.getMerchantUser().getName()
+                adminName = details.getMerchantUser().getName() != null
+                        ? details.getMerchantUser().getName()
                         : "Merchant";
             }
 

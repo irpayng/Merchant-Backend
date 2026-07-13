@@ -9,8 +9,8 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 /**
- * Loads a merchant dashboard login (owner/cashier) for authentication.
- * Accepts email or phone as the username.
+ * Loads a merchant dashboard login (owner/cashier) for authentication. Accepts
+ * email or phone as the username.
  */
 @Service
 @RequiredArgsConstructor

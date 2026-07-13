@@ -17,19 +17,18 @@ import org.hibernate.annotations.UpdateTimestamp;
 /**
  * A named collection of privileges scoped to a merchant. Each merchant can
  * define custom roles (e.g. "Manager", "Support Agent") on top of the system
- * defaults ("owner", "cashier"). The {@code systemRole} flag protects
- * built-in roles from deletion.
+ * defaults ("owner", "cashier"). The {@code systemRole} flag protects built-in
+ * roles from deletion.
  */
 @Entity
 @Table(name = "roles", schema = "merchant", uniqueConstraints = {
-        @UniqueConstraint(columnNames = { "merchant_id", "slug" })
-})
+        @UniqueConstraint(columnNames = {"merchant_id", "slug"})})
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @EqualsAndHashCode(of = "id")
-@ToString(exclude = { "privileges", "users" })
+@ToString(exclude = {"privileges", "users"})
 public class Role {
 
     @Id
@@ -57,9 +56,7 @@ public class Role {
     private boolean systemRole = false;
 
     @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(name = "role_privileges", schema = "merchant",
-            joinColumns = @JoinColumn(name = "role_id"),
-            inverseJoinColumns = @JoinColumn(name = "privilege_id"))
+    @JoinTable(name = "role_privileges", schema = "merchant", joinColumns = @JoinColumn(name = "role_id"), inverseJoinColumns = @JoinColumn(name = "privilege_id"))
     @Builder.Default
     private Set<Privilege> privileges = new HashSet<>();
 

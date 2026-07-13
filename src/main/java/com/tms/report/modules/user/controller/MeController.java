@@ -23,10 +23,10 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * The authenticated merchant's own surfaces that aren't already served by the
  * auto-scoped collection endpoints ({@code /transactions}, {@code /terminals},
- * {@code /dashboard} are all merchant-scoped via {@link MerchantScope}). Here we
- * expose the merchant's own profile, statements, and wallets — everything keyed
- * off the login's {@code merchant_id}, never a path id, so a merchant can only
- * ever read its own data.
+ * {@code /dashboard} are all merchant-scoped via {@link MerchantScope}). Here
+ * we expose the merchant's own profile, statements, and wallets — everything
+ * keyed off the login's {@code merchant_id}, never a path id, so a merchant can
+ * only ever read its own data.
  */
 @RestController
 @RequestMapping("/me")
@@ -65,8 +65,9 @@ public class MeController {
             HttpServletResponse response) throws Exception {
         Long id = merchantId();
         extractDates(request, params);
-        XlsxExporter.streamPaged(response, "statements", new String[]{"ID", "Type", "Amount", "Description",
-                "Previous Balance", "Current Balance", "Wallet Type", "Date"}, 1000,
+        XlsxExporter.streamPaged(response, "statements", new String[]{
+                "ID", "Type", "Amount", "Description", "Previous Balance", "Current Balance", "Wallet Type", "Date"},
+                1000,
                 (page, size) -> userService.getUserStatements(id, QueryFilterHelper.pageParams(params, page, size))
                         .getContent(),
                 row -> new String[]{String.valueOf(row.get("id")), String.valueOf(row.getOrDefault("type", "")),

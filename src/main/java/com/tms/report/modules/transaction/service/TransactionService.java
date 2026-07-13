@@ -924,7 +924,8 @@ public class TransactionService {
             sql.append(" AND t.user_id = :uid");
             qp.put("uid", Long.parseLong(userId));
         }
-        // Keep the terminal-scoped stat cards in step with the listing (see buildWhere).
+        // Keep the terminal-scoped stat cards in step with the listing (see
+        // buildWhere).
         String terminalSerial = params.get("terminal_serial");
         if (terminalSerial != null && !terminalSerial.isBlank()) {
             sql.append(" AND (t.terminal_id = :terminal_serial OR t.metadata->>'serial' = :terminal_serial)");
@@ -1388,7 +1389,8 @@ public class TransactionService {
         // 21=service_fee, 22=agent_commission, 23=aggregator_commission,
         // 24=super_aggregator_commission, 25=company_commission, 26=amount_to_pay,
         // 27=provider_cost, 28=has_reversal,
-        // 29=rrn, 30=card_holder, 31=masked_pan, 32=stan, 33=auth_code, 34=terminal_serial
+        // 29=rrn, 30=card_holder, 31=masked_pan, 32=stan, 33=auth_code,
+        // 34=terminal_serial
         String email = str(r[6]);
         String firstName = str(r[10]);
         String lastName = str(r[11]);
@@ -1444,12 +1446,9 @@ public class TransactionService {
                 .amountToPay(plainAmount(r.length > 26 ? r[26] : null))
                 .providerCost(plainAmount(r.length > 27 ? r[27] : null))
                 .reversible(r.length > 28 && Boolean.TRUE.equals(r[28]) && "failed".equals(statusCode))
-                .rrn(r.length > 29 ? str(r[29]) : null)
-                .cardHolder(r.length > 30 ? str(r[30]) : null)
-                .maskedPan(r.length > 31 ? maskPan(str(r[31])) : null)
-                .stan(r.length > 32 ? str(r[32]) : null)
-                .authCode(r.length > 33 ? str(r[33]) : null)
-                .terminalSerial(r.length > 34 ? str(r[34]) : null)
+                .rrn(r.length > 29 ? str(r[29]) : null).cardHolder(r.length > 30 ? str(r[30]) : null)
+                .maskedPan(r.length > 31 ? maskPan(str(r[31])) : null).stan(r.length > 32 ? str(r[32]) : null)
+                .authCode(r.length > 33 ? str(r[33]) : null).terminalSerial(r.length > 34 ? str(r[34]) : null)
                 .createdAt(r[4] != null ? toLocalDateTime(r[4]) : null).build();
     }
 

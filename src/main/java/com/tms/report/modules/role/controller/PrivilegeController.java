@@ -9,8 +9,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * Read-only endpoint for listing available privileges. Merchants cannot
- * create or delete privileges — they are system-defined.
+ * Read-only endpoint for listing available privileges. Merchants cannot create
+ * or delete privileges — they are system-defined.
  */
 @RestController
 @RequestMapping("/privileges")

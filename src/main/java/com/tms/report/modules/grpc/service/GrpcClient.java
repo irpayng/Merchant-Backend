@@ -2,7 +2,6 @@ package com.tms.report.modules.grpc.service;
 
 import com.shared.util.Ulid;
 import com.tms.report.core.security.MerchantUserDetails;
-import com.tms.report.modules.merchantuser.model.MerchantUser;
 import com.tms.report.grpc.config.CheckInstantSettlementRequest;
 import com.tms.report.grpc.config.ConfigCommandResponse;
 import com.tms.report.grpc.config.ConfigServiceGrpc;
@@ -101,6 +100,7 @@ import com.tms.report.grpc.wallet.WalletCommandResponse;
 import com.tms.report.grpc.wallet.WalletServiceGrpc;
 import com.tms.report.modules.grpc.config.GrpcProperties;
 import com.tms.report.modules.grpc.exception.GrpcException;
+import com.tms.report.modules.merchantuser.model.MerchantUser;
 import io.grpc.StatusRuntimeException;
 import java.util.ArrayList;
 import java.util.HashMap;

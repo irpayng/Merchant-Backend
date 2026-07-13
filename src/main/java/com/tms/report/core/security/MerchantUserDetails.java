@@ -23,8 +23,8 @@ public class MerchantUserDetails implements UserDetails {
 
     /** Fallback: full read surface for the business owner (legacy). */
     private static final List<String> OWNER_AUTHORITIES = List.of("view_dashboard", "view_transaction",
-            "manage_terminal", "access_financial_report", "manage_settlement", "audit", "manage_role",
-            "manage_user", "manage_notification", "manage_setting");
+            "manage_terminal", "access_financial_report", "manage_settlement", "audit", "manage_role", "manage_user",
+            "manage_notification", "manage_setting");
 
     /** Fallback: cashier view-only subset (legacy). */
     private static final List<String> CASHIER_AUTHORITIES = List.of("view_dashboard", "view_transaction",
@@ -43,9 +43,7 @@ public class MerchantUserDetails implements UserDetails {
         // Database-driven: use privileges from the assigned role
         if (role != null && role.getPrivileges() != null && !role.getPrivileges().isEmpty()) {
             Set<Privilege> privileges = role.getPrivileges();
-            return privileges.stream()
-                    .map(p -> new SimpleGrantedAuthority(p.getCode()))
-                    .collect(Collectors.toSet());
+            return privileges.stream().map(p -> new SimpleGrantedAuthority(p.getCode())).collect(Collectors.toSet());
         }
 
         // Fallback: hardcoded authorities for users not yet assigned a role entity

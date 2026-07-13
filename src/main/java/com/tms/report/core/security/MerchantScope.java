@@ -12,9 +12,9 @@ import org.springframework.stereotype.Component;
  *
  * <p>
  * Every business read is locked to the authenticated login's merchant
- * ({@code merchant_id} = the merchant's {@code users.id}). A <b>cashier</b> that
- * is bound to a single terminal is additionally narrowed to that terminal, so a
- * till operator only ever sees their own till's activity.
+ * ({@code merchant_id} = the merchant's {@code users.id}). A <b>cashier</b>
+ * that is bound to a single terminal is additionally narrowed to that terminal,
+ * so a till operator only ever sees their own till's activity.
  *
  * <p>
  * Fails closed: if there is no merchant login in context, scoped predicates
@@ -39,7 +39,9 @@ public class MerchantScope {
         return u != null ? u.getMerchantId() : null;
     }
 
-    /** Terminal id when the login is a cashier locked to one terminal, else null. */
+    /**
+     * Terminal id when the login is a cashier locked to one terminal, else null.
+     */
     public Long terminalId() {
         MerchantUser u = current();
         return u != null ? u.getTerminalId() : null;
@@ -50,9 +52,9 @@ public class MerchantScope {
     }
 
     /**
-     * Append the merchant-scope predicate for a query whose merchant user-id
-     * column is {@code userIdCol} (e.g. {@code t.user_id}). Registers bound params
-     * in {@code binds}.
+     * Append the merchant-scope predicate for a query whose merchant user-id column
+     * is {@code userIdCol} (e.g. {@code t.user_id}). Registers bound params in
+     * {@code binds}.
      */
     public void appendUserScope(StringBuilder sql, Map<String, Object> binds, String userIdCol) {
         Long merchantId = merchantId();

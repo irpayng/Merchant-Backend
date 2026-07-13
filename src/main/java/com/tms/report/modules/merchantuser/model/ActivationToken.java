@@ -10,8 +10,8 @@ import org.hibernate.annotations.CreationTimestamp;
 
 /**
  * A one-time account-activation / password-setup challenge for a
- * {@link MerchantUser}. Supports both channels the product requires:
- * a {@code link} token emailed to the merchant, or an {@code otp} code sent by
+ * {@link MerchantUser}. Supports both channels the product requires: a
+ * {@code link} token emailed to the merchant, or an {@code otp} code sent by
  * SMS/email. Consumed once the password is set.
  */
 @Entity
@@ -35,7 +35,10 @@ public class ActivationToken {
     /** Opaque token for the emailed activation link (null for otp challenges). */
     private String token;
 
-    /** Short numeric code for the SMS/email OTP challenge (null for link challenges). */
+    /**
+     * Short numeric code for the SMS/email OTP challenge (null for link
+     * challenges).
+     */
     private String otp;
 
     private String channel;

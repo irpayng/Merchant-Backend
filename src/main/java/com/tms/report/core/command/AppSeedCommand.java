@@ -13,9 +13,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 /**
- * Seeds a development merchant owner so the dashboard is loginable locally.
- * In real use, accounts are provisioned from onboarding and activated via link
- * or OTP — there is no global admin. Idempotent; runs on every startup.
+ * Seeds a development merchant owner so the dashboard is loginable locally. In
+ * real use, accounts are provisioned from onboarding and activated via link or
+ * OTP — there is no global admin. Idempotent; runs on every startup.
  */
 @Slf4j
 @Component

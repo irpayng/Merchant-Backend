@@ -1,6 +1,5 @@
 package com.tms.report.core.command;
 
-import com.tms.report.modules.merchantuser.model.MerchantUser;
 import com.tms.report.modules.merchantuser.repository.MerchantUserRepository;
 import com.tms.report.modules.role.model.Privilege;
 import com.tms.report.modules.role.model.Role;
@@ -8,7 +7,6 @@ import com.tms.report.modules.role.repository.PrivilegeRepository;
 import com.tms.report.modules.role.repository.RoleRepository;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -44,26 +42,28 @@ public class RolePrivilegeSeedCommand implements CommandLineRunner {
 
     // ── Privilege definitions (code → [name, module]) ───────
 
-    private static final Map<String, String[]> PRIVILEGE_DEFS = new LinkedHashMap<>() {{
-        put("view_dashboard",           new String[]{"View Dashboard", "Dashboard"});
-        put("view_transaction",         new String[]{"View Transactions", "Transactions"});
-        put("export_transaction",       new String[]{"Export Transactions", "Transactions"});
-        put("manage_terminal",          new String[]{"Manage Terminals", "Terminals"});
-        put("access_financial_report",  new String[]{"Access Financial Reports", "Reports"});
-        put("manage_settlement",        new String[]{"Manage Settlements", "Reports"});
-        put("audit",                    new String[]{"View Audit Trail", "Activity"});
-        put("manage_role",              new String[]{"Manage Roles & Privileges", "Administration"});
-        put("manage_user",              new String[]{"Manage Team Members", "Administration"});
-        put("manage_notification",      new String[]{"Manage Notifications", "Notifications"});
-        put("manage_setting",           new String[]{"Manage Settings", "Settings"});
-    }};
+    private static final Map<String, String[]> PRIVILEGE_DEFS = new LinkedHashMap<>() {
+        {
+            put("view_dashboard", new String[]{"View Dashboard", "Dashboard"});
+            put("view_transaction", new String[]{"View Transactions", "Transactions"});
+            put("export_transaction", new String[]{"Export Transactions", "Transactions"});
+            put("manage_terminal", new String[]{"Manage Terminals", "Terminals"});
+            put("access_financial_report", new String[]{"Access Financial Reports", "Reports"});
+            put("manage_settlement", new String[]{"Manage Settlements", "Reports"});
+            put("audit", new String[]{"View Audit Trail", "Activity"});
+            put("manage_role", new String[]{"Manage Roles & Privileges", "Administration"});
+            put("manage_user", new String[]{"Manage Team Members", "Administration"});
+            put("manage_notification", new String[]{"Manage Notifications", "Notifications"});
+            put("manage_setting", new String[]{"Manage Settings", "Settings"});
+        }
+    };
 
     /** Owner gets all privileges. */
     private static final Set<String> OWNER_PRIVILEGES = PRIVILEGE_DEFS.keySet();
 
     /** Cashier gets a view-only subset. */
-    private static final Set<String> CASHIER_PRIVILEGES = Set.of(
-            "view_dashboard", "view_transaction", "manage_terminal");
+    private static final Set<String> CASHIER_PRIVILEGES = Set.of("view_dashboard", "view_transaction",
+            "manage_terminal");
 
     @Override
     @Transactional
@@ -72,8 +72,8 @@ public class RolePrivilegeSeedCommand implements CommandLineRunner {
         Map<String, Privilege> allPrivileges = seedPrivileges();
 
         // 2. Seed default roles for the seed merchant
-        Role ownerRole = seedRole("owner", "Owner", "Full access to all merchant features",
-                OWNER_PRIVILEGES, allPrivileges);
+        Role ownerRole = seedRole("owner", "Owner", "Full access to all merchant features", OWNER_PRIVILEGES,
+                allPrivileges);
         Role cashierRole = seedRole("cashier", "Cashier", "View-only access to transactions and terminals",
                 CASHIER_PRIVILEGES, allPrivileges);
 
@@ -87,11 +87,7 @@ public class RolePrivilegeSeedCommand implements CommandLineRunner {
             String code = entry.getKey();
             String[] meta = entry.getValue();
             Privilege privilege = privilegeRepository.findByCode(code).orElseGet(() -> {
-                Privilege p = Privilege.builder()
-                        .code(code)
-                        .name(meta[0])
-                        .module(meta[1])
-                        .build();
+                Privilege p = Privilege.builder().code(code).name(meta[0]).module(meta[1]).build();
                 log.info("Seeding privilege: {}", code);
                 return privilegeRepository.save(p);
             });
@@ -100,22 +96,17 @@ public class RolePrivilegeSeedCommand implements CommandLineRunner {
         return map;
     }
 
-    private Role seedRole(String slug, String name, String description,
-                          Set<String> privilegeCodes, Map<String, Privilege> allPrivileges) {
+    private Role seedRole(String slug, String name, String description, Set<String> privilegeCodes,
+            Map<String, Privilege> allPrivileges) {
         return roleRepository.findByMerchantIdAndSlug(seedMerchantId, slug).orElseGet(() -> {
             Set<Privilege> privileges = new HashSet<>();
             for (String code : privilegeCodes) {
                 Privilege p = allPrivileges.get(code);
-                if (p != null) privileges.add(p);
+                if (p != null)
+                    privileges.add(p);
             }
-            Role role = Role.builder()
-                    .merchantId(seedMerchantId)
-                    .name(name)
-                    .slug(slug)
-                    .description(description)
-                    .systemRole(true)
-                    .privileges(privileges)
-                    .build();
+            Role role = Role.builder().merchantId(seedMerchantId).name(name).slug(slug).description(description)
+                    .systemRole(true).privileges(privileges).build();
             log.info("Seeding role: {} (merchant_id={})", slug, seedMerchantId);
             return roleRepository.save(role);
         });

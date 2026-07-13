@@ -49,7 +49,10 @@ public class MerchantUser {
     @Column(name = "merchant_id", nullable = false)
     private Long merchantId;
 
-    /** Cashier lock to one terminal ({@code terminals.id}); null = all merchant terminals. */
+    /**
+     * Cashier lock to one terminal ({@code terminals.id}); null = all merchant
+     * terminals.
+     */
     @Column(name = "terminal_id")
     private Long terminalId;
 

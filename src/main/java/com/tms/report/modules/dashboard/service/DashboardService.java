@@ -45,7 +45,10 @@ public class DashboardService {
         return merchantScope.merchantId() == null ? " AND 1=0" : " AND " + col + " = :smMerchant";
     }
 
-    /** Scope fragment for the {@code tids} table (alias {@code td}) — the merchant's own TIDs. */
+    /**
+     * Scope fragment for the {@code tids} table (alias {@code td}) — the merchant's
+     * own TIDs.
+     */
     private String tidScope(String alias) {
         return merchantScope.merchantId() == null ? " AND 1=0" : " AND " + alias + ".user_id = :smMerchant";
     }
@@ -116,8 +119,9 @@ public class DashboardService {
     // ---------------------------------------------------------------------
 
     /**
-     * Returns transaction stats shaped as the frontend expects:
-     * { total: {count, total, percentage}, completed: {...}, failed: {...}, processing: {...}, reversed: {...} }
+     * Returns transaction stats shaped as the frontend expects: { total: {count,
+     * total, percentage}, completed: {...}, failed: {...}, processing: {...},
+     * reversed: {...} }
      */
     private Map<String, Object> getTransactionStats(StatusAgg current) {
         Bucket completed = current.bucket("completed");
@@ -133,7 +137,8 @@ public class DashboardService {
         stats.put("total", statBucket(totalCount, totalAmount, 0));
         stats.put("completed", statBucket(completed.count, completed.amount, round2(completed.count / denom * 100)));
         stats.put("failed", statBucket(failed.count, failed.amount, round2(failed.count / denom * 100)));
-        stats.put("processing", statBucket(processing.count, processing.amount, round2(processing.count / denom * 100)));
+        stats.put("processing",
+                statBucket(processing.count, processing.amount, round2(processing.count / denom * 100)));
         stats.put("reversed", statBucket(reversed.count, reversed.amount, round2(reversed.count / denom * 100)));
         return stats;
     }
@@ -157,8 +162,7 @@ public class DashboardService {
         // Offline terminals (not seen in the last 30 minutes)
         try {
             String sql = "SELECT t.serial, t.last_seen_at FROM terminals t WHERE t.active = true"
-                    + " AND (t.last_seen_at IS NULL OR t.last_seen_at < :cut)"
-                    + userScope("t.user_id")
+                    + " AND (t.last_seen_at IS NULL OR t.last_seen_at < :cut)" + userScope("t.user_id")
                     + " ORDER BY t.last_seen_at ASC NULLS FIRST LIMIT 10";
             Query q = entityManager.createNativeQuery(sql);
             q.setParameter("cut", LocalDateTime.now().minusMinutes(30));

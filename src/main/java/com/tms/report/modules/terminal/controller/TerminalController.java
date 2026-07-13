@@ -5,16 +5,15 @@ import com.tms.report.core.dto.PagedResponse;
 import com.tms.report.core.export.XlsxExporter;
 import com.tms.report.core.filter.QueryFilterHelper;
 import com.tms.report.core.security.MerchantScope;
-import com.tms.report.modules.activity.annotation.LogActivity;
 import com.tms.report.modules.grpc.service.ConfigHttpClient;
 import com.tms.report.modules.grpc.service.GrpcClient;
-import com.tms.report.modules.transaction.service.TransactionService;
 import com.tms.report.modules.terminal.model.ProviderKeyStatus;
 import com.tms.report.modules.terminal.model.Terminal;
 import com.tms.report.modules.terminal.model.TerminalMetric;
 import com.tms.report.modules.terminal.repository.ProviderKeyStatusRepository;
 import com.tms.report.modules.terminal.repository.TerminalMetricRepository;
 import com.tms.report.modules.terminal.repository.TerminalRepository;
+import com.tms.report.modules.transaction.service.TransactionService;
 import jakarta.persistence.EntityManager;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -27,7 +26,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/terminals")
@@ -112,8 +110,9 @@ public class TerminalController {
         XlsxExporter.streamPaged(response, "terminals",
                 new String[]{"ID", "Serial", "OS", "Model", "Make", "User ID", "Agent", "Active", "Created At"}, 1000,
                 (page, size) -> {
-                    var content = terminalRepository.findFiltered(searchPattern, make, os, networkType, batteryBelow,
-                            printerStatus, staleSince, mapped, locked, merchantId, terminalId, PageRequest.of(page, size))
+                    var content = terminalRepository
+                            .findFiltered(searchPattern, make, os, networkType, batteryBelow, printerStatus, staleSince,
+                                    mapped, locked, merchantId, terminalId, PageRequest.of(page, size))
                             .getContent();
                     attachMappedUsers(content);
                     return content;
