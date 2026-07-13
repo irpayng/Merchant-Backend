@@ -85,8 +85,8 @@ jobs:
           build-args: |
             CACHE_BUST=${{ github.sha }}
           tags: |
-            irpaytech/super-merchant:staging
-            irpaytech/super-merchant:staging-${{ github.sha }}
+            irpaytech/merchant-backend:staging
+            irpaytech/merchant-backend:staging-${{ github.sha }}
           secrets: |
             GH_PAT=${{ secrets.GH_PACKAGES_TOKEN }}
           cache-from: type=gha
@@ -148,8 +148,8 @@ jobs:
           context: .
           push: true
           tags: |
-            irpaytech/super-merchant:latest
-            irpaytech/super-merchant:production
+            irpaytech/merchant-backend:latest
+            irpaytech/merchant-backend:production
           cache-from: type=gha
           cache-to: type=gha,mode=max
           secrets: |
