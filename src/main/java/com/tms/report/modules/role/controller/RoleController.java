@@ -1,6 +1,7 @@
 package com.tms.report.modules.role.controller;
 
 import com.tms.report.core.dto.ApiResponse;
+import com.tms.report.modules.merchantuser.service.MerchantUserService;
 import com.tms.report.modules.role.dto.AssignRoleRequest;
 import com.tms.report.modules.role.dto.CreateRoleRequest;
 import com.tms.report.modules.role.dto.UpdateRoleRequest;
@@ -8,6 +9,7 @@ import com.tms.report.modules.role.model.Role;
 import com.tms.report.modules.role.service.RoleService;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 public class RoleController {
 
     private final RoleService roleService;
+    private final MerchantUserService merchantUserService;
 
     @GetMapping
     @PreAuthorize("hasAuthority('manage_role')")
@@ -57,5 +60,25 @@ public class RoleController {
     @PreAuthorize("hasAuthority('manage_role')")
     public ApiResponse<?> assignToUser(@PathVariable Long userId, @Valid @RequestBody AssignRoleRequest request) {
         return ApiResponse.success(roleService.assignRoleToUser(userId, request.getRoleId()));
+    }
+
+    @SuppressWarnings("unchecked")
+    @PostMapping("/assign")
+    @PreAuthorize("hasAuthority('manage_user')")
+    public ApiResponse<?> assignRoles(@RequestBody Map<String, Object> body) {
+        Long adminId = Long.parseLong(body.get("admin_id").toString());
+        List<String> roles = (List<String>) body.get("roles");
+        merchantUserService.assignRoles(adminId, roles);
+        return ApiResponse.success(null);
+    }
+
+    @SuppressWarnings("unchecked")
+    @PostMapping("/unassign")
+    @PreAuthorize("hasAuthority('manage_user')")
+    public ApiResponse<?> unassignRoles(@RequestBody Map<String, Object> body) {
+        Long adminId = Long.parseLong(body.get("admin_id").toString());
+        List<String> roles = (List<String>) body.get("roles");
+        merchantUserService.unassignRoles(adminId, roles);
+        return ApiResponse.success(null);
     }
 }
