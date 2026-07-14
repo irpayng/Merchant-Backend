@@ -31,7 +31,7 @@ public class AppSeedCommand implements CommandLineRunner {
     @Value("${app.seed.merchant-id:1}")
     private Long seedMerchantId;
 
-    @Value("${app.seed.owner-email:owner@irpay.ng}")
+    @Value("${app.seed.owner-email:admin@irpay.ng}")
     private String seedOwnerEmail;
 
     @Override
