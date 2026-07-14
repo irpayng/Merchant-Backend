@@ -2,7 +2,6 @@ package com.tms.report.modules.dispute.model;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
-import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -49,9 +48,4 @@ public class Dispute {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
-
-    @OneToMany(fetch = FetchType.LAZY)
-    @JoinColumn(name = "dispute_id", insertable = false, updatable = false)
-    @OrderBy("createdAt ASC")
-    private List<Conversation> conversations;
 }

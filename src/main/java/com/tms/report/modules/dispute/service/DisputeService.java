@@ -4,6 +4,7 @@ import com.tms.report.core.security.MerchantScope;
 import com.tms.report.modules.dispute.dto.CreateDisputeDto;
 import com.tms.report.modules.dispute.model.Conversation;
 import com.tms.report.modules.dispute.model.Dispute;
+import com.tms.report.modules.dispute.repository.ConversationRepository;
 import com.tms.report.modules.dispute.repository.DisputeRepository;
 import com.tms.report.modules.grpc.service.GrpcClient;
 import java.util.*;
@@ -20,6 +21,7 @@ public class DisputeService {
     private final GrpcClient grpcClient;
     private final MerchantScope merchantScope;
     private final DisputeRepository disputeRepository;
+    private final ConversationRepository conversationRepository;
 
     public Map<String, Object> create(CreateDisputeDto dto) {
         Long merchantId = merchantScope.merchantId();
@@ -87,13 +89,9 @@ public class DisputeService {
 
         Map<String, Object> view = toView(dispute);
 
-        // Include conversations
-        List<Conversation> conversations = dispute.getConversations();
-        if (conversations != null) {
-            view.put("conversations", conversations.stream().map(this::conversationToView).toList());
-        } else {
-            view.put("conversations", List.of());
-        }
+        // Fetch conversations separately to avoid lazy loading issues
+        List<Conversation> conversations = conversationRepository.findByDisputeIdOrderByCreatedAtAsc(id);
+        view.put("conversations", conversations.stream().map(this::conversationToView).toList());
 
         return view;
     }
