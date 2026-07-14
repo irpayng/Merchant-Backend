@@ -10,6 +10,7 @@ service DisputeService {
   rpc ResolveDispute (ResolveDisputeRequest) returns (DisputeCommandResponse);
   rpc AddConversation (AddConversationRequest) returns (DisputeCommandResponse);
   rpc UpdateDispute (UpdateDisputeRequest) returns (DisputeCommandResponse);
+  rpc CreateDispute (CreateDisputeRequest) returns (DisputeCommandResponse);
 }
 
 message CloseDisputeRequest {
@@ -48,4 +49,12 @@ message Actor {
   string id = 1;
   string name = 2;
   string email = 3;
+}
+
+message CreateDisputeRequest {
+  int64 user_id = 1;
+  string transaction_reference = 2;
+  string subject = 3;
+  string message = 4;
+  Actor actor = 5;
 }

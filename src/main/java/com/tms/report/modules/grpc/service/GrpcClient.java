@@ -38,6 +38,7 @@ import com.tms.report.grpc.config.UpdateTidRequest;
 import com.tms.report.grpc.dispute.Actor;
 import com.tms.report.grpc.dispute.AddConversationRequest;
 import com.tms.report.grpc.dispute.CloseDisputeRequest;
+import com.tms.report.grpc.dispute.CreateDisputeRequest;
 import com.tms.report.grpc.dispute.DisputeServiceGrpc;
 import com.tms.report.grpc.dispute.UpdateDisputeRequest;
 import com.tms.report.grpc.kyc.ApproveAddressRequest;
@@ -1861,6 +1862,24 @@ public class GrpcClient {
             return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
         } catch (StatusRuntimeException e) {
             throw grpcError("UpdateDispute", ref, e);
+        }
+    }
+
+    public Map<String, Object> createDispute(long userId, String transactionReference, String subject, String message) {
+        String ref = Ulid.generate();
+        logRequest("CreateDispute", ref);
+        try {
+            var actor = buildDisputeActor();
+            var builder = CreateDisputeRequest.newBuilder().setUserId(userId).setSubject(subject).setActor(actor);
+            if (transactionReference != null && !transactionReference.isBlank())
+                builder.setTransactionReference(transactionReference);
+            if (message != null && !message.isBlank())
+                builder.setMessage(message);
+
+            var resp = disputeStub.createDispute(builder.build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("CreateDispute", ref, e);
         }
     }
 
