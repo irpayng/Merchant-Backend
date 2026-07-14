@@ -26,6 +26,9 @@ public class MerchantUserController {
         Page<Map<String, Object>> page = merchantUserService.list(params);
 
         Map<String, Object> extra = new LinkedHashMap<>();
+        Map<String, Object> filters = new LinkedHashMap<>();
+        filters.put("roles", merchantUserService.listRolesForFilter());
+        extra.put("filters", filters);
         extra.put("roles", merchantUserService.listRolesForFilter());
 
         return PagedResponse.from(page, "/admins", extra);
