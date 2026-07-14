@@ -4,7 +4,6 @@ import com.tms.report.core.dto.ApiResponse;
 import com.tms.report.core.dto.PagedResponse;
 import com.tms.report.modules.merchantuser.service.MerchantUserService;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -38,11 +37,7 @@ public class MerchantUserController {
     @PreAuthorize("hasAuthority('manage_user')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> create(@RequestBody Map<String, Object> data) {
         Map<String, Object> user = merchantUserService.create(data);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.<Map<String, Object>>builder()
-                        .code(201)
-                        .message("User created successfully")
-                        .data(user)
-                        .build());
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.<Map<String, Object>>builder().code(201)
+                .message("User created successfully").data(user).build());
     }
 }

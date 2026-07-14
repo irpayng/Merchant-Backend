@@ -12,9 +12,9 @@ public interface DisputeRepository extends JpaRepository<Dispute, Long> {
 
     Page<Dispute> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 
-    @Query("SELECT d FROM Dispute d WHERE d.userId = :userId AND " +
-           "(LOWER(d.subject) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
-           "LOWER(d.transactionReference) LIKE LOWER(CONCAT('%', :search, '%')))")
+    @Query("SELECT d FROM Dispute d WHERE d.userId = :userId AND "
+            + "(LOWER(d.subject) LIKE LOWER(CONCAT('%', :search, '%')) OR "
+            + "LOWER(d.transactionReference) LIKE LOWER(CONCAT('%', :search, '%')))")
     Page<Dispute> searchByUserId(@Param("userId") Long userId, @Param("search") String search, Pageable pageable);
 
     Optional<Dispute> findByIdAndUserId(Long id, Long userId);

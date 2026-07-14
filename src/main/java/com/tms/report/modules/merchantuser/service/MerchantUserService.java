@@ -42,15 +42,12 @@ public class MerchantUserService {
         if (search != null && !search.isBlank()) {
             users = merchantUserRepository.findAll((root, query, cb) -> {
                 String pattern = "%" + search.trim().toLowerCase() + "%";
-                return cb.and(
-                        cb.equal(root.get("merchantId"), merchantId),
-                        cb.or(
-                                cb.like(cb.lower(root.get("name")), pattern),
-                                cb.like(cb.lower(root.get("email")), pattern)));
+                return cb.and(cb.equal(root.get("merchantId"), merchantId), cb.or(
+                        cb.like(cb.lower(root.get("name")), pattern), cb.like(cb.lower(root.get("email")), pattern)));
             }, pageable);
         } else {
-            users = merchantUserRepository.findAll(
-                    (root, query, cb) -> cb.equal(root.get("merchantId"), merchantId), pageable);
+            users = merchantUserRepository.findAll((root, query, cb) -> cb.equal(root.get("merchantId"), merchantId),
+                    pageable);
         }
 
         return users.map(this::toView);
@@ -61,14 +58,12 @@ public class MerchantUserService {
         if (merchantId == null) {
             return List.of();
         }
-        return roleRepository.findByMerchantId(merchantId).stream()
-                .map(r -> {
-                    Map<String, Object> m = new LinkedHashMap<>();
-                    m.put("id", String.valueOf(r.getId()));
-                    m.put("name", r.getName());
-                    return m;
-                })
-                .toList();
+        return roleRepository.findByMerchantId(merchantId).stream().map(r -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", String.valueOf(r.getId()));
+            m.put("name", r.getName());
+            return m;
+        }).toList();
     }
 
     @Transactional
@@ -92,17 +87,10 @@ public class MerchantUserService {
             throw new AppException("A user with this email already exists", HttpStatus.CONFLICT);
         }
 
-        MerchantUser user = MerchantUser.builder()
-                .merchantId(merchantId)
-                .name(name)
-                .email(email)
-                .phoneNumber(phoneNumber)
-                .password(passwordEncoder.encode(password))
-                .role(MerchantUser.ROLE_CASHIER)
-                .status(MerchantUser.STATUS_ACTIVE)
-                .emailVerifiedAt(LocalDateTime.now())
-                .invitedBy(merchantScope.current() != null ? merchantScope.current().getId() : null)
-                .build();
+        MerchantUser user = MerchantUser.builder().merchantId(merchantId).name(name).email(email)
+                .phoneNumber(phoneNumber).password(passwordEncoder.encode(password)).role(MerchantUser.ROLE_CASHIER)
+                .status(MerchantUser.STATUS_ACTIVE).emailVerifiedAt(LocalDateTime.now())
+                .invitedBy(merchantScope.current() != null ? merchantScope.current().getId() : null).build();
 
         // Assign roles if provided
         @SuppressWarnings("unchecked")

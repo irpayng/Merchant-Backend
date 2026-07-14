@@ -31,8 +31,7 @@ public class DisputeController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> show(@PathVariable Long id) {
         Map<String, Object> dispute = disputeService.show(id);
         if (dispute == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.error(404, "Dispute not found."));
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(404, "Dispute not found."));
         }
         return ResponseEntity.ok(ApiResponse.success(dispute));
     }
@@ -44,14 +43,11 @@ public class DisputeController {
         boolean success = Boolean.TRUE.equals(result.get("success"));
         if (!success) {
             String message = result.getOrDefault("message", "Failed to create dispute").toString();
-            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-                    .body(ApiResponse.error(422, message));
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(ApiResponse.error(422, message));
         }
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.<Map<String, Object>>builder()
-                        .code(201)
-                        .message(result.getOrDefault("message", "Dispute created successfully").toString())
-                        .data(result)
+                .body(ApiResponse.<Map<String, Object>>builder().code(201)
+                        .message(result.getOrDefault("message", "Dispute created successfully").toString()).data(result)
                         .build());
     }
 
@@ -62,14 +58,10 @@ public class DisputeController {
         boolean success = Boolean.TRUE.equals(result.get("success"));
         if (!success) {
             String message = result.getOrDefault("message", "Failed to add conversation").toString();
-            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-                    .body(ApiResponse.error(422, message));
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(ApiResponse.error(422, message));
         }
-        return ResponseEntity.ok(ApiResponse.<Map<String, Object>>builder()
-                .code(200)
-                .message("Conversation added")
-                .data(result)
-                .build());
+        return ResponseEntity.ok(ApiResponse.<Map<String, Object>>builder().code(200).message("Conversation added")
+                .data(result).build());
     }
 
     @PatchMapping("/{id}/close")
@@ -78,13 +70,9 @@ public class DisputeController {
         boolean success = Boolean.TRUE.equals(result.get("success"));
         if (!success) {
             String message = result.getOrDefault("message", "Failed to close dispute").toString();
-            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-                    .body(ApiResponse.error(422, message));
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(ApiResponse.error(422, message));
         }
-        return ResponseEntity.ok(ApiResponse.<Map<String, Object>>builder()
-                .code(200)
-                .message("Dispute closed")
-                .data(result)
-                .build());
+        return ResponseEntity.ok(
+                ApiResponse.<Map<String, Object>>builder().code(200).message("Dispute closed").data(result).build());
     }
 }
