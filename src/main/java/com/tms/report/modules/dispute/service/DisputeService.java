@@ -107,7 +107,7 @@ public class DisputeService {
         m.put("message", d.getMessage());
         m.put("status_code", d.getStatusCode());
         m.put("status", Map.of(
-                "code", d.getStatusCode(),
+                "code", d.getStatusCode() != null ? d.getStatusCode() : "",
                 "description", d.getStatusDescription() != null ? d.getStatusDescription() : ""));
         m.put("attachment_url", d.getAttachmentUrl());
         m.put("resolved_at", d.getResolvedAt() != null ? d.getResolvedAt().toString() : null);

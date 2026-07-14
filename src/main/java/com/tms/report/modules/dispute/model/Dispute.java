@@ -50,7 +50,8 @@ public class Dispute {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @OneToMany(mappedBy = "disputeId", fetch = FetchType.LAZY)
+    @OneToMany(fetch = FetchType.LAZY)
+    @JoinColumn(name = "dispute_id", insertable = false, updatable = false)
     @OrderBy("createdAt ASC")
     private List<Conversation> conversations;
 }
