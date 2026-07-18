@@ -1,5 +1,6 @@
 package com.tms.report.modules.activity.service;
 
+import com.tms.report.core.security.MerchantScope;
 import com.tms.report.modules.activity.dto.ActivityDto;
 import com.tms.report.modules.activity.repository.ActivityRepository;
 import jakarta.persistence.EntityManager;
@@ -24,6 +25,7 @@ public class ActivityService {
 
     private final ActivityRepository activityRepository;
     private final EntityManager entityManager;
+    private final MerchantScope merchantScope;
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("MMM d, yyyy h:mma");
 
     @Transactional(readOnly = true)
@@ -48,6 +50,16 @@ public class ActivityService {
                 queryParams.add("%" + words[i] + "%");
             }
             where.append(")");
+        }
+
+        // Merchant-scoped: only show activities from users in the same merchant
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            where.append(" AND 1=0");
+        } else {
+            where.append(" AND act.admin_id IN (SELECT mu.id FROM merchant_users mu WHERE mu.merchant_id = ?")
+                    .append(paramIndex++).append(")");
+            queryParams.add(merchantId);
         }
 
         String sql = """
@@ -97,11 +109,26 @@ public class ActivityService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> show(Long id) {
-        Object[] r = (Object[]) entityManager.createNativeQuery(
+        // Merchant-scoped: only allow viewing activities from the same merchant
+        Long merchantId = merchantScope.merchantId();
+        String scopeClause = "";
+        if (merchantId == null) {
+            scopeClause = " AND 1=0";
+        } else {
+            scopeClause = " AND act.admin_id IN (SELECT mu.id FROM merchant_users mu WHERE mu.merchant_id = :merchantId)";
+        }
+
+        Query q = entityManager.createNativeQuery(
                 "SELECT act.id, act.action, act.description, act.actionable_type, act.actionable_id, act.created_at, "
                         + "a.id as admin_id, a.name as admin_name, a.email as admin_email "
-                        + "FROM admin_activities act LEFT JOIN admins a ON a.id = act.admin_id " + "WHERE act.id = :id")
-                .setParameter("id", id).getSingleResult();
+                        + "FROM admin_activities act LEFT JOIN admins a ON a.id = act.admin_id "
+                        + "WHERE act.id = :id" + scopeClause);
+        q.setParameter("id", id);
+        if (merchantId != null) {
+            q.setParameter("merchantId", merchantId);
+        }
+
+        Object[] r = (Object[]) q.getSingleResult();
 
         java.util.LinkedHashMap<String, Object> data = new java.util.LinkedHashMap<>();
         data.put("id", ((Number) r[0]).longValue());
