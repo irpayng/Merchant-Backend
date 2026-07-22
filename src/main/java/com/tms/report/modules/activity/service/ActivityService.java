@@ -57,7 +57,8 @@ public class ActivityService {
         if (merchantId == null) {
             where.append(" AND 1=0");
         } else {
-            where.append(" AND act.admin_id IN (SELECT smu.id FROM merchant.merchant_users smu WHERE smu.merchant_id = ?")
+            where.append(
+                    " AND act.admin_id IN (SELECT smu.id FROM merchant.merchant_users smu WHERE smu.merchant_id = ?")
                     .append(paramIndex++).append(")");
             queryParams.add(merchantId);
         }
@@ -158,13 +159,10 @@ public class ActivityService {
             return List.of();
         }
 
-        List<Object[]> rows = entityManager.createNativeQuery(
-                "SELECT act.action, act.description, act.created_at "
-                        + "FROM merchant.admin_activities act "
-                        + "WHERE act.admin_id IN (SELECT mu.id FROM merchant.merchant_users mu WHERE mu.merchant_id = :merchantId) "
-                        + "ORDER BY act.created_at DESC LIMIT 5")
-                .setParameter("merchantId", merchantId)
-                .getResultList();
+        List<Object[]> rows = entityManager.createNativeQuery("SELECT act.action, act.description, act.created_at "
+                + "FROM merchant.admin_activities act "
+                + "WHERE act.admin_id IN (SELECT mu.id FROM merchant.merchant_users mu WHERE mu.merchant_id = :merchantId) "
+                + "ORDER BY act.created_at DESC LIMIT 5").setParameter("merchantId", merchantId).getResultList();
 
         return rows.stream().map(row -> {
             Map<String, Object> map = new HashMap<>();
@@ -172,8 +170,10 @@ public class ActivityService {
             map.put("details", row[1] != null ? row[1].toString() : null);
             LocalDateTime createdAt = null;
             if (row[2] != null) {
-                if (row[2] instanceof Timestamp ts) createdAt = ts.toLocalDateTime();
-                else if (row[2] instanceof LocalDateTime ldt) createdAt = ldt;
+                if (row[2] instanceof Timestamp ts)
+                    createdAt = ts.toLocalDateTime();
+                else if (row[2] instanceof LocalDateTime ldt)
+                    createdAt = ldt;
             }
             map.put("date", createdAt != null ? createdAt.format(FMT) : null);
             return map;
