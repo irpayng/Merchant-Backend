@@ -37,7 +37,7 @@ public class RolePrivilegeSeedCommand implements CommandLineRunner {
     @Value("${app.seed.merchant-id:1}")
     private Long seedMerchantId;
 
-    @Value("${app.seed.owner-email:owner@irpay.ng}")
+    @Value("${app.seed.owner-email:admin@irpay.ng}")
     private String seedOwnerEmail;
 
     // ── Privilege definitions (code → [name, module]) ───────
@@ -55,6 +55,7 @@ public class RolePrivilegeSeedCommand implements CommandLineRunner {
             put("manage_user", new String[]{"Manage Team Members", "Administration"});
             put("manage_notification", new String[]{"Manage Notifications", "Notifications"});
             put("manage_setting", new String[]{"Manage Settings", "Settings"});
+            put("create_dispute", new String[]{"Create Disputes", "Disputes"});
         }
     };
 

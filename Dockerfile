@@ -17,6 +17,9 @@ RUN mvn package -B -DskipTests
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine
+# Business timezone. Single knob, same value everywhere; override per-deployment
+# with the TZ env var. Application code reads it via AppZone / the JVM default.
+ENV TZ=Africa/Lagos
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 EXPOSE 8080
