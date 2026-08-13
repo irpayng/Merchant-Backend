@@ -296,16 +296,18 @@ public class GrpcClient {
      * cross-system login: mobile-upgraded merchants can sign into the merchant
      * dashboard using their tms-user credentials.
      *
-     * @param identifier email or phone number
-     * @param password   plain-text password
+     * @param identifier
+     *            email or phone number
+     * @param password
+     *            plain-text password
      * @return map with success, reason, message, and on success: user_id, type,
      *         email, phone_number, first_name, last_name, business_name
      */
     public Map<String, Object> authUser(String identifier, String password) {
         logRequest("AuthUser", identifier);
         try {
-            var resp = userStub.authUser(com.tms.report.grpc.user.AuthUserRequest.newBuilder()
-                    .setIdentifier(identifier).setPassword(password).build());
+            var resp = userStub.authUser(com.tms.report.grpc.user.AuthUserRequest.newBuilder().setIdentifier(identifier)
+                    .setPassword(password).build());
             Map<String, Object> result = new HashMap<>();
             result.put("success", resp.getSuccess());
             result.put("reason", resp.getReason());

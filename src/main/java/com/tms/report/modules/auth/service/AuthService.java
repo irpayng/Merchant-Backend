@@ -110,14 +110,14 @@ public class AuthService {
 
     /**
      * Cross-system login for mobile-upgraded merchants. Validates credentials
-     * against tms-user via gRPC, then finds or creates a MerchantUser record
-     * and issues a local JWT.
+     * against tms-user via gRPC, then finds or creates a MerchantUser record and
+     * issues a local JWT.
      *
      * <p>
-     * This allows merchants who were originally onboarded as ordinary users via
-     * the mobile app (and later upgraded to merchant type) to sign into the
-     * merchant dashboard using their tms-user credentials, without having to
-     * go through the document-upload activation flow.
+     * This allows merchants who were originally onboarded as ordinary users via the
+     * mobile app (and later upgraded to merchant type) to sign into the merchant
+     * dashboard using their tms-user credentials, without having to go through the
+     * document-upload activation flow.
      */
     @Transactional
     public LoginResponse crossLogin(CrossLoginRequest request) {
@@ -224,8 +224,7 @@ public class AuthService {
         // Also ensure cashier role exists (for future staff invites)
         if (!roleRepository.existsByMerchantIdAndSlug(merchantId, "cashier")) {
             Set<String> cashierPrivilegeCodes = Set.of("view_dashboard", "view_transaction", "manage_terminal");
-            Set<Privilege> cashierPrivileges = new HashSet<>(
-                    privilegeRepository.findByCodeIn(cashierPrivilegeCodes));
+            Set<Privilege> cashierPrivileges = new HashSet<>(privilegeRepository.findByCodeIn(cashierPrivilegeCodes));
             Role cashierRole = Role.builder().merchantId(merchantId).name("Cashier").slug("cashier")
                     .description("View-only access to transactions and terminals").systemRole(true)
                     .privileges(cashierPrivileges).build();
@@ -400,7 +399,8 @@ public class AuthService {
         // Try to find the user locally first
         MerchantUser user = findByIdentifier(identifier).orElse(null);
 
-        // If not found locally, check if they exist in tms-user (TID-uploaded or mobile-upgraded merchants)
+        // If not found locally, check if they exist in tms-user (TID-uploaded or
+        // mobile-upgraded merchants)
         if (user == null) {
             user = findOrCreateFromTmsUser(identifier, isEmail);
         }
@@ -445,8 +445,8 @@ public class AuthService {
     }
 
     /**
-     * Look up a user in tms-user by identifier and create a MerchantUser record
-     * if they exist and are a merchant. Used for TID-uploaded merchants and
+     * Look up a user in tms-user by identifier and create a MerchantUser record if
+     * they exist and are a merchant. Used for TID-uploaded merchants and
      * mobile-upgraded merchants who haven't logged into the dashboard yet.
      *
      * @return the created MerchantUser, or null if not found or not a merchant
@@ -472,14 +472,13 @@ public class AuthService {
             Map<String, String> profile = findUserProfileInReplicatedTable(userId);
 
             // Create the MerchantUser record
-            MerchantUser newUser = MerchantUser.builder().merchantId(userId)
-                    .email(profile.get("email")).phoneNumber(profile.get("phone_number"))
-                    .name(profile.get("name")).role(MerchantUser.ROLE_OWNER).status(MerchantUser.STATUS_PENDING)
-                    .password(null) // Will be set during password reset
+            MerchantUser newUser = MerchantUser.builder().merchantId(userId).email(profile.get("email"))
+                    .phoneNumber(profile.get("phone_number")).name(profile.get("name")).role(MerchantUser.ROLE_OWNER)
+                    .status(MerchantUser.STATUS_PENDING).password(null) // Will be set during password reset
                     .build();
 
-            log.info("Creating MerchantUser from tms-user for forgot-password: merchantId={} email={}",
-                    userId, profile.get("email"));
+            log.info("Creating MerchantUser from tms-user for forgot-password: merchantId={} email={}", userId,
+                    profile.get("email"));
             MerchantUser saved = merchantUserRepository.save(newUser);
 
             // Seed default roles
@@ -532,9 +531,9 @@ public class AuthService {
     private Map<String, String> findUserProfileInReplicatedTable(Long userId) {
         Map<String, String> profile = new HashMap<>();
         try {
-            var query = entityManager.createNativeQuery(
-                    "SELECT u.email, u.phone_number, u.business_name, p.first_name, p.last_name " +
-                    "FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.id = :userId");
+            var query = entityManager
+                    .createNativeQuery("SELECT u.email, u.phone_number, u.business_name, p.first_name, p.last_name "
+                            + "FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.id = :userId");
             query.setParameter("userId", userId);
             Object[] row = (Object[]) query.getResultStream().findFirst().orElse(null);
             if (row != null) {
