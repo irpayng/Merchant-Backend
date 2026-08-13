@@ -51,6 +51,12 @@ service UserService {
   rpc UnfreezeUser (UnfreezeUserRequest) returns (AccountActionResponse);
   rpc ResetDevice (ResetDeviceRequest) returns (AccountActionResponse);
   rpc ClearNewDeviceLimit (ClearNewDeviceLimitRequest) returns (AccountActionResponse);
+
+  // ── Cross-system authentication ──
+  // Authenticate a user by email/phone + password and return their profile.
+  // Used for cross-system login: mobile-upgraded merchants can sign into
+  // the merchant dashboard using their tms-user credentials.
+  rpc AuthUser (AuthUserRequest) returns (AuthUserResponse);
 }
 
 message UnfreezeUserRequest {
@@ -260,4 +266,27 @@ message MarkAccountDeletionRequestProcessedRequest {
   // Optional support note; kept on the row for audit.
   string note = 3;
   Actor actor = 4;
+}
+
+// ── Cross-system authentication (for merchant dashboard login) ──
+
+message AuthUserRequest {
+  // Email or phone number
+  string identifier = 1;
+  string password = 2;
+}
+
+message AuthUserResponse {
+  bool success = 1;
+  // "ok", "invalid_credentials", "blocked", "not_merchant", or error message
+  string reason = 2;
+  string message = 3;
+  // Populated only on success
+  int64 user_id = 4;
+  string type = 5;
+  string email = 6;
+  string phone_number = 7;
+  string first_name = 8;
+  string last_name = 9;
+  string business_name = 10;
 }

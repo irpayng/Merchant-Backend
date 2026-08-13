@@ -291,6 +291,40 @@ public class GrpcClient {
         }
     }
 
+    /**
+     * Authenticate a user by email/phone + password against tms-user. Used for
+     * cross-system login: mobile-upgraded merchants can sign into the merchant
+     * dashboard using their tms-user credentials.
+     *
+     * @param identifier email or phone number
+     * @param password   plain-text password
+     * @return map with success, reason, message, and on success: user_id, type,
+     *         email, phone_number, first_name, last_name, business_name
+     */
+    public Map<String, Object> authUser(String identifier, String password) {
+        logRequest("AuthUser", identifier);
+        try {
+            var resp = userStub.authUser(com.tms.report.grpc.user.AuthUserRequest.newBuilder()
+                    .setIdentifier(identifier).setPassword(password).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", resp.getSuccess());
+            result.put("reason", resp.getReason());
+            result.put("message", resp.getMessage());
+            if (resp.getSuccess()) {
+                result.put("user_id", resp.getUserId());
+                result.put("type", resp.getType());
+                result.put("email", resp.getEmail());
+                result.put("phone_number", resp.getPhoneNumber());
+                result.put("first_name", resp.getFirstName());
+                result.put("last_name", resp.getLastName());
+                result.put("business_name", resp.getBusinessName());
+            }
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("AuthUser", identifier, e);
+        }
+    }
+
     // ── Terminal commands → config-service ──
 
     public Map<String, Object> createTerminal(String serial, String make, String model, String os) {
