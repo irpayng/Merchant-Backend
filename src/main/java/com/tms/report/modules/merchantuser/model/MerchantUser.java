@@ -14,16 +14,18 @@ import org.hibernate.annotations.UpdateTimestamp;
 /**
  * A login for the merchant dashboard. Authentication is delegated to tms-user:
  * <ul>
- * <li><b>owner</b> — the merchant business owner. Credentials stored in tms-user's
- * {@code users} table. Identified by {@code merchantId} (the tms-user users.id).</li>
+ * <li><b>owner</b> — the merchant business owner. Credentials stored in
+ * tms-user's {@code users} table. Identified by {@code merchantId} (the
+ * tms-user users.id).</li>
  * <li><b>staff</b> (cashier, manager, etc.) — invited by the owner. Credentials
- * stored in tms-user's {@code operators} table. Identified by {@code operatorId}.</li>
+ * stored in tms-user's {@code operators} table. Identified by
+ * {@code operatorId}.</li>
  * </ul>
  *
  * <p>
  * Roles and privileges are managed locally in the {@code merchant.roles} and
- * {@code merchant.role_privileges} tables. The {@code password} field is kept for
- * backward compatibility but new users authenticate via tms-user.
+ * {@code merchant.role_privileges} tables. The {@code password} field is kept
+ * for backward compatibility but new users authenticate via tms-user.
  */
 @Entity
 @Table(name = "merchant_users", schema = "merchant", indexes = {

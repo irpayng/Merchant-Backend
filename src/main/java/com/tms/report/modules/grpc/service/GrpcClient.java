@@ -334,8 +334,8 @@ public class GrpcClient {
     public Map<String, Object> authOperator(String email, String password) {
         logRequest("AuthOperator", email);
         try {
-            var resp = userStub.authOperator(com.tms.report.grpc.user.AuthOperatorRequest.newBuilder()
-                    .setEmail(email).setPassword(password).build());
+            var resp = userStub.authOperator(com.tms.report.grpc.user.AuthOperatorRequest.newBuilder().setEmail(email)
+                    .setPassword(password).build());
             Map<String, Object> result = new HashMap<>();
             result.put("success", resp.getSuccess());
             result.put("reason", resp.getReason());
@@ -358,21 +358,19 @@ public class GrpcClient {
      * Create an operator (staff) under a merchant. Called when a merchant invites
      * staff via the dashboard.
      */
-    public Map<String, Object> createOperator(long merchantUserId, String username, String password,
-            String name, String email, String phoneNumber, String pin,
-            boolean dashboardEnabled, boolean posEnabled) {
+    public Map<String, Object> createOperator(long merchantUserId, String username, String password, String name,
+            String email, String phoneNumber, String pin, boolean dashboardEnabled, boolean posEnabled) {
         logRequest("CreateOperator", username);
         try {
-            var builder = com.tms.report.grpc.user.CreateOperatorRequest.newBuilder()
-                    .setMerchantUserId(merchantUserId)
-                    .setUsername(username)
-                    .setPassword(password)
-                    .setPin(pin)
-                    .setDashboardEnabled(dashboardEnabled)
+            var builder = com.tms.report.grpc.user.CreateOperatorRequest.newBuilder().setMerchantUserId(merchantUserId)
+                    .setUsername(username).setPassword(password).setPin(pin).setDashboardEnabled(dashboardEnabled)
                     .setPosEnabled(posEnabled);
-            if (name != null) builder.setName(name);
-            if (email != null) builder.setEmail(email);
-            if (phoneNumber != null) builder.setPhoneNumber(phoneNumber);
+            if (name != null)
+                builder.setName(name);
+            if (email != null)
+                builder.setEmail(email);
+            if (phoneNumber != null)
+                builder.setPhoneNumber(phoneNumber);
 
             var resp = userStub.createOperator(builder.build());
             Map<String, Object> result = new HashMap<>();
@@ -391,12 +389,11 @@ public class GrpcClient {
     /**
      * Update an operator's status, password, or access flags.
      */
-    public Map<String, Object> updateOperator(long operatorId, long merchantUserId,
-            String status, String password, Boolean dashboardEnabled, Boolean posEnabled) {
+    public Map<String, Object> updateOperator(long operatorId, long merchantUserId, String status, String password,
+            Boolean dashboardEnabled, Boolean posEnabled) {
         logRequest("UpdateOperator", String.valueOf(operatorId));
         try {
-            var builder = com.tms.report.grpc.user.UpdateOperatorRequest.newBuilder()
-                    .setOperatorId(operatorId)
+            var builder = com.tms.report.grpc.user.UpdateOperatorRequest.newBuilder().setOperatorId(operatorId)
                     .setMerchantUserId(merchantUserId);
 
             if (status != null) {

@@ -102,16 +102,12 @@ public class MerchantUserService {
         }
 
         // Create operator in tms-user (credentials stored there)
-        Map<String, Object> operatorResult = grpcClient.createOperator(
-                merchantId,
-                username,
-                password,      // plain text — tms-user will hash it
-                name,
-                email,
-                phoneNumber,
-                pin,           // plain text — tms-user will hash it
-                true,          // dashboardEnabled
-                true           // posEnabled (staff can access both dashboard and POS)
+        Map<String, Object> operatorResult = grpcClient.createOperator(merchantId, username, password, // plain text —
+                                                                                                       // tms-user will
+                                                                                                       // hash it
+                name, email, phoneNumber, pin, // plain text — tms-user will hash it
+                true, // dashboardEnabled
+                true // posEnabled (staff can access both dashboard and POS)
         );
 
         if (!Boolean.TRUE.equals(operatorResult.get("success"))) {
@@ -129,18 +125,10 @@ public class MerchantUserService {
         log.info("Created operator in tms-user: operatorId={} merchantId={} email={}", operatorId, merchantId, email);
 
         // Create local MerchantUser record (no password — auth via tms-user)
-        MerchantUser user = MerchantUser.builder()
-                .merchantId(merchantId)
-                .operatorId(operatorId)
-                .name(name)
-                .email(email)
-                .phoneNumber(phoneNumber)
-                .password(null)  // No local password — auth via tms-user operators
-                .role(MerchantUser.ROLE_CASHIER)
-                .status(MerchantUser.STATUS_ACTIVE)
-                .emailVerifiedAt(LocalDateTime.now())
-                .invitedBy(merchantScope.current() != null ? merchantScope.current().getId() : null)
-                .build();
+        MerchantUser user = MerchantUser.builder().merchantId(merchantId).operatorId(operatorId).name(name).email(email)
+                .phoneNumber(phoneNumber).password(null) // No local password — auth via tms-user operators
+                .role(MerchantUser.ROLE_CASHIER).status(MerchantUser.STATUS_ACTIVE).emailVerifiedAt(LocalDateTime.now())
+                .invitedBy(merchantScope.current() != null ? merchantScope.current().getId() : null).build();
 
         // Assign roles if provided
         @SuppressWarnings("unchecked")

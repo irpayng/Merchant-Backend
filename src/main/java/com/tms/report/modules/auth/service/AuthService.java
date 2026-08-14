@@ -93,8 +93,8 @@ public class AuthService {
      * </ul>
      *
      * <p>
-     * Roles and privileges are always managed locally in Merchant-Backend — tms-user
-     * only handles credential validation.
+     * Roles and privileges are always managed locally in Merchant-Backend —
+     * tms-user only handles credential validation.
      */
     @Transactional
     public LoginResponse login(LoginRequest request) {
@@ -143,7 +143,8 @@ public class AuthService {
     }
 
     /**
-     * Complete login for a staff member (operator) after successful auth via tms-user.
+     * Complete login for a staff member (operator) after successful auth via
+     * tms-user.
      */
     private LoginResponse loginAsOperator(Map<String, Object> authResult) {
         Long operatorId = ((Number) authResult.get("operator_id")).longValue();
@@ -169,10 +170,9 @@ public class AuthService {
         log.info("Staff login successful for operatorId={} merchantId={} email={}", operatorId, merchantUserId, email);
 
         return LoginResponse.builder().token(token).emailIsVerified(verified)
-                .user(UserData.builder().name(staffUser.getName()).email(staffUser.getEmail())
-                        .role(staffUser.getRole()).merchantId(staffUser.getMerchantId())
-                        .terminalId(staffUser.getTerminalId()).emailIsVerified(verified)
-                        .privileges(privileges).build())
+                .user(UserData.builder().name(staffUser.getName()).email(staffUser.getEmail()).role(staffUser.getRole())
+                        .merchantId(staffUser.getMerchantId()).terminalId(staffUser.getTerminalId())
+                        .emailIsVerified(verified).privileges(privileges).build())
                 .build();
     }
 
@@ -212,31 +212,30 @@ public class AuthService {
         return LoginResponse.builder().token(token).emailIsVerified(verified)
                 .user(UserData.builder().name(merchantUser.getName()).email(merchantUser.getEmail())
                         .role(merchantUser.getRole()).merchantId(merchantUser.getMerchantId())
-                        .terminalId(merchantUser.getTerminalId()).emailIsVerified(verified)
-                        .privileges(privileges).build())
+                        .terminalId(merchantUser.getTerminalId()).emailIsVerified(verified).privileges(privileges)
+                        .build())
                 .build();
     }
 
     /**
      * Find or create a MerchantUser for a staff member (operator).
      */
-    private MerchantUser findOrCreateStaffUser(Long operatorId, Long merchantUserId, String email,
-            String name, String phoneNumber) {
+    private MerchantUser findOrCreateStaffUser(Long operatorId, Long merchantUserId, String email, String name,
+            String phoneNumber) {
         // Try to find by operatorId first
         return merchantUserRepository.findByOperatorId(operatorId).orElseGet(() -> {
             // Create new staff MerchantUser
-            MerchantUser newUser = MerchantUser.builder()
-                    .merchantId(merchantUserId)
-                    .operatorId(operatorId)
+            MerchantUser newUser = MerchantUser.builder().merchantId(merchantUserId).operatorId(operatorId)
                     .email(email != null && !email.isBlank() ? email.toLowerCase() : null)
                     .phoneNumber(phoneNumber != null && !phoneNumber.isBlank() ? phoneNumber : null)
-                    .name(name != null && !name.isBlank() ? name : "Staff")
-                    .role(MerchantUser.ROLE_CASHIER) // Default role for staff
-                    .status(MerchantUser.STATUS_ACTIVE)
-                    .password(null) // No local password — auth via tms-user operators
+                    .name(name != null && !name.isBlank() ? name : "Staff").role(MerchantUser.ROLE_CASHIER) // Default
+                                                                                                            // role for
+                                                                                                            // staff
+                    .status(MerchantUser.STATUS_ACTIVE).password(null) // No local password — auth via tms-user
+                                                                       // operators
                     .build();
-            log.info("Creating MerchantUser for staff: operatorId={} merchantId={} email={}",
-                    operatorId, merchantUserId, email);
+            log.info("Creating MerchantUser for staff: operatorId={} merchantId={} email={}", operatorId,
+                    merchantUserId, email);
             return merchantUserRepository.save(newUser);
         });
     }
