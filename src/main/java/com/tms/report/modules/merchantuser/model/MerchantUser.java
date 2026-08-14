@@ -12,22 +12,22 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 /**
- * A login for the merchant dashboard. Two roles:
+ * A login for the merchant dashboard. Authentication is delegated to tms-user:
  * <ul>
- * <li><b>owner</b> — the business owner; full read of their own transactions,
- * terminals, settlements/statements, audit; can invite/revoke cashiers.</li>
- * <li><b>cashier</b> — delegated, view-only; optionally locked to a single
- * {@code terminalId}.</li>
+ * <li><b>owner</b> — the merchant business owner. Credentials stored in tms-user's
+ * {@code users} table. Identified by {@code merchantId} (the tms-user users.id).</li>
+ * <li><b>staff</b> (cashier, manager, etc.) — invited by the owner. Credentials
+ * stored in tms-user's {@code operators} table. Identified by {@code operatorId}.</li>
  * </ul>
  *
  * <p>
- * Bound to a merchant via {@code merchantId} (the onboarded merchant's
- * {@code users.id}). Onboarding is done by document upload which captures no
- * password, so accounts start {@code pending} with a null password and are
- * activated via a link or OTP (see {@code activation_tokens}).
+ * Roles and privileges are managed locally in the {@code merchant.roles} and
+ * {@code merchant.role_privileges} tables. The {@code password} field is kept for
+ * backward compatibility but new users authenticate via tms-user.
  */
 @Entity
-@Table(name = "merchant_users", schema = "merchant")
+@Table(name = "merchant_users", schema = "merchant", indexes = {
+        @Index(name = "idx_merchant_users_operator_id", columnList = "operator_id")})
 @Data
 @Builder
 @NoArgsConstructor
@@ -48,6 +48,13 @@ public class MerchantUser {
     /** The merchant (business) this login belongs to — {@code users.id}. */
     @Column(name = "merchant_id", nullable = false)
     private Long merchantId;
+
+    /**
+     * For staff users: the operator id in tms-user's operators table. Null for
+     * owner users who authenticate directly via tms-user's users table.
+     */
+    @Column(name = "operator_id", unique = true)
+    private Long operatorId;
 
     /**
      * Cashier lock to one terminal ({@code terminals.id}); null = all merchant
@@ -72,6 +79,11 @@ public class MerchantUser {
     @Column(name = "phone_number")
     private String phoneNumber;
 
+    /**
+     * Legacy password field. New users authenticate via tms-user (operators table
+     * for staff, users table for owners). Kept for backward compatibility with
+     * existing accounts.
+     */
     @JsonIgnore
     private String password;
 
@@ -82,7 +94,7 @@ public class MerchantUser {
     @JsonIgnore
     private LocalDateTime emailVerifiedAt;
 
-    /** merchant_users.id of the owner who invited this cashier. */
+    /** merchant_users.id of the owner who invited this staff member. */
     @Column(name = "invited_by")
     private Long invitedBy;
 
@@ -100,6 +112,13 @@ public class MerchantUser {
 
     public boolean isCashier() {
         return ROLE_CASHIER.equalsIgnoreCase(role);
+    }
+
+    /**
+     * Whether this is a staff user (authenticates via tms-user operators table).
+     */
+    public boolean isStaff() {
+        return operatorId != null;
     }
 
     public boolean isActive() {

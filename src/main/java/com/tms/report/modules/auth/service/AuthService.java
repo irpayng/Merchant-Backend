@@ -79,33 +79,166 @@ public class AuthService {
 
     // ── Login / session ─────────────────────────────────────
 
+    /**
+     * Unified login for the merchant dashboard. Delegates all authentication to
+     * tms-user (Option 3: tms-user as single auth authority).
+     *
+     * <p>
+     * The flow depends on whether the identifier matches a merchant owner or staff:
+     * <ul>
+     * <li><b>Owner</b> (merchant): Calls {@code AuthUser} gRPC to validate against
+     * tms-user's users table. The merchant's password is stored in tms-user.</li>
+     * <li><b>Staff</b> (operator): Calls {@code AuthOperator} gRPC to validate
+     * against tms-user's operators table. Staff credentials are in operators.</li>
+     * </ul>
+     *
+     * <p>
+     * Roles and privileges are always managed locally in Merchant-Backend — tms-user
+     * only handles credential validation.
+     */
+    @Transactional
     public LoginResponse login(LoginRequest request) {
-        MerchantUser user = findByIdentifier(request.getEmail())
-                .orElseThrow(() -> new AppException("Invalid credentials", HttpStatus.UNAUTHORIZED));
+        String identifier = request.getEmail();
+        String password = request.getPassword();
 
-        if (user.isRevoked()) {
-            throw new AppException("Your access has been revoked", HttpStatus.UNAUTHORIZED);
-        }
-        if (!user.isActive() || user.getPassword() == null) {
-            throw new AppException("Account not activated. Please set up your password to continue.",
-                    HttpStatus.FORBIDDEN);
-        }
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+        if (identifier == null || identifier.isBlank() || password == null || password.isBlank()) {
             throw new AppException("Invalid credentials", HttpStatus.UNAUTHORIZED);
         }
 
-        String token = jwtService.generateToken(new MerchantUserDetails(user));
-        boolean verified = user.getEmailVerifiedAt() != null;
+        // Try staff (operator) authentication first — they login via email
+        Map<String, Object> operatorResult = grpcClient.authOperator(identifier, password);
+        if (Boolean.TRUE.equals(operatorResult.get("success"))) {
+            return loginAsOperator(operatorResult);
+        }
 
-        // Resolve privilege codes from the role entity (or fallback)
-        MerchantUserDetails details = new MerchantUserDetails(user);
+        // If not an operator, try merchant owner authentication
+        Map<String, Object> userResult = grpcClient.authUser(identifier, password);
+        if (Boolean.TRUE.equals(userResult.get("success"))) {
+            return loginAsMerchantOwner(userResult);
+        }
+
+        // Both failed — return appropriate error
+        String operatorReason = (String) operatorResult.get("reason");
+        String userReason = (String) userResult.get("reason");
+
+        // Check for specific error conditions
+        if ("blocked".equals(userReason)) {
+            throw new AppException("Your account has been blocked. Please contact support.", HttpStatus.FORBIDDEN);
+        }
+        if ("merchant_blocked".equals(operatorReason)) {
+            throw new AppException("The merchant account has been blocked.", HttpStatus.FORBIDDEN);
+        }
+        if ("disabled".equals(operatorReason)) {
+            throw new AppException("Your account has been disabled.", HttpStatus.FORBIDDEN);
+        }
+        if ("dashboard_not_enabled".equals(operatorReason)) {
+            throw new AppException("Dashboard access is not enabled for this account.", HttpStatus.FORBIDDEN);
+        }
+        if ("not_merchant".equals(userReason)) {
+            throw new AppException("Only merchants can access the merchant dashboard.", HttpStatus.FORBIDDEN);
+        }
+
+        // Generic invalid credentials
+        throw new AppException("Invalid credentials", HttpStatus.UNAUTHORIZED);
+    }
+
+    /**
+     * Complete login for a staff member (operator) after successful auth via tms-user.
+     */
+    private LoginResponse loginAsOperator(Map<String, Object> authResult) {
+        Long operatorId = ((Number) authResult.get("operator_id")).longValue();
+        Long merchantUserId = ((Number) authResult.get("merchant_user_id")).longValue();
+        String email = (String) authResult.get("email");
+        String name = (String) authResult.get("name");
+        String phoneNumber = (String) authResult.get("phone_number");
+
+        // Find or create the MerchantUser record for this operator
+        MerchantUser staffUser = findOrCreateStaffUser(operatorId, merchantUserId, email, name, phoneNumber);
+
+        if (staffUser.isRevoked()) {
+            throw new AppException("Your access has been revoked", HttpStatus.FORBIDDEN);
+        }
+
+        // Issue JWT
+        String token = jwtService.generateToken(new MerchantUserDetails(staffUser));
+        boolean verified = staffUser.getEmailVerifiedAt() != null;
+
+        MerchantUserDetails details = new MerchantUserDetails(staffUser);
         List<String> privileges = details.getAuthorities().stream().map(a -> a.getAuthority()).sorted().toList();
 
+        log.info("Staff login successful for operatorId={} merchantId={} email={}", operatorId, merchantUserId, email);
+
         return LoginResponse.builder().token(token).emailIsVerified(verified)
-                .user(UserData.builder().name(user.getName()).email(user.getEmail()).role(user.getRole())
-                        .merchantId(user.getMerchantId()).terminalId(user.getTerminalId()).emailIsVerified(verified)
+                .user(UserData.builder().name(staffUser.getName()).email(staffUser.getEmail())
+                        .role(staffUser.getRole()).merchantId(staffUser.getMerchantId())
+                        .terminalId(staffUser.getTerminalId()).emailIsVerified(verified)
                         .privileges(privileges).build())
                 .build();
+    }
+
+    /**
+     * Complete login for a merchant owner after successful auth via tms-user.
+     */
+    private LoginResponse loginAsMerchantOwner(Map<String, Object> authResult) {
+        Long userId = ((Number) authResult.get("user_id")).longValue();
+        String email = (String) authResult.get("email");
+        String phoneNumber = (String) authResult.get("phone_number");
+        String firstName = (String) authResult.get("first_name");
+        String lastName = (String) authResult.get("last_name");
+        String businessName = (String) authResult.get("business_name");
+
+        String displayName = buildDisplayName(businessName, firstName, lastName, email);
+
+        // Find or create the MerchantUser record
+        MerchantUser merchantUser = findOrCreateMerchantUser(userId, email, phoneNumber, displayName);
+
+        if (merchantUser.getRoleEntity() == null) {
+            ensureDefaultRolesForMerchant(merchantUser);
+        }
+
+        if (merchantUser.isRevoked()) {
+            throw new AppException("Your access has been revoked", HttpStatus.FORBIDDEN);
+        }
+
+        // Issue JWT
+        String token = jwtService.generateToken(new MerchantUserDetails(merchantUser));
+        boolean verified = merchantUser.getEmailVerifiedAt() != null;
+
+        MerchantUserDetails details = new MerchantUserDetails(merchantUser);
+        List<String> privileges = details.getAuthorities().stream().map(a -> a.getAuthority()).sorted().toList();
+
+        log.info("Merchant owner login successful for merchantId={} email={}", userId, email);
+
+        return LoginResponse.builder().token(token).emailIsVerified(verified)
+                .user(UserData.builder().name(merchantUser.getName()).email(merchantUser.getEmail())
+                        .role(merchantUser.getRole()).merchantId(merchantUser.getMerchantId())
+                        .terminalId(merchantUser.getTerminalId()).emailIsVerified(verified)
+                        .privileges(privileges).build())
+                .build();
+    }
+
+    /**
+     * Find or create a MerchantUser for a staff member (operator).
+     */
+    private MerchantUser findOrCreateStaffUser(Long operatorId, Long merchantUserId, String email,
+            String name, String phoneNumber) {
+        // Try to find by operatorId first
+        return merchantUserRepository.findByOperatorId(operatorId).orElseGet(() -> {
+            // Create new staff MerchantUser
+            MerchantUser newUser = MerchantUser.builder()
+                    .merchantId(merchantUserId)
+                    .operatorId(operatorId)
+                    .email(email != null && !email.isBlank() ? email.toLowerCase() : null)
+                    .phoneNumber(phoneNumber != null && !phoneNumber.isBlank() ? phoneNumber : null)
+                    .name(name != null && !name.isBlank() ? name : "Staff")
+                    .role(MerchantUser.ROLE_CASHIER) // Default role for staff
+                    .status(MerchantUser.STATUS_ACTIVE)
+                    .password(null) // No local password — auth via tms-user operators
+                    .build();
+            log.info("Creating MerchantUser for staff: operatorId={} merchantId={} email={}",
+                    operatorId, merchantUserId, email);
+            return merchantUserRepository.save(newUser);
+        });
     }
 
     /**

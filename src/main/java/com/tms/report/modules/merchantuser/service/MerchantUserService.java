@@ -2,6 +2,7 @@ package com.tms.report.modules.merchantuser.service;
 
 import com.tms.report.core.exception.AppException;
 import com.tms.report.core.security.MerchantScope;
+import com.tms.report.modules.grpc.service.GrpcClient;
 import com.tms.report.modules.merchantuser.model.MerchantUser;
 import com.tms.report.modules.merchantuser.repository.MerchantUserRepository;
 import com.tms.report.modules.role.model.Role;
@@ -9,22 +10,23 @@ import com.tms.report.modules.role.repository.RoleRepository;
 import java.time.LocalDateTime;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class MerchantUserService {
 
     private final MerchantUserRepository merchantUserRepository;
     private final RoleRepository roleRepository;
     private final MerchantScope merchantScope;
-    private final PasswordEncoder passwordEncoder;
+    private final GrpcClient grpcClient;
 
     public Page<Map<String, Object>> list(Map<String, String> params) {
         Long merchantId = merchantScope.merchantId();
@@ -77,20 +79,68 @@ public class MerchantUserService {
         String email = str(data, "email").toLowerCase().trim();
         String phoneNumber = str(data, "phone_number");
         String password = str(data, "password");
+        String pin = str(data, "pin");
 
         if (name.isBlank() || email.isBlank()) {
             throw new AppException("Name and email are required", HttpStatus.BAD_REQUEST);
         }
+        if (password.isBlank()) {
+            throw new AppException("Password is required", HttpStatus.BAD_REQUEST);
+        }
 
-        // Check for existing user with same email
+        // Check for existing user with same email locally
         if (merchantUserRepository.findByEmail(email).isPresent()) {
             throw new AppException("A user with this email already exists", HttpStatus.CONFLICT);
         }
 
-        MerchantUser user = MerchantUser.builder().merchantId(merchantId).name(name).email(email)
-                .phoneNumber(phoneNumber).password(passwordEncoder.encode(password)).role(MerchantUser.ROLE_CASHIER)
-                .status(MerchantUser.STATUS_ACTIVE).emailVerifiedAt(LocalDateTime.now())
-                .invitedBy(merchantScope.current() != null ? merchantScope.current().getId() : null).build();
+        // Generate a username for the operator (email prefix + merchantId suffix)
+        String username = email.split("@")[0] + "_" + merchantId;
+
+        // Default PIN if not provided (staff can change later via POS)
+        if (pin.isBlank()) {
+            pin = "0000";
+        }
+
+        // Create operator in tms-user (credentials stored there)
+        Map<String, Object> operatorResult = grpcClient.createOperator(
+                merchantId,
+                username,
+                password,      // plain text — tms-user will hash it
+                name,
+                email,
+                phoneNumber,
+                pin,           // plain text — tms-user will hash it
+                true,          // dashboardEnabled
+                true           // posEnabled (staff can access both dashboard and POS)
+        );
+
+        if (!Boolean.TRUE.equals(operatorResult.get("success"))) {
+            String reason = (String) operatorResult.get("reason");
+            String message = (String) operatorResult.get("message");
+
+            if ("username_exists".equals(reason) || "email_exists".equals(reason)) {
+                throw new AppException("A user with this email already exists", HttpStatus.CONFLICT);
+            }
+            log.error("Failed to create operator in tms-user: {} - {}", reason, message);
+            throw new AppException(message != null ? message : "Failed to create staff user", HttpStatus.BAD_REQUEST);
+        }
+
+        Long operatorId = ((Number) operatorResult.get("operator_id")).longValue();
+        log.info("Created operator in tms-user: operatorId={} merchantId={} email={}", operatorId, merchantId, email);
+
+        // Create local MerchantUser record (no password — auth via tms-user)
+        MerchantUser user = MerchantUser.builder()
+                .merchantId(merchantId)
+                .operatorId(operatorId)
+                .name(name)
+                .email(email)
+                .phoneNumber(phoneNumber)
+                .password(null)  // No local password — auth via tms-user operators
+                .role(MerchantUser.ROLE_CASHIER)
+                .status(MerchantUser.STATUS_ACTIVE)
+                .emailVerifiedAt(LocalDateTime.now())
+                .invitedBy(merchantScope.current() != null ? merchantScope.current().getId() : null)
+                .build();
 
         // Assign roles if provided
         @SuppressWarnings("unchecked")

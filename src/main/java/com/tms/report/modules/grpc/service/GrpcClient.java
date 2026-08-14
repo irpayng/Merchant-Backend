@@ -327,6 +327,102 @@ public class GrpcClient {
         }
     }
 
+    /**
+     * Authenticate an operator by email + password for dashboard login. Returns
+     * operator profile and merchant_user_id so the caller can look up roles.
+     */
+    public Map<String, Object> authOperator(String email, String password) {
+        logRequest("AuthOperator", email);
+        try {
+            var resp = userStub.authOperator(com.tms.report.grpc.user.AuthOperatorRequest.newBuilder()
+                    .setEmail(email).setPassword(password).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", resp.getSuccess());
+            result.put("reason", resp.getReason());
+            result.put("message", resp.getMessage());
+            if (resp.getSuccess()) {
+                result.put("operator_id", resp.getOperatorId());
+                result.put("merchant_user_id", resp.getMerchantUserId());
+                result.put("name", resp.getName());
+                result.put("email", resp.getEmail());
+                result.put("phone_number", resp.getPhoneNumber());
+                result.put("username", resp.getUsername());
+            }
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("AuthOperator", email, e);
+        }
+    }
+
+    /**
+     * Create an operator (staff) under a merchant. Called when a merchant invites
+     * staff via the dashboard.
+     */
+    public Map<String, Object> createOperator(long merchantUserId, String username, String password,
+            String name, String email, String phoneNumber, String pin,
+            boolean dashboardEnabled, boolean posEnabled) {
+        logRequest("CreateOperator", username);
+        try {
+            var builder = com.tms.report.grpc.user.CreateOperatorRequest.newBuilder()
+                    .setMerchantUserId(merchantUserId)
+                    .setUsername(username)
+                    .setPassword(password)
+                    .setPin(pin)
+                    .setDashboardEnabled(dashboardEnabled)
+                    .setPosEnabled(posEnabled);
+            if (name != null) builder.setName(name);
+            if (email != null) builder.setEmail(email);
+            if (phoneNumber != null) builder.setPhoneNumber(phoneNumber);
+
+            var resp = userStub.createOperator(builder.build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", resp.getSuccess());
+            result.put("reason", resp.getReason());
+            result.put("message", resp.getMessage());
+            if (resp.getSuccess()) {
+                result.put("operator_id", resp.getOperatorId());
+            }
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("CreateOperator", username, e);
+        }
+    }
+
+    /**
+     * Update an operator's status, password, or access flags.
+     */
+    public Map<String, Object> updateOperator(long operatorId, long merchantUserId,
+            String status, String password, Boolean dashboardEnabled, Boolean posEnabled) {
+        logRequest("UpdateOperator", String.valueOf(operatorId));
+        try {
+            var builder = com.tms.report.grpc.user.UpdateOperatorRequest.newBuilder()
+                    .setOperatorId(operatorId)
+                    .setMerchantUserId(merchantUserId);
+
+            if (status != null) {
+                builder.setUpdateStatus(true).setStatus(status);
+            }
+            if (password != null) {
+                builder.setUpdatePassword(true).setPassword(password);
+            }
+            if (dashboardEnabled != null) {
+                builder.setUpdateDashboardEnabled(true).setDashboardEnabled(dashboardEnabled);
+            }
+            if (posEnabled != null) {
+                builder.setUpdatePosEnabled(true).setPosEnabled(posEnabled);
+            }
+
+            var resp = userStub.updateOperator(builder.build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", resp.getSuccess());
+            result.put("reason", resp.getReason());
+            result.put("message", resp.getMessage());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("UpdateOperator", String.valueOf(operatorId), e);
+        }
+    }
+
     // ── Terminal commands → config-service ──
 
     public Map<String, Object> createTerminal(String serial, String make, String model, String os) {
