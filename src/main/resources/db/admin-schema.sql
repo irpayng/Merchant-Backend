@@ -142,3 +142,8 @@ CREATE TABLE IF NOT EXISTS merchant.role_privileges (
 
 -- Add role_id FK to merchant_users (nullable for backward compat)
 ALTER TABLE merchant.merchant_users ADD COLUMN IF NOT EXISTS role_id BIGINT REFERENCES merchant.roles(id) ON DELETE SET NULL;
+
+-- Unified auth: link staff logins to tms-user operators table.
+-- owner logins have operator_id=NULL (they auth via users table).
+ALTER TABLE merchant.merchant_users ADD COLUMN IF NOT EXISTS operator_id BIGINT UNIQUE;
+CREATE INDEX IF NOT EXISTS idx_merchant_users_operator_id ON merchant.merchant_users(operator_id);
