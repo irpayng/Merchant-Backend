@@ -763,13 +763,9 @@ public class AuthService {
      *             if the password cannot be set in tms-user
      */
     private void setPasswordInTmsUser(MerchantUser user, String identifier, boolean isEmail, String rawPassword) {
-        // Resolve the tms-user id: first try merchantId, then lookup by the identifier
-        Long userId = user.getMerchantId();
-
-        if (userId == null) {
-            // Look up in tms-user using the identifier directly
-            userId = findUserIdInTmsUser(identifier, isEmail);
-        }
+        // Always look up in tms-user using the identifier directly
+        // Don't trust merchantId on local record - it may be stale or wrong
+        Long userId = findUserIdInTmsUser(identifier, isEmail);
 
         if (userId == null) {
             log.error("setPasswordInTmsUser: could not find user in tms-user for identifier={}", identifier);
@@ -780,10 +776,11 @@ public class AuthService {
             Map<String, Object> result = grpcClient.setUserPassword(userId, rawPassword);
             if (Boolean.TRUE.equals(result.get("success"))) {
                 log.info("setPasswordInTmsUser: password set for userId={}", userId);
-                // Update merchantId on local record if it was missing
-                if (user.getMerchantId() == null) {
+                // Update merchantId on local record if it differs
+                if (user.getMerchantId() == null || !user.getMerchantId().equals(userId)) {
+                    log.info("setPasswordInTmsUser: updating merchantId from {} to {} on MerchantUser id={}",
+                            user.getMerchantId(), userId, user.getId());
                     user.setMerchantId(userId);
-                    log.info("setPasswordInTmsUser: updated merchantId={} on MerchantUser id={}", userId, user.getId());
                 }
             } else {
                 String reason = (String) result.get("reason");
