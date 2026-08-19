@@ -53,7 +53,9 @@ public class MerchantUserDetails implements UserDetails {
 
     @Override
     public String getPassword() {
-        return merchantUser.getPassword();
+        // Password authentication is delegated to tms-user via gRPC
+        // This method is not used for login but required by UserDetails interface
+        return "";
     }
 
     @Override

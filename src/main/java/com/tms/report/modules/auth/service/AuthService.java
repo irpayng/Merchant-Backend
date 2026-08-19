@@ -39,7 +39,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,7 +59,6 @@ public class AuthService {
     private final RoleRepository roleRepository;
     private final PrivilegeRepository privilegeRepository;
     private final JwtService jwtService;
-    private final PasswordEncoder passwordEncoder;
     private final GrpcClient grpcClient;
     private final EntityManager entityManager;
 
@@ -228,12 +226,8 @@ public class AuthService {
             MerchantUser newUser = MerchantUser.builder().merchantId(merchantUserId).operatorId(operatorId)
                     .email(email != null && !email.isBlank() ? email.toLowerCase() : null)
                     .phoneNumber(phoneNumber != null && !phoneNumber.isBlank() ? phoneNumber : null)
-                    .name(name != null && !name.isBlank() ? name : "Staff").role(MerchantUser.ROLE_CASHIER) // Default
-                                                                                                            // role for
-                                                                                                            // staff
-                    .status(MerchantUser.STATUS_ACTIVE).password(null) // No local password — auth via tms-user
-                                                                       // operators
-                    .build();
+                    .name(name != null && !name.isBlank() ? name : "Staff").role(MerchantUser.ROLE_CASHIER)
+                    .status(MerchantUser.STATUS_ACTIVE).build();
             log.info("Creating MerchantUser for staff: operatorId={} merchantId={} email={}", operatorId,
                     merchantUserId, email);
             return merchantUserRepository.save(newUser);
@@ -327,9 +321,7 @@ public class AuthService {
                     MerchantUser newUser = MerchantUser.builder().merchantId(merchantId)
                             .email(email != null && !email.isBlank() ? email.toLowerCase() : null)
                             .phoneNumber(phoneNumber != null && !phoneNumber.isBlank() ? phoneNumber : null)
-                            .name(displayName).role(MerchantUser.ROLE_OWNER).status(MerchantUser.STATUS_ACTIVE)
-                            // No password — cross-login users authenticate via tms-user
-                            .password(null).build();
+                            .name(displayName).role(MerchantUser.ROLE_OWNER).status(MerchantUser.STATUS_ACTIVE).build();
                     log.info("Creating MerchantUser for cross-login: merchantId={} email={}", merchantId, email);
                     return merchantUserRepository.save(newUser);
                 });
@@ -404,11 +396,26 @@ public class AuthService {
     @Transactional
     public void changePassword(ChangePasswordRequest request) {
         MerchantUser user = getCurrentMerchantUser();
-        if (user.getPassword() == null || !passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+
+        // Get the user's identifier (email or phone) for auth verification
+        String identifier = user.getEmail();
+        if (identifier == null || identifier.isBlank()) {
+            identifier = user.getPhoneNumber();
+        }
+        if (identifier == null || identifier.isBlank()) {
+            throw new AppException("No email or phone on account", HttpStatus.BAD_REQUEST);
+        }
+
+        // Verify current password via tms-user
+        Map<String, Object> authResult = grpcClient.authUser(identifier, request.getCurrentPassword());
+        if (!Boolean.TRUE.equals(authResult.get("success"))) {
             throw new AppException("Current password is incorrect", HttpStatus.BAD_REQUEST);
         }
-        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
-        merchantUserRepository.save(user);
+
+        // Set new password in tms-user
+        setPasswordInTmsUser(user, request.getNewPassword());
+
+        log.info("Password changed for user: email={} merchantId={}", user.getEmail(), user.getMerchantId());
     }
 
     // ── Activation (link + OTP) ─────────────────────────────
@@ -424,7 +431,8 @@ public class AuthService {
         if (user.isRevoked()) {
             throw new AppException("Your access has been revoked", HttpStatus.FORBIDDEN);
         }
-        if (user.isActive() && user.getPassword() != null) {
+        if (user.isActive()) {
+            // Already activated - they should use forgot-password flow instead
             throw new AppException("This account is already activated. Use forgot-password instead.",
                     HttpStatus.CONFLICT);
         }
@@ -459,7 +467,11 @@ public class AuthService {
     private void completeActivation(ActivationToken token, String rawPassword) {
         MerchantUser user = merchantUserRepository.findById(token.getMerchantUserId())
                 .orElseThrow(() -> new AppException("Account not found", HttpStatus.BAD_REQUEST));
-        user.setPassword(passwordEncoder.encode(rawPassword));
+
+        // Set password in tms-user (the single source of truth for credentials)
+        setPasswordInTmsUser(user, rawPassword);
+
+        // Update local record status (no password stored locally)
         user.setStatus(MerchantUser.STATUS_ACTIVE);
         if (user.getEmailVerifiedAt() == null) {
             user.setEmailVerifiedAt(LocalDateTime.now());
@@ -469,8 +481,7 @@ public class AuthService {
         token.setConsumedAt(LocalDateTime.now());
         activationTokenRepository.save(token);
 
-        // Sync password to tms-user so merchant can also login via POS terminal
-        syncPasswordToTmsUser(user, rawPassword, "completeActivation");
+        log.info("Activation completed for user: email={} merchantId={}", user.getEmail(), user.getMerchantId());
     }
 
     private void initiateActivation(MerchantUser user, String channel) {
@@ -609,8 +620,7 @@ public class AuthService {
             // Create the MerchantUser record
             MerchantUser newUser = MerchantUser.builder().merchantId(userId).email(profile.get("email"))
                     .phoneNumber(profile.get("phone_number")).name(profile.get("name")).role(MerchantUser.ROLE_OWNER)
-                    .status(MerchantUser.STATUS_PENDING).password(null) // Will be set during password reset
-                    .build();
+                    .status(MerchantUser.STATUS_PENDING).build();
 
             log.info("Creating MerchantUser from tms-user for forgot-password: merchantId={} email={}", userId,
                     profile.get("email"));
@@ -697,7 +707,11 @@ public class AuthService {
         }
 
         String rawPassword = request.getPassword();
-        user.setPassword(passwordEncoder.encode(rawPassword));
+
+        // Set password in tms-user (the single source of truth for credentials)
+        setPasswordInTmsUser(user, rawPassword);
+
+        // Update local record status (no password stored locally)
         if (user.getEmailVerifiedAt() == null) {
             user.setEmailVerifiedAt(LocalDateTime.now());
         }
@@ -707,8 +721,7 @@ public class AuthService {
         merchantUserRepository.save(user);
         passwordResetRepository.delete(reset);
 
-        // Sync password to tms-user so merchant can also login via POS terminal
-        syncPasswordToTmsUser(user, rawPassword, "resetPassword");
+        log.info("Password reset completed for user: email={} merchantId={}", user.getEmail(), user.getMerchantId());
     }
 
     // ── helpers ─────────────────────────────────────────────
@@ -755,60 +768,52 @@ public class AuthService {
      *
      * <p>
      * Failure is logged but not thrown — the local password update has already
-     * succeeded, so we don't want to roll back the transaction. The user can still
-     * login to the dashboard; the POS sync can be retried on their next password
-     * reset if needed.
-     *
-     * @param merchantId
-     *            the merchant's user_id in tms-user
+     * 
+     * @param user
+     *            the MerchantUser whose password is being set
      * @param rawPassword
      *            the plain-text password to set
-     * @param operation
-     *            for logging (e.g. "resetPassword", "completeActivation")
+     * @throws AppException
+     *             if the password cannot be set in tms-user
      */
-    private void syncPasswordToTmsUser(MerchantUser user, String rawPassword, String operation) {
-        // First try the merchantId if available, otherwise look up by email/phone
+    private void setPasswordInTmsUser(MerchantUser user, String rawPassword) {
+        // Resolve the tms-user id: first try merchantId, then lookup by email/phone
         Long userId = user.getMerchantId();
 
-        if (userId == null) {
-            // Look up by email first, then phone
-            if (user.getEmail() != null && !user.getEmail().isBlank()) {
-                userId = findUserIdInReplicatedTable(user.getEmail(), true);
-            }
-            if (userId == null && user.getPhoneNumber() != null && !user.getPhoneNumber().isBlank()) {
-                userId = findUserIdInReplicatedTable(user.getPhoneNumber(), false);
-            }
+        if (userId == null && user.getEmail() != null && !user.getEmail().isBlank()) {
+            userId = findUserIdInReplicatedTable(user.getEmail(), true);
+        }
+        if (userId == null && user.getPhoneNumber() != null && !user.getPhoneNumber().isBlank()) {
+            userId = findUserIdInReplicatedTable(user.getPhoneNumber(), false);
         }
 
         if (userId == null) {
-            log.warn("{}: could not find user in tms-user for email={} phone={}, skipping sync", operation,
-                    user.getEmail(), user.getPhoneNumber());
-            return;
+            log.error("setPasswordInTmsUser: could not find user in tms-user for email={} phone={}", user.getEmail(),
+                    user.getPhoneNumber());
+            throw new AppException("User not found in authentication system", HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
         try {
             Map<String, Object> result = grpcClient.setUserPassword(userId, rawPassword);
             if (Boolean.TRUE.equals(result.get("success"))) {
-                log.info("{}: synced password to tms-user for userId={}", operation, userId);
+                log.info("setPasswordInTmsUser: password set for userId={}", userId);
                 // Update merchantId on local record if it was missing
                 if (user.getMerchantId() == null) {
                     user.setMerchantId(userId);
-                    merchantUserRepository.save(user);
-                    log.info("{}: updated merchantId={} on local MerchantUser id={}", operation, userId, user.getId());
+                    log.info("setPasswordInTmsUser: updated merchantId={} on MerchantUser id={}", userId, user.getId());
                 }
             } else {
                 String reason = (String) result.get("reason");
                 String message = (String) result.get("message");
-                if ("not_found".equals(reason)) {
-                    log.debug("{}: userId={} not found in tms-user, skipping sync", operation, userId);
-                } else {
-                    log.warn("{}: failed to sync password to tms-user for userId={}: {} - {}", operation, userId,
-                            reason, message);
-                }
+                log.error("setPasswordInTmsUser: failed for userId={}: {} - {}", userId, reason, message);
+                throw new AppException(message != null ? message : "Failed to set password",
+                        HttpStatus.INTERNAL_SERVER_ERROR);
             }
+        } catch (AppException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("{}: exception syncing password to tms-user for userId={}: {}", operation, userId,
-                    e.getMessage());
+            log.error("setPasswordInTmsUser: exception for userId={}: {}", userId, e.getMessage());
+            throw new AppException("Failed to set password: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 }

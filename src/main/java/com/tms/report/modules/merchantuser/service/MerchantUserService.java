@@ -124,10 +124,10 @@ public class MerchantUserService {
         Long operatorId = ((Number) operatorResult.get("operator_id")).longValue();
         log.info("Created operator in tms-user: operatorId={} merchantId={} email={}", operatorId, merchantId, email);
 
-        // Create local MerchantUser record (no password — auth via tms-user)
+        // Create local MerchantUser record (auth handled via tms-user operators)
         MerchantUser user = MerchantUser.builder().merchantId(merchantId).operatorId(operatorId).name(name).email(email)
-                .phoneNumber(phoneNumber).password(null) // No local password — auth via tms-user operators
-                .role(MerchantUser.ROLE_CASHIER).status(MerchantUser.STATUS_ACTIVE).emailVerifiedAt(LocalDateTime.now())
+                .phoneNumber(phoneNumber).role(MerchantUser.ROLE_CASHIER).status(MerchantUser.STATUS_ACTIVE)
+                .emailVerifiedAt(LocalDateTime.now())
                 .invitedBy(merchantScope.current() != null ? merchantScope.current().getId() : null).build();
 
         // Assign roles if provided

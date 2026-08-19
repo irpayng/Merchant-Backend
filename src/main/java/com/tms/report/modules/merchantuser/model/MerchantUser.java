@@ -81,14 +81,6 @@ public class MerchantUser {
     @Column(name = "phone_number")
     private String phoneNumber;
 
-    /**
-     * Legacy password field. New users authenticate via tms-user (operators table
-     * for staff, users table for owners). Kept for backward compatibility with
-     * existing accounts.
-     */
-    @JsonIgnore
-    private String password;
-
     @Builder.Default
     private String status = STATUS_PENDING;
 
