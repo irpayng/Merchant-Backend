@@ -447,6 +447,79 @@ public class GrpcClient {
         }
     }
 
+    /**
+     * Find a user by email address. Returns exists=true and user_id if found.
+     *
+     * @param email
+     *            the email address to look up
+     * @return map with exists (boolean) and user_id (Long, only if exists)
+     */
+    public Map<String, Object> findUserByEmail(String email) {
+        logRequest("FindUserByEmail", email);
+        try {
+            var resp = userStub
+                    .findUserByEmail(com.tms.report.grpc.user.FindUserRequest.newBuilder().setValue(email).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("exists", resp.getExists());
+            if (resp.getExists()) {
+                result.put("user_id", resp.getUserId());
+            }
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("FindUserByEmail", email, e);
+        }
+    }
+
+    /**
+     * Find a user by phone number. Returns exists=true and user_id if found.
+     *
+     * @param phoneNumber
+     *            the phone number to look up
+     * @return map with exists (boolean) and user_id (Long, only if exists)
+     */
+    public Map<String, Object> findUserByPhoneNumber(String phoneNumber) {
+        logRequest("FindUserByPhoneNumber", phoneNumber);
+        try {
+            var resp = userStub.findUserByPhoneNumber(
+                    com.tms.report.grpc.user.FindUserRequest.newBuilder().setValue(phoneNumber).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("exists", resp.getExists());
+            if (resp.getExists()) {
+                result.put("user_id", resp.getUserId());
+            }
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("FindUserByPhoneNumber", phoneNumber, e);
+        }
+    }
+
+    /**
+     * Get a user's profile from tms-user by user ID.
+     *
+     * @param userId
+     *            the user's id in tms-user
+     * @return map with user profile data: type, email, phone_number, first_name,
+     *         last_name, business_name
+     */
+    public Map<String, Object> getUserProfile(long userId) {
+        logRequest("GetUserProfile", String.valueOf(userId));
+        try {
+            var resp = userStub.getUserProfile(
+                    com.tms.report.grpc.user.GetUserProfileRequest.newBuilder().setUserId(userId).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("user_id", resp.getUserId());
+            result.put("type", resp.getType());
+            result.put("email", resp.getEmail());
+            result.put("phone_number", resp.getPhoneNumber());
+            result.put("first_name", resp.getFirstName());
+            result.put("last_name", resp.getLastName());
+            result.put("business_name", resp.getBusinessName());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetUserProfile", String.valueOf(userId), e);
+        }
+    }
+
     // ── Terminal commands → config-service ──
 
     public Map<String, Object> createTerminal(String serial, String make, String model, String os) {

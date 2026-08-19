@@ -173,6 +173,7 @@ message FindUserRequest {
 
 message UserExistsResponse {
   bool exists = 1;
+  int64 user_id = 2;
 }
 
 message UpdateUserTierRequest {
@@ -205,6 +206,8 @@ message GetUserProfileResponse {
   string type = 8;
   string email = 9;
   int64 parent_id = 10;
+  string phone_number = 11;
+  string business_name = 12;
 }
 
 // Admin command messages

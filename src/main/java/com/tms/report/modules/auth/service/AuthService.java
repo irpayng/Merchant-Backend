@@ -24,7 +24,6 @@ import com.tms.report.modules.role.model.Privilege;
 import com.tms.report.modules.role.model.Role;
 import com.tms.report.modules.role.repository.PrivilegeRepository;
 import com.tms.report.modules.role.repository.RoleRepository;
-import jakarta.persistence.EntityManager;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -60,7 +59,6 @@ public class AuthService {
     private final PrivilegeRepository privilegeRepository;
     private final JwtService jwtService;
     private final GrpcClient grpcClient;
-    private final EntityManager entityManager;
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final int RESET_TOKEN_EXPIRY_MINUTES = 60;
@@ -599,31 +597,35 @@ public class AuthService {
      */
     private MerchantUser findOrCreateFromTmsUser(String identifier, boolean isEmail) {
         try {
-            // We need to verify the user exists in tms-user. Since we don't have
-            // a "lookup by identifier" RPC, we'll use the existing gRPC methods.
-            // For now, query the replicated users table directly.
-            Long userId = findUserIdInReplicatedTable(identifier, isEmail);
+            // Find the user ID in tms-user via gRPC
+            Long userId = findUserIdInTmsUser(identifier, isEmail);
             if (userId == null) {
                 return null;
             }
 
-            // Check if the user is a merchant by looking at the replicated users table
-            String userType = findUserTypeInReplicatedTable(userId);
+            // Get profile data from tms-user via gRPC (includes type)
+            Map<String, Object> profile = grpcClient.getUserProfile(userId);
+            String userType = (String) profile.get("type");
             if (!"merchant".equalsIgnoreCase(userType)) {
                 log.debug("User {} exists but is type={}, not merchant", identifier, userType);
                 return null;
             }
 
-            // Get profile data from replicated tables
-            Map<String, String> profile = findUserProfileInReplicatedTable(userId);
+            // Build display name from profile data
+            String email = (String) profile.get("email");
+            String phoneNumber = (String) profile.get("phone_number");
+            String businessName = (String) profile.get("business_name");
+            String firstName = (String) profile.get("first_name");
+            String lastName = (String) profile.get("last_name");
+            String displayName = buildDisplayName(businessName, firstName, lastName, email);
 
             // Create the MerchantUser record
-            MerchantUser newUser = MerchantUser.builder().merchantId(userId).email(profile.get("email"))
-                    .phoneNumber(profile.get("phone_number")).name(profile.get("name")).role(MerchantUser.ROLE_OWNER)
-                    .status(MerchantUser.STATUS_PENDING).build();
+            MerchantUser newUser = MerchantUser.builder().merchantId(userId)
+                    .email(email != null && !email.isBlank() ? email.toLowerCase() : null)
+                    .phoneNumber(phoneNumber != null && !phoneNumber.isBlank() ? phoneNumber : null).name(displayName)
+                    .role(MerchantUser.ROLE_OWNER).status(MerchantUser.STATUS_PENDING).build();
 
-            log.info("Creating MerchantUser from tms-user for forgot-password: merchantId={} email={}", userId,
-                    profile.get("email"));
+            log.info("Creating MerchantUser from tms-user for forgot-password: merchantId={} email={}", userId, email);
             MerchantUser saved = merchantUserRepository.save(newUser);
 
             // Seed default roles
@@ -637,62 +639,21 @@ public class AuthService {
     }
 
     /**
-     * Find a user ID in the replicated users table by email or phone.
+     * Find a user ID in tms-user by email or phone via gRPC.
      */
-    private Long findUserIdInReplicatedTable(String identifier, boolean isEmail) {
+    private Long findUserIdInTmsUser(String identifier, boolean isEmail) {
         try {
-            String sql = isEmail
-                    ? "SELECT id FROM users WHERE LOWER(email) = :identifier"
-                    : "SELECT id FROM users WHERE phone_number = :identifier";
-            var query = entityManager.createNativeQuery(sql);
-            query.setParameter("identifier", identifier.toLowerCase());
-            Object result = query.getResultStream().findFirst().orElse(null);
-            return result != null ? ((Number) result).longValue() : null;
-        } catch (Exception e) {
-            log.debug("Error looking up user by identifier: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Find a user's type in the replicated users table.
-     */
-    private String findUserTypeInReplicatedTable(Long userId) {
-        try {
-            var query = entityManager.createNativeQuery("SELECT type FROM users WHERE id = :userId");
-            query.setParameter("userId", userId);
-            Object result = query.getResultStream().findFirst().orElse(null);
-            return result != null ? result.toString() : null;
-        } catch (Exception e) {
-            log.debug("Error looking up user type: {}", e.getMessage());
-            return null;
-        }
-    }
-
-    /**
-     * Find user profile data in the replicated tables.
-     */
-    @SuppressWarnings("unchecked")
-    private Map<String, String> findUserProfileInReplicatedTable(Long userId) {
-        Map<String, String> profile = new HashMap<>();
-        try {
-            var query = entityManager
-                    .createNativeQuery("SELECT u.email, u.phone_number, u.business_name, p.first_name, p.last_name "
-                            + "FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.id = :userId");
-            query.setParameter("userId", userId);
-            Object[] row = (Object[]) query.getResultStream().findFirst().orElse(null);
-            if (row != null) {
-                profile.put("email", row[0] != null ? row[0].toString().toLowerCase() : null);
-                profile.put("phone_number", row[1] != null ? row[1].toString() : null);
-                String businessName = row[2] != null ? row[2].toString() : null;
-                String firstName = row[3] != null ? row[3].toString() : null;
-                String lastName = row[4] != null ? row[4].toString() : null;
-                profile.put("name", buildDisplayName(businessName, firstName, lastName, profile.get("email")));
+            Map<String, Object> result = isEmail
+                    ? grpcClient.findUserByEmail(identifier.toLowerCase())
+                    : grpcClient.findUserByPhoneNumber(identifier);
+            if (Boolean.TRUE.equals(result.get("exists"))) {
+                return ((Number) result.get("user_id")).longValue();
             }
+            return null;
         } catch (Exception e) {
-            log.debug("Error looking up user profile: {}", e.getMessage());
+            log.debug("Error looking up user by identifier via gRPC: {}", e.getMessage());
+            return null;
         }
-        return profile;
     }
 
     @Transactional
@@ -781,10 +742,10 @@ public class AuthService {
         Long userId = user.getMerchantId();
 
         if (userId == null && user.getEmail() != null && !user.getEmail().isBlank()) {
-            userId = findUserIdInReplicatedTable(user.getEmail(), true);
+            userId = findUserIdInTmsUser(user.getEmail(), true);
         }
         if (userId == null && user.getPhoneNumber() != null && !user.getPhoneNumber().isBlank()) {
-            userId = findUserIdInReplicatedTable(user.getPhoneNumber(), false);
+            userId = findUserIdInTmsUser(user.getPhoneNumber(), false);
         }
 
         if (userId == null) {
