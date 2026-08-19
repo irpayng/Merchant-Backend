@@ -643,15 +643,18 @@ public class AuthService {
      */
     private Long findUserIdInTmsUser(String identifier, boolean isEmail) {
         try {
+            log.info("findUserIdInTmsUser: looking up {} isEmail={}", identifier, isEmail);
             Map<String, Object> result = isEmail
                     ? grpcClient.findUserByEmail(identifier.toLowerCase())
                     : grpcClient.findUserByPhoneNumber(identifier);
+            log.info("findUserIdInTmsUser: result={}", result);
             if (Boolean.TRUE.equals(result.get("exists"))) {
                 return ((Number) result.get("user_id")).longValue();
             }
+            log.warn("findUserIdInTmsUser: user not found for identifier={}", identifier);
             return null;
         } catch (Exception e) {
-            log.debug("Error looking up user by identifier via gRPC: {}", e.getMessage());
+            log.error("findUserIdInTmsUser: gRPC error for identifier={}: {}", identifier, e.getMessage(), e);
             return null;
         }
     }
