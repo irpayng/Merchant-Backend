@@ -470,7 +470,7 @@ public class AuthService {
         activationTokenRepository.save(token);
 
         // Sync password to tms-user so merchant can also login via POS terminal
-        syncPasswordToTmsUser(user.getMerchantId(), rawPassword, "completeActivation");
+        syncPasswordToTmsUser(user, rawPassword, "completeActivation");
     }
 
     private void initiateActivation(MerchantUser user, String channel) {
@@ -708,7 +708,7 @@ public class AuthService {
         passwordResetRepository.delete(reset);
 
         // Sync password to tms-user so merchant can also login via POS terminal
-        syncPasswordToTmsUser(user.getMerchantId(), rawPassword, "resetPassword");
+        syncPasswordToTmsUser(user, rawPassword, "resetPassword");
     }
 
     // ── helpers ─────────────────────────────────────────────
@@ -766,29 +766,48 @@ public class AuthService {
      * @param operation
      *            for logging (e.g. "resetPassword", "completeActivation")
      */
-    private void syncPasswordToTmsUser(Long merchantId, String rawPassword, String operation) {
-        if (merchantId == null) {
-            log.warn("{}: merchantId is null, skipping tms-user password sync", operation);
+    private void syncPasswordToTmsUser(MerchantUser user, String rawPassword, String operation) {
+        // First try the merchantId if available, otherwise look up by email/phone
+        Long userId = user.getMerchantId();
+
+        if (userId == null) {
+            // Look up by email first, then phone
+            if (user.getEmail() != null && !user.getEmail().isBlank()) {
+                userId = findUserIdInReplicatedTable(user.getEmail(), true);
+            }
+            if (userId == null && user.getPhoneNumber() != null && !user.getPhoneNumber().isBlank()) {
+                userId = findUserIdInReplicatedTable(user.getPhoneNumber(), false);
+            }
+        }
+
+        if (userId == null) {
+            log.warn("{}: could not find user in tms-user for email={} phone={}, skipping sync", operation,
+                    user.getEmail(), user.getPhoneNumber());
             return;
         }
+
         try {
-            Map<String, Object> result = grpcClient.setUserPassword(merchantId, rawPassword);
+            Map<String, Object> result = grpcClient.setUserPassword(userId, rawPassword);
             if (Boolean.TRUE.equals(result.get("success"))) {
-                log.info("{}: synced password to tms-user for merchantId={}", operation, merchantId);
+                log.info("{}: synced password to tms-user for userId={}", operation, userId);
+                // Update merchantId on local record if it was missing
+                if (user.getMerchantId() == null) {
+                    user.setMerchantId(userId);
+                    merchantUserRepository.save(user);
+                    log.info("{}: updated merchantId={} on local MerchantUser id={}", operation, userId, user.getId());
+                }
             } else {
                 String reason = (String) result.get("reason");
                 String message = (String) result.get("message");
-                // "not_found" is expected for merchants who don't exist in tms-user yet
-                // (pure TID-upload merchants who were never in the mobile system)
                 if ("not_found".equals(reason)) {
-                    log.debug("{}: merchantId={} not found in tms-user, skipping sync", operation, merchantId);
+                    log.debug("{}: userId={} not found in tms-user, skipping sync", operation, userId);
                 } else {
-                    log.warn("{}: failed to sync password to tms-user for merchantId={}: {} - {}", operation,
-                            merchantId, reason, message);
+                    log.warn("{}: failed to sync password to tms-user for userId={}: {} - {}", operation, userId,
+                            reason, message);
                 }
             }
         } catch (Exception e) {
-            log.error("{}: exception syncing password to tms-user for merchantId={}: {}", operation, merchantId,
+            log.error("{}: exception syncing password to tms-user for userId={}: {}", operation, userId,
                     e.getMessage());
         }
     }
