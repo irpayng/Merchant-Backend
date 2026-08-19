@@ -411,7 +411,8 @@ public class AuthService {
         }
 
         // Set new password in tms-user
-        setPasswordInTmsUser(user, request.getNewPassword());
+        boolean isEmail = EMAIL_PATTERN.matcher(identifier).matches();
+        setPasswordInTmsUser(user, identifier, isEmail, request.getNewPassword());
 
         log.info("Password changed for user: email={} merchantId={}", user.getEmail(), user.getMerchantId());
     }
@@ -466,8 +467,16 @@ public class AuthService {
         MerchantUser user = merchantUserRepository.findById(token.getMerchantUserId())
                 .orElseThrow(() -> new AppException("Account not found", HttpStatus.BAD_REQUEST));
 
+        // Determine identifier for tms-user lookup (prefer email, fallback to phone)
+        String identifier = user.getEmail();
+        boolean isEmail = true;
+        if (identifier == null || identifier.isBlank()) {
+            identifier = user.getPhoneNumber();
+            isEmail = false;
+        }
+
         // Set password in tms-user (the single source of truth for credentials)
-        setPasswordInTmsUser(user, rawPassword);
+        setPasswordInTmsUser(user, identifier, isEmail, rawPassword);
 
         // Update local record status (no password stored locally)
         user.setStatus(MerchantUser.STATUS_ACTIVE);
@@ -661,9 +670,20 @@ public class AuthService {
 
     @Transactional
     public void resetPassword(ResetPasswordRequest request) {
-        MerchantUser user = findByIdentifier(request.getIdentifier())
+        String identifier = request.getIdentifier().trim();
+        boolean isEmail = EMAIL_PATTERN.matcher(identifier).matches();
+
+        MerchantUser user = findByIdentifier(identifier)
                 .orElseThrow(() -> new AppException("Invalid or expired reset code", HttpStatus.BAD_REQUEST));
-        PasswordReset reset = passwordResetRepository.findByEmailAndToken(user.getEmail(), request.getToken())
+
+        // The token is keyed by email if available, otherwise by phone number
+        // (matching the logic in forgotPassword)
+        String resetKey = user.getEmail();
+        if (resetKey == null || resetKey.isBlank()) {
+            resetKey = user.getPhoneNumber();
+        }
+
+        PasswordReset reset = passwordResetRepository.findByEmailAndToken(resetKey, request.getToken())
                 .orElseThrow(() -> new AppException("Invalid or expired reset code", HttpStatus.BAD_REQUEST));
         if (reset.isExpired()) {
             passwordResetRepository.delete(reset);
@@ -672,8 +692,9 @@ public class AuthService {
 
         String rawPassword = request.getPassword();
 
-        // Set password in tms-user (the single source of truth for credentials)
-        setPasswordInTmsUser(user, rawPassword);
+        // Set password in tms-user using the identifier from the request
+        // This ensures we look up by the same email/phone the user entered
+        setPasswordInTmsUser(user, identifier, isEmail, rawPassword);
 
         // Update local record status (no password stored locally)
         if (user.getEmailVerifiedAt() == null) {
@@ -730,30 +751,28 @@ public class AuthService {
      * dashboard and POS terminal with the same credentials. Called after password
      * reset or account activation.
      *
-     * <p>
-     * Failure is logged but not thrown — the local password update has already
-     * 
      * @param user
      *            the MerchantUser whose password is being set
+     * @param identifier
+     *            the email or phone number to look up in tms-user
+     * @param isEmail
+     *            true if identifier is an email, false if phone number
      * @param rawPassword
      *            the plain-text password to set
      * @throws AppException
      *             if the password cannot be set in tms-user
      */
-    private void setPasswordInTmsUser(MerchantUser user, String rawPassword) {
-        // Resolve the tms-user id: first try merchantId, then lookup by email/phone
+    private void setPasswordInTmsUser(MerchantUser user, String identifier, boolean isEmail, String rawPassword) {
+        // Resolve the tms-user id: first try merchantId, then lookup by the identifier
         Long userId = user.getMerchantId();
 
-        if (userId == null && user.getEmail() != null && !user.getEmail().isBlank()) {
-            userId = findUserIdInTmsUser(user.getEmail(), true);
-        }
-        if (userId == null && user.getPhoneNumber() != null && !user.getPhoneNumber().isBlank()) {
-            userId = findUserIdInTmsUser(user.getPhoneNumber(), false);
+        if (userId == null) {
+            // Look up in tms-user using the identifier directly
+            userId = findUserIdInTmsUser(identifier, isEmail);
         }
 
         if (userId == null) {
-            log.error("setPasswordInTmsUser: could not find user in tms-user for email={} phone={}", user.getEmail(),
-                    user.getPhoneNumber());
+            log.error("setPasswordInTmsUser: could not find user in tms-user for identifier={}", identifier);
             throw new AppException("User not found in authentication system", HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
