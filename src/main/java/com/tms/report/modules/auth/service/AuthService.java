@@ -468,6 +468,9 @@ public class AuthService {
 
         token.setConsumedAt(LocalDateTime.now());
         activationTokenRepository.save(token);
+
+        // Sync password to tms-user so merchant can also login via POS terminal
+        syncPasswordToTmsUser(user.getMerchantId(), rawPassword, "completeActivation");
     }
 
     private void initiateActivation(MerchantUser user, String channel) {
@@ -692,7 +695,9 @@ public class AuthService {
             passwordResetRepository.delete(reset);
             throw new AppException("Invalid or expired reset code", HttpStatus.BAD_REQUEST);
         }
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
+
+        String rawPassword = request.getPassword();
+        user.setPassword(passwordEncoder.encode(rawPassword));
         if (user.getEmailVerifiedAt() == null) {
             user.setEmailVerifiedAt(LocalDateTime.now());
         }
@@ -701,6 +706,9 @@ public class AuthService {
         }
         merchantUserRepository.save(user);
         passwordResetRepository.delete(reset);
+
+        // Sync password to tms-user so merchant can also login via POS terminal
+        syncPasswordToTmsUser(user.getMerchantId(), rawPassword, "resetPassword");
     }
 
     // ── helpers ─────────────────────────────────────────────
@@ -738,5 +746,50 @@ public class AuthService {
 
     private String generateOtp() {
         return String.format("%06d", RANDOM.nextInt(1_000_000));
+    }
+
+    /**
+     * Sync a user's password to tms-user so they can login to both the merchant
+     * dashboard and POS terminal with the same credentials. Called after password
+     * reset or account activation.
+     *
+     * <p>
+     * Failure is logged but not thrown — the local password update has already
+     * succeeded, so we don't want to roll back the transaction. The user can still
+     * login to the dashboard; the POS sync can be retried on their next password
+     * reset if needed.
+     *
+     * @param merchantId
+     *            the merchant's user_id in tms-user
+     * @param rawPassword
+     *            the plain-text password to set
+     * @param operation
+     *            for logging (e.g. "resetPassword", "completeActivation")
+     */
+    private void syncPasswordToTmsUser(Long merchantId, String rawPassword, String operation) {
+        if (merchantId == null) {
+            log.warn("{}: merchantId is null, skipping tms-user password sync", operation);
+            return;
+        }
+        try {
+            Map<String, Object> result = grpcClient.setUserPassword(merchantId, rawPassword);
+            if (Boolean.TRUE.equals(result.get("success"))) {
+                log.info("{}: synced password to tms-user for merchantId={}", operation, merchantId);
+            } else {
+                String reason = (String) result.get("reason");
+                String message = (String) result.get("message");
+                // "not_found" is expected for merchants who don't exist in tms-user yet
+                // (pure TID-upload merchants who were never in the mobile system)
+                if ("not_found".equals(reason)) {
+                    log.debug("{}: merchantId={} not found in tms-user, skipping sync", operation, merchantId);
+                } else {
+                    log.warn("{}: failed to sync password to tms-user for merchantId={}: {} - {}", operation,
+                            merchantId, reason, message);
+                }
+            }
+        } catch (Exception e) {
+            log.error("{}: exception syncing password to tms-user for merchantId={}: {}", operation, merchantId,
+                    e.getMessage());
+        }
     }
 }

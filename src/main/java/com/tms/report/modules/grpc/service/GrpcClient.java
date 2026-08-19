@@ -420,6 +420,33 @@ public class GrpcClient {
         }
     }
 
+    /**
+     * Set a user's password in tms-user. Used by password reset and activation
+     * flows to keep credentials in sync between Merchant-Backend and tms-user. This
+     * enables TID-uploaded merchants to log into both the merchant dashboard and
+     * POS terminal using the same credentials.
+     *
+     * @param userId
+     *            the user's id in tms-user
+     * @param password
+     *            plain-text password (will be BCrypt hashed by tms-user)
+     * @return map with success, reason, message
+     */
+    public Map<String, Object> setUserPassword(long userId, String password) {
+        logRequest("SetUserPassword", String.valueOf(userId));
+        try {
+            var resp = userStub.setUserPassword(com.tms.report.grpc.user.SetUserPasswordRequest.newBuilder()
+                    .setUserId(userId).setPassword(password).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", resp.getSuccess());
+            result.put("reason", resp.getReason());
+            result.put("message", resp.getMessage());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("SetUserPassword", String.valueOf(userId), e);
+        }
+    }
+
     // ── Terminal commands → config-service ──
 
     public Map<String, Object> createTerminal(String serial, String make, String model, String os) {

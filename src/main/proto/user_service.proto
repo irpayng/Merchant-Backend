@@ -68,6 +68,11 @@ service UserService {
 
   // Update an operator's status, password, or access flags.
   rpc UpdateOperator (UpdateOperatorRequest) returns (UpdateOperatorResponse);
+
+  // ── Password sync (called by Merchant-Backend to sync to tms-user) ──
+  // Set a user's password in tms-user. Used by password reset and activation
+  // flows to keep credentials in sync between Merchant-Backend and tms-user.
+  rpc SetUserPassword (SetUserPasswordRequest) returns (SetUserPasswordResponse);
 }
 
 message UnfreezeUserRequest {
@@ -355,6 +360,23 @@ message UpdateOperatorRequest {
 
 message UpdateOperatorResponse {
   bool success = 1;
+  string reason = 2;
+  string message = 3;
+}
+
+
+// ── Password sync (called by Merchant-Backend to sync to tms-user) ──
+
+message SetUserPasswordRequest {
+  // The user's id in tms-user
+  int64 user_id = 1;
+  // Plain-text password (will be BCrypt hashed by tms-user)
+  string password = 2;
+}
+
+message SetUserPasswordResponse {
+  bool success = 1;
+  // "ok", "not_found", "invalid_password", "protected_account", or error
   string reason = 2;
   string message = 3;
 }
