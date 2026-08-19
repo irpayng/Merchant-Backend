@@ -478,10 +478,11 @@ public class GrpcClient {
      * @return map with exists (boolean) and user_id (Long, only if exists)
      */
     public Map<String, Object> findUserByPhoneNumber(String phoneNumber) {
-        logRequest("FindUserByPhoneNumber", phoneNumber);
+        log.info("FindUserByPhoneNumber: calling gRPC with phoneNumber={}", phoneNumber);
         try {
             var resp = userStub.findUserByPhoneNumber(
                     com.tms.report.grpc.user.FindUserRequest.newBuilder().setValue(phoneNumber).build());
+            log.info("FindUserByPhoneNumber: response exists={} userId={}", resp.getExists(), resp.getUserId());
             Map<String, Object> result = new HashMap<>();
             result.put("exists", resp.getExists());
             if (resp.getExists()) {
@@ -489,6 +490,7 @@ public class GrpcClient {
             }
             return result;
         } catch (StatusRuntimeException e) {
+            log.error("FindUserByPhoneNumber: gRPC error for phoneNumber={}: {}", phoneNumber, e.getMessage(), e);
             throw grpcError("FindUserByPhoneNumber", phoneNumber, e);
         }
     }
