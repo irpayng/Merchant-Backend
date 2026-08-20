@@ -669,9 +669,9 @@ public class TransactionService {
     }
 
     /**
-     * Load minimal user information for transaction details.
-     * Only returns id and name — the fields actually displayed in the merchant UI.
-     * Avoids exposing sensitive user data (email, BVN, tier, address, etc.).
+     * Load minimal user information for transaction details. Only returns id and
+     * name — the fields actually displayed in the merchant UI. Avoids exposing
+     * sensitive user data (email, BVN, tier, address, etc.).
      */
     private Map<String, Object> loadFullUser(Long userId) {
         try {
