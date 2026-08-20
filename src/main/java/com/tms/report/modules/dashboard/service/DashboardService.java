@@ -274,7 +274,7 @@ public class DashboardService {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("terminal_serial", row[0] != null ? row[0].toString() : "unknown");
             item.put("count", ((Number) row[1]).longValue());
-            item.put("total", ((Number) row[2]).doubleValue());
+            item.put("total", ((Number) row[2]).longValue());
             out.add(item);
         }
         return out;
@@ -352,7 +352,7 @@ public class DashboardService {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("id", row[0] != null ? ((Number) row[0]).longValue() : null);
             item.put("name", row[1] != null ? row[1].toString() : "Unknown");
-            item.put("total", ((Number) row[2]).doubleValue());
+            item.put("total", ((Number) row[2]).longValue());
             return item;
         }).toList();
     }
