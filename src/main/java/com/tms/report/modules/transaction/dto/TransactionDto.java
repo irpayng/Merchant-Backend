@@ -18,7 +18,6 @@ public class TransactionDto {
     private Long id;
     private String reference;
 
-    private UserRef user;
     private NameCodeRef product;
     private NameCodeRef provider;
     private NameCodeRef channel;

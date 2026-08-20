@@ -7,10 +7,8 @@ import com.tms.report.modules.product.model.Product;
 import com.tms.report.modules.product.repository.ProductRepository;
 import com.tms.report.modules.status.StatusUtil;
 import com.tms.report.modules.transaction.dto.NameCodeRef;
-import com.tms.report.modules.transaction.dto.ProfileRef;
 import com.tms.report.modules.transaction.dto.StatusRef;
 import com.tms.report.modules.transaction.dto.TransactionDto;
-import com.tms.report.modules.transaction.dto.UserRef;
 import com.tms.report.modules.transaction.repository.TransactionRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
@@ -289,13 +287,10 @@ public class TransactionService {
         String sql = """
                 SELECT t.id, t.reference,
                        t.amount, t.status_code, t.created_at,
-                       t.user_id as uid, u.email, u.onboarding_id,
-                       p2.id as prof_id, p2.user_id as prof_uid, p2.first_name, p2.last_name,
                        pr.id as prod_id, pr.name as prod_name, COALESCE(pr.code, t.product_code) as prod_code,
                        NULL as prov_id, NULL as prov_name,
                        NULL as prov_code,
                        t.channel, t.payment_method,
-                       t.metadata->>'initiator_name' as initiator_name,
                        t.service_fee, t.agent_commission, t.aggregator_commission,
                        t.super_aggregator_commission, t.company_commission, t.amount_to_pay,
                        0 as provider_cost,
@@ -307,14 +302,11 @@ public class TransactionService {
                        t.metadata->>'auth_code' as auth_code,
                        COALESCE(t.metadata->>'serial', t.terminal_id) as terminal_serial
                 FROM transactions t
-                LEFT JOIN users u ON u.id = t.user_id
-                LEFT JOIN profiles p2 ON p2.user_id = u.id
                 LEFT JOIN products pr ON pr.id = t.product_id
                 """
                 + where + " ORDER BY t.created_at DESC";
 
-        String countSql = "SELECT COUNT(*) FROM transactions t LEFT JOIN users u ON u.id = t.user_id LEFT JOIN profiles p2 ON p2.user_id = u.id "
-                + where;
+        String countSql = "SELECT COUNT(*) FROM transactions t " + where;
         Query countQ = entityManager.createNativeQuery(countSql);
         qParams.forEach(countQ::setParameter);
         long total = ((Number) countQ.getSingleResult()).longValue();
@@ -676,33 +668,28 @@ public class TransactionService {
         return (List<Map<String, Object>>) (List<?>) nq.getResultList();
     }
 
+    /**
+     * Load minimal user information for transaction details.
+     * Only returns id and name — the fields actually displayed in the merchant UI.
+     * Avoids exposing sensitive user data (email, BVN, tier, address, etc.).
+     */
     private Map<String, Object> loadFullUser(Long userId) {
         try {
-            Map<String, Object> user = queryAsMap("SELECT * FROM users WHERE id = :id", Map.of("id", userId));
-            if (user == null)
-                return null;
-
-            Map<String, Object> profile = queryAsMap("SELECT * FROM profiles WHERE user_id = :uid",
+            Map<String, Object> profile = queryAsMap(
+                    "SELECT first_name, middle_name, last_name FROM profiles WHERE user_id = :uid",
                     Map.of("uid", userId));
-            user.put("profile", profile);
+
+            String name = null;
             if (profile != null) {
-                String name = Stream
+                name = Stream
                         .of(str(profile.get("first_name")), str(profile.get("middle_name")),
                                 str(profile.get("last_name")))
-                        .filter(Objects::nonNull).reduce((a, b) -> a + " " + b).orElse(str(user.get("email")));
-                user.put("name", name);
+                        .filter(Objects::nonNull).reduce((a, b) -> a + " " + b).orElse(null);
             }
 
-            Long tierId = lng(user.get("tier_id"));
-            if (tierId != null) {
-                user.put("tier", queryAsMap("SELECT * FROM tiers WHERE id = :id", Map.of("id", tierId)));
-            }
-
-            Map<String, Object> address = queryAsMap(
-                    "SELECT * FROM addresses WHERE addressable_type = 'users' AND addressable_id = :uid ORDER BY id DESC LIMIT 1",
-                    Map.of("uid", userId));
-            user.put("address", address);
-
+            Map<String, Object> user = new LinkedHashMap<>();
+            user.put("id", userId);
+            user.put("name", name);
             return user;
         } catch (Exception e) {
             return null;
@@ -1381,53 +1368,29 @@ public class TransactionService {
 
     private TransactionDto mapRow(Object[] r) {
         // Columns: 0=id, 1=reference, 2=amount, 3=status_code, 4=created_at,
-        // 5=uid, 6=email, 7=onboarding_id,
-        // 8=prof_id, 9=prof_uid, 10=first_name, 11=last_name,
-        // 12=prod_id, 13=prod_name, 14=prod_code,
-        // 15=prov_id, 16=prov_name, 17=prov_code,
-        // 18=channel, 19=payment_method, 20=initiator_name,
-        // 21=service_fee, 22=agent_commission, 23=aggregator_commission,
-        // 24=super_aggregator_commission, 25=company_commission, 26=amount_to_pay,
-        // 27=provider_cost, 28=has_reversal,
-        // 29=rrn, 30=card_holder, 31=masked_pan, 32=stan, 33=auth_code,
-        // 34=terminal_serial
-        String email = str(r[6]);
-        String firstName = str(r[10]);
-        String lastName = str(r[11]);
-        String userName = (firstName != null || lastName != null)
-                ? ((firstName != null ? firstName : "") + " " + (lastName != null ? lastName : "")).trim()
-                : email;
-
-        Long userId = lng(r[5]);
-        String prodCode = str(r[14]);
-        String initiatorName = r.length > 20 ? str(r[20]) : null;
-
-        // For admin transfers (user_id=0), show initiator name instead of user
-        UserRef userRef = null;
-        if (userId != null && userId == 0L && initiatorName != null) {
-            userRef = UserRef.builder().id(0L).name(initiatorName).email(null).build();
-        } else if (userId != null && userId > 0L) {
-            ProfileRef profile = r[8] != null
-                    ? ProfileRef.builder().id(lng(r[8])).userId(lng(r[9])).firstName(firstName).lastName(lastName)
-                            .build()
-                    : null;
-            userRef = UserRef.builder().id(userId).email(email).onboardingId(lng(r[7])).name(userName).profile(profile)
-                    .build();
-        }
+        // 5=prod_id, 6=prod_name, 7=prod_code,
+        // 8=prov_id, 9=prov_name, 10=prov_code,
+        // 11=channel, 12=payment_method,
+        // 13=service_fee, 14=agent_commission, 15=aggregator_commission,
+        // 16=super_aggregator_commission, 17=company_commission, 18=amount_to_pay,
+        // 19=provider_cost, 20=has_reversal,
+        // 21=rrn, 22=card_holder, 23=masked_pan, 24=stan, 25=auth_code,
+        // 26=terminal_serial
+        String prodCode = str(r[7]);
 
         // For product: if no product record, use product_code as name
-        String prodName = str(r[13]);
+        String prodName = str(r[6]);
         if (prodName == null && prodCode != null) {
             prodName = capitalize(prodCode.replace("_", " ").replace("-", " "));
         }
 
         String statusCode = str(r[3]);
-        String channelCode = str(r[18]);
-        String pmCode = str(r[19]);
+        String channelCode = str(r[11]);
+        String pmCode = str(r[12]);
 
-        return TransactionDto.builder().id(lng(r[0])).reference(str(r[1])).user(userRef).product(
-                prodCode != null ? NameCodeRef.builder().id(lng(r[12])).name(prodName).code(prodCode).build() : null)
-                .provider(ref(r[15], r[16], r[17]))
+        return TransactionDto.builder().id(lng(r[0])).reference(str(r[1])).product(
+                prodCode != null ? NameCodeRef.builder().id(lng(r[5])).name(prodName).code(prodCode).build() : null)
+                .provider(ref(r[8], r[9], r[10]))
                 .channel(
                         channelCode != null
                                 ? NameCodeRef.builder().name(capitalize(channelCode)).code(channelCode).build()
@@ -1438,17 +1401,17 @@ public class TransactionService {
                 .status(statusCode != null
                         ? StatusRef.builder().name(StatusUtil.getStatusName(statusCode)).code(statusCode).build()
                         : null)
-                .serviceFee(plainAmount(r.length > 21 ? r[21] : null))
-                .agentCommission(plainAmount(r.length > 22 ? r[22] : null))
-                .aggregatorCommission(plainAmount(r.length > 23 ? r[23] : null))
-                .superAggregatorCommission(plainAmount(r.length > 24 ? r[24] : null))
-                .companyCommission(plainAmount(r.length > 25 ? r[25] : null))
-                .amountToPay(plainAmount(r.length > 26 ? r[26] : null))
-                .providerCost(plainAmount(r.length > 27 ? r[27] : null))
-                .reversible(r.length > 28 && Boolean.TRUE.equals(r[28]) && "failed".equals(statusCode))
-                .rrn(r.length > 29 ? str(r[29]) : null).cardHolder(r.length > 30 ? str(r[30]) : null)
-                .maskedPan(r.length > 31 ? maskPan(str(r[31])) : null).stan(r.length > 32 ? str(r[32]) : null)
-                .authCode(r.length > 33 ? str(r[33]) : null).terminalSerial(r.length > 34 ? str(r[34]) : null)
+                .serviceFee(plainAmount(r.length > 13 ? r[13] : null))
+                .agentCommission(plainAmount(r.length > 14 ? r[14] : null))
+                .aggregatorCommission(plainAmount(r.length > 15 ? r[15] : null))
+                .superAggregatorCommission(plainAmount(r.length > 16 ? r[16] : null))
+                .companyCommission(plainAmount(r.length > 17 ? r[17] : null))
+                .amountToPay(plainAmount(r.length > 18 ? r[18] : null))
+                .providerCost(plainAmount(r.length > 19 ? r[19] : null))
+                .reversible(r.length > 20 && Boolean.TRUE.equals(r[20]) && "failed".equals(statusCode))
+                .rrn(r.length > 21 ? str(r[21]) : null).cardHolder(r.length > 22 ? str(r[22]) : null)
+                .maskedPan(r.length > 23 ? maskPan(str(r[23])) : null).stan(r.length > 24 ? str(r[24]) : null)
+                .authCode(r.length > 25 ? str(r[25]) : null).terminalSerial(r.length > 26 ? str(r[26]) : null)
                 .createdAt(r[4] != null ? toLocalDateTime(r[4]) : null).build();
     }
 
