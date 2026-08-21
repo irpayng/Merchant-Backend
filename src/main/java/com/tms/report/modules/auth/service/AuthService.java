@@ -309,20 +309,50 @@ public class AuthService {
     /**
      * Find an existing MerchantUser by merchantId (the tms-user users.id), or
      * create a new owner record for cross-login merchants.
+     *
+     * <p>
+     * Lookup order: merchantId owner → email match → create new. If found by email,
+     * the record is updated to link to the correct merchantId and promoted to owner
+     * if necessary, avoiding duplicate key violations on the email unique constraint.
      */
     private MerchantUser findOrCreateMerchantUser(Long merchantId, String email, String phoneNumber,
             String displayName) {
-        // Try to find by merchantId first (most reliable for cross-login)
-        return merchantUserRepository.findByMerchantId(merchantId).stream()
-                .filter(u -> MerchantUser.ROLE_OWNER.equalsIgnoreCase(u.getRole())).findFirst().orElseGet(() -> {
-                    // Create new MerchantUser for this cross-login merchant
-                    MerchantUser newUser = MerchantUser.builder().merchantId(merchantId)
-                            .email(email != null && !email.isBlank() ? email.toLowerCase() : null)
-                            .phoneNumber(phoneNumber != null && !phoneNumber.isBlank() ? phoneNumber : null)
-                            .name(displayName).role(MerchantUser.ROLE_OWNER).status(MerchantUser.STATUS_ACTIVE).build();
-                    log.info("Creating MerchantUser for cross-login: merchantId={} email={}", merchantId, email);
-                    return merchantUserRepository.save(newUser);
-                });
+        String normalizedEmail = email != null && !email.isBlank() ? email.toLowerCase() : null;
+
+        // 1. Try to find owner by merchantId first (most reliable for cross-login)
+        Optional<MerchantUser> byMerchantId = merchantUserRepository.findByMerchantId(merchantId).stream()
+                .filter(u -> MerchantUser.ROLE_OWNER.equalsIgnoreCase(u.getRole())).findFirst();
+        if (byMerchantId.isPresent()) {
+            return byMerchantId.get();
+        }
+
+        // 2. Check if a MerchantUser already exists with this email (avoid duplicate key)
+        if (normalizedEmail != null) {
+            Optional<MerchantUser> byEmail = merchantUserRepository.findByEmail(normalizedEmail);
+            if (byEmail.isPresent()) {
+                MerchantUser existing = byEmail.get();
+                // Update to link to the correct merchantId and promote to owner
+                log.info("Found existing MerchantUser by email={}, updating merchantId from {} to {} and role to owner",
+                        normalizedEmail, existing.getMerchantId(), merchantId);
+                existing.setMerchantId(merchantId);
+                existing.setRole(MerchantUser.ROLE_OWNER);
+                existing.setStatus(MerchantUser.STATUS_ACTIVE);
+                if (existing.getName() == null || existing.getName().isBlank()) {
+                    existing.setName(displayName);
+                }
+                if (existing.getPhoneNumber() == null && phoneNumber != null && !phoneNumber.isBlank()) {
+                    existing.setPhoneNumber(phoneNumber);
+                }
+                return merchantUserRepository.save(existing);
+            }
+        }
+
+        // 3. Create new MerchantUser for this cross-login merchant
+        MerchantUser newUser = MerchantUser.builder().merchantId(merchantId).email(normalizedEmail)
+                .phoneNumber(phoneNumber != null && !phoneNumber.isBlank() ? phoneNumber : null).name(displayName)
+                .role(MerchantUser.ROLE_OWNER).status(MerchantUser.STATUS_ACTIVE).build();
+        log.info("Creating MerchantUser for cross-login: merchantId={} email={}", merchantId, normalizedEmail);
+        return merchantUserRepository.save(newUser);
     }
 
     /**
