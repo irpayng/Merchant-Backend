@@ -491,27 +491,6 @@ public class AuthService {
         log.info("Activation completed for user: email={} merchantId={}", user.getEmail(), user.getMerchantId());
     }
 
-    /**
-     * Issue an activation challenge for a freshly provisioned login, in its own
-     * transaction.
-     *
-     * <p>
-     * Used by merchant provisioning, which creates the owner row and commits it
-     * first: if the SMS/email dispatch then fails, only the token write rolls back
-     * and the login still exists, so the merchant can retry from the dashboard's
-     * "resend activation" screen. Prefers the emailed link and falls back to an OTP
-     * when the account has no email on file.
-     */
-    @Transactional
-    public void issueActivationChallenge(Long merchantUserId) {
-        MerchantUser user = merchantUserRepository.findById(merchantUserId)
-                .orElseThrow(() -> new AppException("Account not found", HttpStatus.NOT_FOUND));
-        String channel = (user.getEmail() != null && !user.getEmail().isBlank())
-                ? ActivationToken.CHANNEL_LINK
-                : ActivationToken.CHANNEL_OTP;
-        initiateActivation(user, channel);
-    }
-
     private void initiateActivation(MerchantUser user, String channel) {
         activationTokenRepository.deleteByMerchantUserId(user.getId());
         String ch = channel == null ? "" : channel.trim().toLowerCase();

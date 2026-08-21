@@ -61,14 +61,6 @@ public class User {
     @Column(name = "selfie_url")
     private String selfieUrl;
 
-    /**
-     * Registered business name, stamped on the user when a merchant business
-     * application is approved. Used as the display name of the dashboard owner
-     * login provisioned for that merchant.
-     */
-    @Column(name = "business_name")
-    private String businessName;
-
     @Transient
     private Boolean isActive;
 
