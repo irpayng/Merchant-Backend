@@ -314,7 +314,8 @@ public class AuthService {
      * <p>
      * Lookup order: merchantId owner → email match → create new. If found by email,
      * the record is updated to link to the correct merchantId and promoted to owner
-     * if necessary, avoiding duplicate key violations on the email unique constraint.
+     * if necessary, avoiding duplicate key violations on the email unique
+     * constraint.
      */
     private MerchantUser findOrCreateMerchantUser(Long merchantId, String email, String phoneNumber,
             String displayName) {
@@ -327,7 +328,8 @@ public class AuthService {
             return byMerchantId.get();
         }
 
-        // 2. Check if a MerchantUser already exists with this email (avoid duplicate key)
+        // 2. Check if a MerchantUser already exists with this email (avoid duplicate
+        // key)
         if (normalizedEmail != null) {
             Optional<MerchantUser> byEmail = merchantUserRepository.findByEmail(normalizedEmail);
             if (byEmail.isPresent()) {
