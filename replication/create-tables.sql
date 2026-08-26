@@ -431,3 +431,18 @@ CREATE TABLE IF NOT EXISTS public.conversations (
     message                 TEXT NOT NULL,
     created_at              TIMESTAMPTZ
 );
+
+-- ─── configurations (commission/charge settings) ─────────────────────────────
+CREATE TABLE IF NOT EXISTS public.configurations (
+    id          BIGSERIAL PRIMARY KEY,
+    module      VARCHAR(50) NOT NULL,
+    type        VARCHAR(50) NOT NULL,
+    name        VARCHAR(50) NOT NULL DEFAULT 'default',
+    expression  TEXT,
+    value       VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at  TIMESTAMPTZ,
+    updated_at  TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_configurations_module_type ON public.configurations (module, type);
+CREATE INDEX IF NOT EXISTS idx_configurations_module_type_name ON public.configurations (module, type, name);
