@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS public.terminals (
     os                      VARCHAR(255),
     model                   VARCHAR(255) NOT NULL,
     make                    VARCHAR(255) NOT NULL,
+    bank_code               VARCHAR(20),
     active                  BOOLEAN NOT NULL,
     locked                  BOOLEAN NOT NULL DEFAULT false,
     lock_message            VARCHAR(500),
