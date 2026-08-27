@@ -1,5 +1,6 @@
 package com.tms.report.modules.dispute.service;
 
+import com.tms.report.core.export.XlsxExporter;
 import com.tms.report.core.security.MerchantScope;
 import com.tms.report.modules.dispute.dto.CreateDisputeDto;
 import com.tms.report.modules.dispute.dto.DisputeThreadDto;
@@ -169,6 +170,48 @@ public class DisputeService {
         return Map.of("statuses",
                 List.of(Map.of("code", "open", "label", "Open"), Map.of("code", "processing", "label", "Processing"),
                         Map.of("code", "resolved", "label", "Resolved"), Map.of("code", "closed", "label", "Closed")));
+    }
+
+    public void export(Map<String, String> params, jakarta.servlet.http.HttpServletResponse response) throws Exception {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            throw new IllegalStateException("No authenticated merchant");
+        }
+
+        String search = params.get("search");
+        String status = params.get("status");
+
+        String[] headers = {"ID", "Subject", "Transaction Reference", "Status", "Created At", "Resolved At"};
+        String[] keys = {"id", "subject", "transaction_reference", "status_code", "created_at", "resolved_at"};
+
+        XlsxExporter.streamPagedMaps(response, "disputes", headers, 500, (page, size) -> {
+            PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+            Page<Dispute> disputes;
+
+            if (search != null && !search.isBlank()) {
+                if (status != null && !status.isBlank()) {
+                    disputes = disputeRepository.searchByUserIdAndStatus(merchantId, search.trim(), status, pageable);
+                } else {
+                    disputes = disputeRepository.searchByUserId(merchantId, search.trim(), pageable);
+                }
+            } else if (status != null && !status.isBlank()) {
+                disputes = disputeRepository.findByUserIdAndStatusCodeOrderByCreatedAtDesc(merchantId, status,
+                        pageable);
+            } else {
+                disputes = disputeRepository.findByUserIdOrderByCreatedAtDesc(merchantId, pageable);
+            }
+
+            return disputes.getContent().stream().map(d -> {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("id", d.getId());
+                m.put("subject", d.getSubject());
+                m.put("transaction_reference", d.getTransactionReference());
+                m.put("status_code", d.getStatusCode());
+                m.put("created_at", d.getCreatedAt() != null ? d.getCreatedAt().toString() : "");
+                m.put("resolved_at", d.getResolvedAt() != null ? d.getResolvedAt().toString() : "");
+                return m;
+            }).toList();
+        }, keys);
     }
 
     public Map<String, Object> show(Long id) {

@@ -49,6 +49,13 @@ public class DisputeController {
         return ApiResponse.success(Map.of("unread_count", disputeService.totalUnread()));
     }
 
+    /** GET /disputes/download — export disputes to xlsx. */
+    @GetMapping("/download")
+    public void download(@RequestParam Map<String, String> params, jakarta.servlet.http.HttpServletResponse response)
+            throws Exception {
+        disputeService.export(params, response);
+    }
+
     /**
      * PATCH /disputes/{id}/mark-read — mark a dispute as read by this merchant. For
      * merchants, this is a no-op since they only see their own disputes, but it
