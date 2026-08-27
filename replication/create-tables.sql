@@ -446,3 +446,27 @@ CREATE TABLE IF NOT EXISTS public.configurations (
 );
 CREATE INDEX IF NOT EXISTS idx_configurations_module_type ON public.configurations (module, type);
 CREATE INDEX IF NOT EXISTS idx_configurations_module_type_name ON public.configurations (module, type, name);
+
+
+-- ─── audit_logs ─────────────────────────────────────────────────────────────
+-- Stores audit trail of all non-GET actions performed by merchant users
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+    id                          BIGSERIAL PRIMARY KEY,
+    merchant_id                 BIGINT NOT NULL,
+    user_id                     BIGINT NOT NULL,
+    user_name                   VARCHAR(255),
+    user_email                  VARCHAR(255),
+    user_role                   VARCHAR(50),
+    method                      VARCHAR(10) NOT NULL,
+    path                        VARCHAR(500) NOT NULL,
+    action                      VARCHAR(255),
+    request_body                TEXT,
+    response_status             INTEGER,
+    ip_address                  VARCHAR(64),
+    user_agent                  VARCHAR(500),
+    created_at                  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_merchant_id ON public.audit_logs(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at);

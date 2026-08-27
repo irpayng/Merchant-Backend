@@ -13,8 +13,7 @@ import org.hibernate.annotations.CreationTimestamp;
  * made by merchants and their operator users.
  */
 @Entity
-@Table(name = "audit_logs", schema = "merchant", indexes = {
-        @Index(name = "idx_audit_logs_merchant_id", columnList = "merchant_id"),
+@Table(name = "audit_logs", indexes = {@Index(name = "idx_audit_logs_merchant_id", columnList = "merchant_id"),
         @Index(name = "idx_audit_logs_user_id", columnList = "user_id"),
         @Index(name = "idx_audit_logs_created_at", columnList = "created_at")})
 @Data
