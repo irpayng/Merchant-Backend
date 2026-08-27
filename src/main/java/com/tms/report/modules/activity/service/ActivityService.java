@@ -41,7 +41,7 @@ public class ActivityService {
         String search = params.get("search");
         if (search != null && !search.isBlank()) {
             String[] words = search.toLowerCase().trim().split("\\s+");
-            String combined = "LOWER(COALESCE(REGEXP_REPLACE(act.action, '([a-z])([A-Z])', '\\1 \\2', 'g'), '') || ' ' || COALESCE(act.description, '') || ' ' || COALESCE(mu.name, ''))";
+            String combined = "LOWER(COALESCE(al.action, '') || ' ' || COALESCE(al.path, '') || ' ' || COALESCE(al.user_name, ''))";
             where.append(" AND (");
             for (int i = 0; i < words.length; i++) {
                 if (i > 0)
@@ -52,26 +52,22 @@ public class ActivityService {
             where.append(")");
         }
 
-        // Merchant-scoped: only show activities from users in the same merchant
+        // Merchant-scoped: only show activities for the current merchant
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
             where.append(" AND 1=0");
         } else {
-            where.append(
-                    " AND act.admin_id IN (SELECT smu.id FROM merchant.merchant_users smu WHERE smu.merchant_id = ?")
-                    .append(paramIndex++).append(")");
+            where.append(" AND al.merchant_id = ?").append(paramIndex++);
             queryParams.add(merchantId);
         }
 
         String sql = """
-                SELECT act.id, act.action, act.description, mu.name as admin_name,
-                       act.actionable_type, act.actionable_id, act.created_at
-                FROM merchant.admin_activities act
-                LEFT JOIN merchant.merchant_users mu ON mu.id = act.admin_id
-                """ + where + " ORDER BY act.created_at DESC";
+                SELECT al.id, al.action, al.path, al.user_name,
+                       'Terminal' as actionable_type, NULL as actionable_id, al.created_at
+                FROM merchant.audit_logs al
+                """ + where + " ORDER BY al.created_at DESC";
 
-        String countSql = "SELECT COUNT(*) FROM merchant.admin_activities act LEFT JOIN merchant.merchant_users mu ON mu.id = act.admin_id "
-                + where;
+        String countSql = "SELECT COUNT(*) FROM merchant.audit_logs al " + where;
 
         Query countQuery = entityManager.createNativeQuery(countSql);
         Query dataQuery = entityManager.createNativeQuery(sql);
@@ -93,14 +89,18 @@ public class ActivityService {
                     createdAt = ts.toLocalDateTime();
                 else if (row[6] instanceof LocalDateTime ldt)
                     createdAt = ldt;
+                else if (row[6] instanceof java.time.OffsetDateTime odt)
+                    createdAt = odt.toLocalDateTime();
             }
 
+            String path = row[2] != null ? row[2].toString() : null;
+            String actionableType = extractActionableType(path);
+            Long actionableId = extractActionableId(path);
+
             return ActivityDto.builder().id(((Number) row[0]).longValue())
-                    .action(row[1] != null ? row[1].toString() : null)
-                    .description(row[2] != null ? row[2].toString() : null)
-                    .adminName(row[3] != null ? row[3].toString() : null)
-                    .actionableType(row[4] != null ? row[4].toString() : null)
-                    .actionableId(row[5] != null ? ((Number) row[5]).longValue() : null).createdAt(createdAt).build();
+                    .action(row[1] != null ? row[1].toString() : null).description(path) // Use path as description
+                    .adminName(row[3] != null ? row[3].toString() : null).actionableType(actionableType)
+                    .actionableId(actionableId).createdAt(createdAt).build();
         }).toList();
 
         return new PageImpl<>(dtos, PageRequest.of(page, limit), total);
@@ -116,34 +116,44 @@ public class ActivityService {
         if (merchantId == null) {
             scopeClause = " AND 1=0";
         } else {
-            scopeClause = " AND act.admin_id IN (SELECT smu.id FROM merchant.merchant_users smu WHERE smu.merchant_id = :merchantId)";
+            scopeClause = " AND al.merchant_id = :merchantId";
         }
 
-        Query q = entityManager.createNativeQuery(
-                "SELECT act.id, act.action, act.description, act.actionable_type, act.actionable_id, act.created_at, "
-                        + "mu.id as admin_id, mu.name as admin_name, mu.email as admin_email "
-                        + "FROM merchant.admin_activities act LEFT JOIN merchant.merchant_users mu ON mu.id = act.admin_id "
-                        + "WHERE act.id = :id" + scopeClause);
+        Query q = entityManager
+                .createNativeQuery("SELECT al.id, al.action, al.path, al.user_id, al.user_name, al.user_email, "
+                        + "al.user_role, al.ip_address, al.user_agent, al.response_status, al.created_at "
+                        + "FROM merchant.audit_logs al " + "WHERE al.id = :id" + scopeClause);
         q.setParameter("id", id);
         if (merchantId != null) {
             q.setParameter("merchantId", merchantId);
         }
 
         Object[] r = (Object[]) q.getSingleResult();
+        String path = r[2] != null ? r[2].toString() : null;
 
         java.util.LinkedHashMap<String, Object> data = new java.util.LinkedHashMap<>();
         data.put("id", ((Number) r[0]).longValue());
         data.put("admin",
-                r[6] != null
-                        ? Map.of("id", ((Number) r[6]).longValue(), "name", r[7] != null ? r[7].toString() : null,
-                                "email", r[8] != null ? r[8].toString() : null)
+                r[3] != null
+                        ? Map.of("id", ((Number) r[3]).longValue(), "name", r[4] != null ? r[4].toString() : null,
+                                "email", r[5] != null ? r[5].toString() : null)
                         : null);
+        data.put("admin_role", r[6] != null ? r[6].toString() : null);
         data.put("action", r[1] != null ? r[1].toString() : null);
-        data.put("description", r[2] != null ? r[2].toString() : null);
-        data.put("actionable_type", r[3] != null ? r[3].toString() : null);
-        data.put("actionable_id", r[4] != null ? ((Number) r[4]).longValue() : null);
-        if (r[5] != null) {
-            LocalDateTime ldt = r[5] instanceof Timestamp ts ? ts.toLocalDateTime() : (LocalDateTime) r[5];
+        data.put("description", path);
+        data.put("actionable_type", extractActionableType(path));
+        data.put("actionable_id", extractActionableId(path));
+        data.put("ip_address", r[7] != null ? r[7].toString() : null);
+        data.put("user_agent", r[8] != null ? r[8].toString() : null);
+        data.put("response_status", r[9] != null ? ((Number) r[9]).intValue() : null);
+        if (r[10] != null) {
+            LocalDateTime ldt;
+            if (r[10] instanceof Timestamp ts)
+                ldt = ts.toLocalDateTime();
+            else if (r[10] instanceof java.time.OffsetDateTime odt)
+                ldt = odt.toLocalDateTime();
+            else
+                ldt = (LocalDateTime) r[10];
             data.put("created_at", ldt.format(TIME_FORMAT));
         } else {
             data.put("created_at", null);
@@ -159,10 +169,10 @@ public class ActivityService {
             return List.of();
         }
 
-        List<Object[]> rows = entityManager.createNativeQuery("SELECT act.action, act.description, act.created_at "
-                + "FROM merchant.admin_activities act "
-                + "WHERE act.admin_id IN (SELECT mu.id FROM merchant.merchant_users mu WHERE mu.merchant_id = :merchantId) "
-                + "ORDER BY act.created_at DESC LIMIT 5").setParameter("merchantId", merchantId).getResultList();
+        List<Object[]> rows = entityManager
+                .createNativeQuery("SELECT al.action, al.path, al.created_at " + "FROM merchant.audit_logs al "
+                        + "WHERE al.merchant_id = :merchantId " + "ORDER BY al.created_at DESC LIMIT 5")
+                .setParameter("merchantId", merchantId).getResultList();
 
         return rows.stream().map(row -> {
             Map<String, Object> map = new HashMap<>();
@@ -174,6 +184,8 @@ public class ActivityService {
                     createdAt = ts.toLocalDateTime();
                 else if (row[2] instanceof LocalDateTime ldt)
                     createdAt = ldt;
+                else if (row[2] instanceof java.time.OffsetDateTime odt)
+                    createdAt = odt.toLocalDateTime();
             }
             map.put("date", createdAt != null ? createdAt.format(FMT) : null);
             return map;
@@ -184,5 +196,49 @@ public class ActivityService {
         if (s == null || s.isEmpty())
             return s;
         return s.substring(0, 1).toUpperCase() + s.substring(1);
+    }
+
+    private String extractActionableType(String path) {
+        if (path == null)
+            return null;
+        String[] parts = path.split("/");
+        for (int i = 1; i < parts.length; i++) {
+            String part = parts[i];
+            if (!part.isEmpty() && !isNumeric(part) && !"api".equals(part)) {
+                return capitalize(singularize(part));
+            }
+        }
+        return null;
+    }
+
+    private Long extractActionableId(String path) {
+        if (path == null)
+            return null;
+        String[] parts = path.split("/");
+        for (String part : parts) {
+            if (isNumeric(part)) {
+                return Long.parseLong(part);
+            }
+        }
+        return null;
+    }
+
+    private boolean isNumeric(String str) {
+        try {
+            Long.parseLong(str);
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private String singularize(String word) {
+        if (word.endsWith("ies")) {
+            return word.substring(0, word.length() - 3) + "y";
+        }
+        if (word.endsWith("s") && !word.endsWith("ss")) {
+            return word.substring(0, word.length() - 1);
+        }
+        return word;
     }
 }
