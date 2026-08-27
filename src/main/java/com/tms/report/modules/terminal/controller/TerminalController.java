@@ -125,12 +125,12 @@ public class TerminalController {
     }
 
     /**
-     * GET /terminals/download-sample — download a sample XLSX file for bulk terminal upload.
+     * GET /terminals/download-sample — download a sample XLSX file for bulk
+     * terminal upload.
      */
     @GetMapping("/download-sample")
     public void downloadSample(HttpServletResponse response) throws Exception {
-        XlsxExporter.streamSample(response, "terminals-upload-sample",
-                new String[]{"Serial", "Make", "Model", "OS"},
+        XlsxExporter.streamSample(response, "terminals-upload-sample", new String[]{"Serial", "Make", "Model", "OS"},
                 List.of(new String[]{"ABC123456789", "PAX", "A920", "Android 7.1"},
                         new String[]{"DEF987654321", "Newland", "N910", "Android 9.0"}));
     }

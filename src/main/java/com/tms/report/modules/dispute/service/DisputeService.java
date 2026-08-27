@@ -167,10 +167,8 @@ public class DisputeService {
 
     public Map<String, Object> filters() {
         return Map.of("statuses",
-                List.of(Map.of("code", "open", "label", "Open"),
-                        Map.of("code", "processing", "label", "Processing"),
-                        Map.of("code", "resolved", "label", "Resolved"),
-                        Map.of("code", "closed", "label", "Closed")));
+                List.of(Map.of("code", "open", "label", "Open"), Map.of("code", "processing", "label", "Processing"),
+                        Map.of("code", "resolved", "label", "Resolved"), Map.of("code", "closed", "label", "Closed")));
     }
 
     public Map<String, Object> show(Long id) {
