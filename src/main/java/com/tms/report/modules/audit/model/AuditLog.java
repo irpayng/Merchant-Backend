@@ -100,12 +100,7 @@ public class AuditLog {
         return new UserInfo(userId, userName, userEmail, userRole);
     }
 
-    @Data
-    @AllArgsConstructor
-    public static class UserInfo {
-        private Long id;
-        private String name;
-        private String email;
-        private String role;
+    /** Simple DTO for user info in API response. */
+    public record UserInfo(Long id, String name, String email, String role) {
     }
 }
