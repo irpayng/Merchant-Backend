@@ -35,6 +35,13 @@ public class DashboardService {
 
     private static final DateTimeFormatter LABEL_FMT = DateTimeFormatter.ofPattern("MMM d");
     private static final List<String> TREND_STATUSES = List.of("completed", "processing", "reversed");
+    /**
+     * Product codes that represent inflows to the merchant's wallet. Used to
+     * filter dashboard "Total Sales" metrics to show only money coming in.
+     * - purchase: Card purchase at POS terminal (customer pays merchant)
+     * - virtual-funding: Bank transfer to merchant's virtual account
+     */
+    private static final List<String> INFLOW_PRODUCT_CODES = List.of("purchase", "virtual-funding");
 
     // ---------------------------------------------------------------------
     // Scope helpers
@@ -329,12 +336,14 @@ public class DashboardService {
                 SELECT CAST(created_at AS date) as d, status_code, COALESCE(SUM(amount), 0)
                 FROM transactions
                 WHERE created_at >= :s AND created_at <= :e AND status_code IN ('completed', 'processing', 'reversed')
+                  AND product_code IN (:inflowCodes)
                 """ + userScope("user_id") + """
                  GROUP BY CAST(created_at AS date), status_code
                 ORDER BY d
                 """);
         q.setParameter("s", period.start);
         q.setParameter("e", period.end);
+        q.setParameter("inflowCodes", INFLOW_PRODUCT_CODES);
         bindScope(q);
         List<Object[]> rows = q.getResultList();
 
@@ -399,11 +408,13 @@ public class DashboardService {
                 SELECT status_code, COUNT(*) as cnt, COALESCE(SUM(amount), 0) as amt
                 FROM transactions
                 WHERE created_at >= :s AND created_at <= :e
+                  AND product_code IN (:inflowCodes)
                 """ + userScope("user_id") + """
                  GROUP BY status_code
                 """);
         q.setParameter("s", start);
         q.setParameter("e", end);
+        q.setParameter("inflowCodes", INFLOW_PRODUCT_CODES);
         bindScope(q);
         List<Object[]> rows = q.getResultList();
 
