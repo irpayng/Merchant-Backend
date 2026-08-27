@@ -67,7 +67,8 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
         }
 
         // Wrap request and response to capture body
-        ContentCachingRequestWrapper wrappedRequest = new ContentCachingRequestWrapper(request);
+        ContentCachingRequestWrapper wrappedRequest = new ContentCachingRequestWrapper(request,
+                request.getContentLength() > 0 ? request.getContentLength() : 1024);
         ContentCachingResponseWrapper wrappedResponse = new ContentCachingResponseWrapper(response);
 
         try {
