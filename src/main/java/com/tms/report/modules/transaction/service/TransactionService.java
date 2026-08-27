@@ -48,7 +48,7 @@ public class TransactionService {
     private static final Set<String> SENSITIVE_METADATA_KEYS = Set.of(
             // Card data — PCI DSS sensitive
             "pan", "track2", "icc_data", "icc", "pin_block", "clear_pin_block", "new_pin_block", "card_sequence_number",
-            "service_code", "expiry_date", "card_holder_name",
+            "service_code", "expiry_date",
             // Cryptographic keys
             "tsk",
             // Internal terminal/merchant routing data
