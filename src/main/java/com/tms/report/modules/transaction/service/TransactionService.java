@@ -534,7 +534,7 @@ public class TransactionService {
                 + "t.amount, t.status_code, t.status_message, t.created_at, t.user_id, "
                 + "t.product_id, t.provider_id, t.channel, t.payment_method, "
                 + "t.service_fee, t.agent_commission, t.aggregator_commission, t.company_commission, t.amount_to_pay, "
-                + "NULL as prov_id, NULL as prov_name, " + "NULL as prov_code, "
+                + "t.provider_code as prov_code, "
                 + "t.config_context, t.location_state, t.location_lga, t.product_code, t.metadata, "
                 + "COALESCE(t.super_aggregator_commission, 0) as super_aggregator_commission, " + "0 as provider_cost "
                 + "FROM transactions t";
@@ -588,26 +588,24 @@ public class TransactionService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", txId);
         result.put("reference", reference);
-        result.put("transactable", sanitizeTransactable(parseMetadataJsonb(t[23])));
+        result.put("transactable", sanitizeTransactable(parseMetadataJsonb(t[21])));
         result.put("user", userId != null ? loadFullUser(userId) : null);
         // Product: try products table first, fall back to product_code
         Map<String, Object> productMap = loadRowById("products", lng(t[7]));
         if (productMap == null) {
-            String prodCode = str(t[22]);
+            String prodCode = str(t[20]);
             if (prodCode != null) {
                 String prodName = capitalize(prodCode.replace("_", " ").replace("-", " "));
                 productMap = Map.of("name", prodName, "code", prodCode);
             }
         }
         result.put("product", productMap);
-        // Provider: from JOIN, with fallback to provider_code
-        Long provId = lng(t[16]);
-        String provName = str(t[17]);
-        String provCode = str(t[18]);
+        // Provider: build from provider_code column
+        String provCode = str(t[16]);
         result.put("provider",
-                (provId != null || provName != null)
-                        ? Map.of("id", provId != null ? provId : 0L, "name", provName != null ? provName : "", "code",
-                                provCode != null ? provCode : "")
+                provCode != null
+                        ? Map.of("id", 0L, "name", capitalize(provCode.replace("-", " ").replace("_", " ")), "code",
+                                provCode)
                         : null);
         // Channel: build from channel string
         result.put("channel", channel != null ? Map.of("name", capitalize(channel), "code", channel) : null);
@@ -625,14 +623,14 @@ public class TransactionService {
         costs.put("agent_commission", t[12] != null ? new BigDecimal(t[12].toString()).toPlainString() : "0");
         costs.put("aggregator_commission", t[13] != null ? new BigDecimal(t[13].toString()).toPlainString() : "0");
         costs.put("super_aggregator_commission",
-                t[24] != null ? new BigDecimal(t[24].toString()).toPlainString() : "0");
+                t[22] != null ? new BigDecimal(t[22].toString()).toPlainString() : "0");
         costs.put("company_commission", t[14] != null ? new BigDecimal(t[14].toString()).toPlainString() : "0");
-        costs.put("provider_cost", t[25] != null ? new BigDecimal(t[25].toString()).toPlainString() : "0");
+        costs.put("provider_cost", t[23] != null ? new BigDecimal(t[23].toString()).toPlainString() : "0");
         costs.put("amount_to_pay", t[15] != null ? new BigDecimal(t[15].toString()).toPlainString() : "0");
         result.put("cost_breakdowns", costs);
-        result.put("config_context", parseJsonb(t[19]));
-        result.put("location_state", str(t[20]));
-        result.put("location_lga", str(t[21]));
+        result.put("config_context", parseJsonb(t[17]));
+        result.put("location_state", str(t[18]));
+        result.put("location_lga", str(t[19]));
         result.put("created_at", formatTime(t[5]));
 
         return result;
