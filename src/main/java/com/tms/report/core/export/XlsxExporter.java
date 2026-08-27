@@ -150,4 +150,16 @@ public class XlsxExporter {
             workbook.write(response.getOutputStream());
         }
     }
-}
+
+    /**
+     * Streams a sample/template xlsx with headers and a few example rows. Used for
+     * bulk-upload templates.
+     */
+    public static void streamSample(HttpServletResponse response, String filename, String[] headers,
+            List<String[]> sampleRows) throws Exception {
+        stream(response, filename, headers, sink -> {
+            for (String[] row : sampleRows) {
+                sink.row(row);
+            }
+        });
+    }
