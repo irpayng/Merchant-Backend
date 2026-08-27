@@ -30,12 +30,13 @@ public class ActivityController {
     @GetMapping("/download")
     public void download(@RequestParam Map<String, String> params, HttpServletResponse response) throws Exception {
         XlsxExporter.streamPaged(response, "activities",
-                new String[]{"ID", "Action", "Description", "Admin", "Actionable Type", "Actionable ID", "Created At"},
-                1000,
+                new String[]{"ID", "Action", "Description", "User", "Module", "Created At"}, 1000,
                 (page, size) -> activityService.index(QueryFilterHelper.pageParams(params, page, size)).getContent(),
-                row -> new String[]{String.valueOf(row.getId()), row.getAction(), row.getDescription(),
-                        row.getAdminName(), row.getActionableType(),
-                        row.getActionableId() != null ? row.getActionableId().toString() : "",
-                        row.getCreatedAt() != null ? row.getCreatedAt().toString() : ""});
+                row -> new String[]{String.valueOf(row.get("id")), str(row.get("action")), str(row.get("description")),
+                        str(row.get("admin_name")), str(row.get("module")), str(row.get("created_at"))});
+    }
+
+    private String str(Object o) {
+        return o != null ? o.toString() : "";
     }
 }
