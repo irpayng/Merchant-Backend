@@ -63,7 +63,21 @@ public class ActivityService {
 
         String sql = """
                 SELECT al.id, al.action, al.path, al.user_name,
-                       al.module, NULL as actionable_id, al.created_at
+                       CASE
+                         WHEN al.path LIKE '/terminals%' THEN 'Terminals'
+                         WHEN al.path LIKE '/transactions%' THEN 'Transactions'
+                         WHEN al.path LIKE '/disputes%' THEN 'Disputes'
+                         WHEN al.path LIKE '/settlements%' THEN 'Settlements'
+                         WHEN al.path LIKE '/statements%' THEN 'Statements'
+                         WHEN al.path LIKE '/merchant-users%' THEN 'Team'
+                         WHEN al.path LIKE '/roles%' THEN 'Roles'
+                         WHEN al.path LIKE '/settings%' THEN 'Settings'
+                         WHEN al.path LIKE '/notifications%' THEN 'Notifications'
+                         WHEN al.path LIKE '/auth%' THEN 'Authentication'
+                         WHEN al.path LIKE '/profile%' THEN 'Profile'
+                         ELSE 'Other'
+                       END as module,
+                       al.created_at
                 FROM merchant.audit_logs al
                 """ + where + " ORDER BY al.created_at DESC";
 
@@ -84,25 +98,24 @@ public class ActivityService {
         List<Object[]> rows = dataQuery.getResultList();
         List<ActivityDto> dtos = rows.stream().map(row -> {
             LocalDateTime createdAt = null;
-            if (row[6] != null) {
-                if (row[6] instanceof Timestamp ts)
+            if (row[5] != null) {
+                if (row[5] instanceof Timestamp ts)
                     createdAt = ts.toLocalDateTime();
-                else if (row[6] instanceof LocalDateTime ldt)
+                else if (row[5] instanceof LocalDateTime ldt)
                     createdAt = ldt;
-                else if (row[6] instanceof java.time.OffsetDateTime odt)
+                else if (row[5] instanceof java.time.OffsetDateTime odt)
                     createdAt = odt.toLocalDateTime();
-                else if (row[6] instanceof java.time.Instant inst)
+                else if (row[5] instanceof java.time.Instant inst)
                     createdAt = LocalDateTime.ofInstant(inst, java.time.ZoneId.systemDefault());
             }
 
             String path = row[2] != null ? row[2].toString() : null;
             String module = row[4] != null ? row[4].toString() : null;
-            String actionableType = module != null ? module : extractActionableType(path);
             Long actionableId = extractActionableId(path);
 
             return ActivityDto.builder().id(((Number) row[0]).longValue())
-                    .action(row[1] != null ? row[1].toString() : null).description(path) // Use path as description
-                    .adminName(row[3] != null ? row[3].toString() : null).actionableType(actionableType)
+                    .action(row[1] != null ? row[1].toString() : null).description(path)
+                    .adminName(row[3] != null ? row[3].toString() : null).actionableType(module)
                     .actionableId(actionableId).createdAt(createdAt).build();
         }).toList();
 

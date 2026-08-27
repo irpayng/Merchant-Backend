@@ -56,10 +56,6 @@ public class AuditLog {
     @Column(nullable = false, length = 500)
     private String path;
 
-    /** Module/resource this action belongs to (e.g. Terminals, Disputes). */
-    @Column(length = 100)
-    private String module;
-
     /** Human-readable action description derived from the endpoint. */
     @Column(length = 255)
     private String action;
