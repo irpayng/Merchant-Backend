@@ -145,17 +145,32 @@ public class DisputeService {
         int page = Integer.parseInt(params.getOrDefault("page", "1"));
         int limit = Integer.parseInt(params.getOrDefault("limit", "15"));
         String search = params.get("search");
+        String status = params.get("status");
 
         PageRequest pageable = PageRequest.of(Math.max(page - 1, 0), limit, Sort.by(Sort.Direction.DESC, "createdAt"));
 
         Page<Dispute> disputes;
         if (search != null && !search.isBlank()) {
-            disputes = disputeRepository.searchByUserId(merchantId, search.trim(), pageable);
+            if (status != null && !status.isBlank()) {
+                disputes = disputeRepository.searchByUserIdAndStatus(merchantId, search.trim(), status, pageable);
+            } else {
+                disputes = disputeRepository.searchByUserId(merchantId, search.trim(), pageable);
+            }
+        } else if (status != null && !status.isBlank()) {
+            disputes = disputeRepository.findByUserIdAndStatusCodeOrderByCreatedAtDesc(merchantId, status, pageable);
         } else {
             disputes = disputeRepository.findByUserIdOrderByCreatedAtDesc(merchantId, pageable);
         }
 
         return disputes.map(this::toView);
+    }
+
+    public Map<String, Object> filters() {
+        return Map.of("statuses",
+                List.of(Map.of("code", "open", "label", "Open"),
+                        Map.of("code", "processing", "label", "Processing"),
+                        Map.of("code", "resolved", "label", "Resolved"),
+                        Map.of("code", "closed", "label", "Closed")));
     }
 
     public Map<String, Object> show(Long id) {

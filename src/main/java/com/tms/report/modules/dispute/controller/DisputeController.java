@@ -25,7 +25,9 @@ public class DisputeController {
     @GetMapping
     public Map<String, Object> index(@RequestParam Map<String, String> params) {
         Page<Map<String, Object>> page = disputeService.index(params);
-        return PagedResponse.from(page, "/disputes");
+        Map<String, Object> extra = new java.util.LinkedHashMap<>();
+        extra.put("filters", disputeService.filters());
+        return PagedResponse.from(page, "/disputes", extra);
     }
 
     /**
