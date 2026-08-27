@@ -1106,6 +1106,75 @@ public class GrpcClient {
         }
     }
 
+    /**
+     * List wallet statements for a user. Paginated statement history showing all
+     * credits and debits. Used by merchant dashboard statements page.
+     *
+     * @param userId     the user's id in the system
+     * @param walletType "default" or "commission", null for both
+     * @param page       page number (1-indexed)
+     * @param limit      items per page
+     * @param startDate  ISO date yyyy-MM-dd, null for no start filter
+     * @param endDate    ISO date yyyy-MM-dd, null for no end filter
+     * @param type       "credit" or "debit", null for both
+     * @return map with success, statements list, total, page, limit
+     */
+    public Map<String, Object> listStatements(long userId, String walletType, int page, int limit, String startDate,
+            String endDate, String type) {
+        logRequest("ListStatements", String.valueOf(userId));
+        try {
+            var builder = com.tms.report.grpc.wallet.ListStatementsRequest.newBuilder().setUserId(userId).setPage(page)
+                    .setLimit(limit);
+            if (walletType != null && !walletType.isEmpty()) {
+                builder.setWalletType(walletType);
+            }
+            if (startDate != null && !startDate.isEmpty()) {
+                builder.setStartDate(startDate);
+            }
+            if (endDate != null && !endDate.isEmpty()) {
+                builder.setEndDate(endDate);
+            }
+            if (type != null && !type.isEmpty()) {
+                builder.setType(type);
+            }
+
+            var resp = walletStub.listStatements(builder.build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", resp.getSuccess());
+            result.put("total", resp.getTotal());
+            result.put("page", resp.getPage());
+            result.put("limit", resp.getLimit());
+
+            List<Map<String, Object>> statements = new ArrayList<>();
+            for (var s : resp.getStatementsList()) {
+                Map<String, Object> stmt = new HashMap<>();
+                stmt.put("id", s.getId());
+                stmt.put("type", s.getType());
+                stmt.put("amount", s.getAmount());
+                stmt.put("previous_balance", s.getPreviousBalance());
+                stmt.put("current_balance", s.getCurrentBalance());
+                stmt.put("description", s.getDescription());
+                stmt.put("category", s.getCategory());
+                stmt.put("source_type", s.getSourceType());
+                stmt.put("source_reference", s.getSourceReference());
+                stmt.put("wallet_type", s.getWalletType());
+                stmt.put("created_at", s.getCreatedAt());
+                statements.add(stmt);
+            }
+            result.put("statements", statements);
+            return result;
+        } catch (StatusRuntimeException e) {
+            log.warn("ListStatements failed for userId={}: {}", userId, e.getMessage());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", false);
+            result.put("statements", List.of());
+            result.put("total", 0L);
+            result.put("page", page);
+            result.put("limit", limit);
+            return result;
+        }
+    }
+
     // ── Address / KYC commands → kyc-service ──
 
     public Map<String, Object> updateAddress(String addressId, Map<String, Object> data) {
