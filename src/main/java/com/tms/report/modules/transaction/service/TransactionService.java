@@ -1529,11 +1529,20 @@ public class TransactionService {
             String column) {
         String val = params.get(key);
         if (val != null && !val.isBlank()) {
-            where.append(" AND ").append(column).append(" = :").append(key.replace(".", "_"));
-            try {
-                qParams.put(key.replace(".", "_"), Long.parseLong(val));
-            } catch (NumberFormatException e) {
-                qParams.put(key.replace(".", "_"), val);
+            // Support comma-separated values for IN clause
+            if (val.contains(",")) {
+                String paramName = key.replace(".", "_") + "_list";
+                List<String> values = java.util.Arrays.stream(val.split(",")).map(String::trim)
+                        .filter(s -> !s.isEmpty()).toList();
+                where.append(" AND ").append(column).append(" IN (:").append(paramName).append(")");
+                qParams.put(paramName, values);
+            } else {
+                where.append(" AND ").append(column).append(" = :").append(key.replace(".", "_"));
+                try {
+                    qParams.put(key.replace(".", "_"), Long.parseLong(val));
+                } catch (NumberFormatException e) {
+                    qParams.put(key.replace(".", "_"), val);
+                }
             }
         }
     }
@@ -1542,6 +1551,9 @@ public class TransactionService {
      * Product filter that expands a single id (or code) into every alias known to
      * refer to the same logical product, then matches against
      * {@code (id_column IN (...) OR code_column IN (...))}.
+     *
+     * <p>
+     * Supports comma-separated product codes for filtering by multiple products.
      *
      * <p>
      * Production was migrated from the legacy camelCase monolith schema. The
@@ -1564,8 +1576,19 @@ public class TransactionService {
             return;
         }
 
-        Set<String> codeAliases = resolveProductCodeAliases(val);
-        if (codeAliases.isEmpty()) {
+        // Support comma-separated product codes
+        Set<String> allCodeAliases = new java.util.LinkedHashSet<>();
+        String[] values = val.split(",");
+        for (String v : values) {
+            v = v.trim();
+            if (v.isEmpty()) {
+                continue;
+            }
+            Set<String> aliases = resolveProductCodeAliases(v);
+            allCodeAliases.addAll(aliases);
+        }
+
+        if (allCodeAliases.isEmpty()) {
             // Couldn't resolve to any known product — fall back to the original
             // exact match so the caller still sees a result set, even if empty.
             addFilter(where, qParams, params, key, idColumn);
@@ -1576,7 +1599,7 @@ public class TransactionService {
         try {
             @SuppressWarnings("unchecked")
             List<Object> rows = entityManager.createNativeQuery("SELECT id FROM products WHERE code IN (:codes)")
-                    .setParameter("codes", codeAliases).getResultList();
+                    .setParameter("codes", allCodeAliases).getResultList();
             for (Object row : rows) {
                 if (row instanceof Number n) {
                     idAliases.add(n.longValue());
@@ -1592,10 +1615,10 @@ public class TransactionService {
             where.append(" AND (").append(idColumn).append(" IN (:").append(idsParam).append(")").append(" OR ")
                     .append(codeColumn).append(" IN (:").append(codesParam).append("))");
             qParams.put(idsParam, idAliases);
-            qParams.put(codesParam, codeAliases);
+            qParams.put(codesParam, allCodeAliases);
         } else {
             where.append(" AND ").append(codeColumn).append(" IN (:").append(codesParam).append(")");
-            qParams.put(codesParam, codeAliases);
+            qParams.put(codesParam, allCodeAliases);
         }
     }
 
