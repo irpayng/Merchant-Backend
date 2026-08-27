@@ -1,7 +1,6 @@
 package com.tms.report.modules.activity.service;
 
 import com.tms.report.core.security.MerchantScope;
-import com.tms.report.modules.activity.dto.ActivityDto;
 import com.tms.report.modules.activity.repository.ActivityRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
@@ -28,9 +27,11 @@ public class ActivityService {
     private final MerchantScope merchantScope;
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("MMM d, yyyy h:mma");
 
+    private static final DateTimeFormatter LIST_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy h:mma");
+
     @Transactional(readOnly = true)
     @SuppressWarnings("unchecked")
-    public Page<ActivityDto> index(Map<String, String> params) {
+    public Page<Map<String, Object>> index(Map<String, String> params) {
         int page = Integer.parseInt(params.getOrDefault("page", "1")) - 1;
         int limit = Integer.parseInt(params.getOrDefault("limit", "15"));
 
@@ -62,7 +63,7 @@ public class ActivityService {
         }
 
         String sql = """
-                SELECT al.id, al.action, al.path, al.user_name,
+                SELECT al.id, al.action, al.path, al.user_id, al.user_name, al.user_email, al.user_role,
                        CASE
                          WHEN al.path LIKE '/terminals%' THEN 'Terminals'
                          WHEN al.path LIKE '/transactions%' THEN 'Transactions'
@@ -96,30 +97,33 @@ public class ActivityService {
         dataQuery.setMaxResults(limit);
 
         List<Object[]> rows = dataQuery.getResultList();
-        List<ActivityDto> dtos = rows.stream().map(row -> {
-            LocalDateTime createdAt = null;
-            if (row[5] != null) {
-                if (row[5] instanceof Timestamp ts)
-                    createdAt = ts.toLocalDateTime();
-                else if (row[5] instanceof LocalDateTime ldt)
-                    createdAt = ldt;
-                else if (row[5] instanceof java.time.OffsetDateTime odt)
-                    createdAt = odt.toLocalDateTime();
-                else if (row[5] instanceof java.time.Instant inst)
-                    createdAt = LocalDateTime.ofInstant(inst, java.time.ZoneId.systemDefault());
+        List<Map<String, Object>> items = rows.stream().map(row -> {
+            Map<String, Object> item = new java.util.LinkedHashMap<>();
+            item.put("id", ((Number) row[0]).longValue());
+
+            String action = row[1] != null ? row[1].toString() : null;
+            String userName = row[4] != null ? row[4].toString() : null;
+            String module = row[7] != null ? row[7].toString() : null;
+
+            item.put("action", action);
+            item.put("module", module);
+            item.put("description", buildDescription(userName, action));
+
+            // User object for the table
+            if (row[3] != null) {
+                item.put("user", Map.of("id", ((Number) row[3]).longValue(), "name", userName != null ? userName : "",
+                        "email", row[5] != null ? row[5].toString() : ""));
             }
+            item.put("admin_name", userName);
 
-            String path = row[2] != null ? row[2].toString() : null;
-            String module = row[4] != null ? row[4].toString() : null;
-            Long actionableId = extractActionableId(path);
+            // Format date for display
+            LocalDateTime createdAt = parseDateTime(row[8]);
+            item.put("created_at", createdAt != null ? createdAt.format(LIST_FMT) : null);
 
-            return ActivityDto.builder().id(((Number) row[0]).longValue())
-                    .action(row[1] != null ? row[1].toString() : null).description(path)
-                    .adminName(row[3] != null ? row[3].toString() : null).actionableType(module)
-                    .actionableId(actionableId).createdAt(createdAt).build();
+            return item;
         }).toList();
 
-        return new PageImpl<>(dtos, PageRequest.of(page, limit), total);
+        return new PageImpl<>(items, PageRequest.of(page, limit), total);
     }
 
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
@@ -137,7 +141,18 @@ public class ActivityService {
 
         Query q = entityManager
                 .createNativeQuery("SELECT al.id, al.action, al.path, al.user_id, al.user_name, al.user_email, "
-                        + "al.user_role, al.ip_address, al.user_agent, al.response_status, al.created_at "
+                        + "al.user_role, al.ip_address, al.user_agent, al.response_status, al.created_at, " + "CASE "
+                        + "  WHEN al.path LIKE '/terminals%' THEN 'Terminals' "
+                        + "  WHEN al.path LIKE '/transactions%' THEN 'Transactions' "
+                        + "  WHEN al.path LIKE '/disputes%' THEN 'Disputes' "
+                        + "  WHEN al.path LIKE '/settlements%' THEN 'Settlements' "
+                        + "  WHEN al.path LIKE '/statements%' THEN 'Statements' "
+                        + "  WHEN al.path LIKE '/merchant-users%' THEN 'Team' "
+                        + "  WHEN al.path LIKE '/roles%' THEN 'Roles' "
+                        + "  WHEN al.path LIKE '/settings%' THEN 'Settings' "
+                        + "  WHEN al.path LIKE '/notifications%' THEN 'Notifications' "
+                        + "  WHEN al.path LIKE '/auth%' THEN 'Authentication' "
+                        + "  WHEN al.path LIKE '/profile%' THEN 'Profile' " + "  ELSE 'Other' " + "END as module "
                         + "FROM merchant.audit_logs al " + "WHERE al.id = :id" + scopeClause);
         q.setParameter("id", id);
         if (merchantId != null) {
@@ -146,36 +161,33 @@ public class ActivityService {
 
         Object[] r = (Object[]) q.getSingleResult();
         String path = r[2] != null ? r[2].toString() : null;
+        String userName = r[4] != null ? r[4].toString() : null;
+        String action = r[1] != null ? r[1].toString() : null;
+        String module = r[11] != null ? r[11].toString() : null;
 
         java.util.LinkedHashMap<String, Object> data = new java.util.LinkedHashMap<>();
         data.put("id", ((Number) r[0]).longValue());
-        data.put("admin",
-                r[3] != null
-                        ? Map.of("id", ((Number) r[3]).longValue(), "name", r[4] != null ? r[4].toString() : null,
-                                "email", r[5] != null ? r[5].toString() : null)
-                        : null);
+
+        // User object
+        if (r[3] != null) {
+            data.put("user", Map.of("id", ((Number) r[3]).longValue(), "name", userName != null ? userName : "",
+                    "email", r[5] != null ? r[5].toString() : ""));
+            data.put("admin", Map.of("id", ((Number) r[3]).longValue(), "name", userName != null ? userName : "",
+                    "email", r[5] != null ? r[5].toString() : ""));
+        }
+        data.put("admin_name", userName);
         data.put("admin_role", r[6] != null ? r[6].toString() : null);
-        data.put("action", r[1] != null ? r[1].toString() : null);
-        data.put("description", path);
-        data.put("actionable_type", extractActionableType(path));
-        data.put("actionable_id", extractActionableId(path));
+        data.put("action", action);
+        data.put("module", module);
+        data.put("description", buildDescription(userName, action));
+        data.put("path", path);
         data.put("ip_address", r[7] != null ? r[7].toString() : null);
         data.put("user_agent", r[8] != null ? r[8].toString() : null);
         data.put("response_status", r[9] != null ? ((Number) r[9]).intValue() : null);
-        if (r[10] != null) {
-            LocalDateTime ldt;
-            if (r[10] instanceof Timestamp ts)
-                ldt = ts.toLocalDateTime();
-            else if (r[10] instanceof java.time.OffsetDateTime odt)
-                ldt = odt.toLocalDateTime();
-            else if (r[10] instanceof java.time.Instant inst)
-                ldt = LocalDateTime.ofInstant(inst, java.time.ZoneId.systemDefault());
-            else
-                ldt = (LocalDateTime) r[10];
-            data.put("created_at", ldt.format(TIME_FORMAT));
-        } else {
-            data.put("created_at", null);
-        }
+
+        LocalDateTime ldt = parseDateTime(r[10]);
+        data.put("created_at", ldt != null ? ldt.format(LIST_FMT) : null);
+
         return data;
     }
 
@@ -218,47 +230,23 @@ public class ActivityService {
         return s.substring(0, 1).toUpperCase() + s.substring(1);
     }
 
-    private String extractActionableType(String path) {
-        if (path == null)
+    private LocalDateTime parseDateTime(Object value) {
+        if (value == null)
             return null;
-        String[] parts = path.split("/");
-        for (int i = 1; i < parts.length; i++) {
-            String part = parts[i];
-            if (!part.isEmpty() && !isNumeric(part) && !"api".equals(part)) {
-                return capitalize(singularize(part));
-            }
-        }
+        if (value instanceof Timestamp ts)
+            return ts.toLocalDateTime();
+        if (value instanceof LocalDateTime ldt)
+            return ldt;
+        if (value instanceof java.time.OffsetDateTime odt)
+            return odt.toLocalDateTime();
+        if (value instanceof java.time.Instant inst)
+            return LocalDateTime.ofInstant(inst, java.time.ZoneId.systemDefault());
         return null;
     }
 
-    private Long extractActionableId(String path) {
-        if (path == null)
-            return null;
-        String[] parts = path.split("/");
-        for (String part : parts) {
-            if (isNumeric(part)) {
-                return Long.parseLong(part);
-            }
-        }
-        return null;
-    }
-
-    private boolean isNumeric(String str) {
-        try {
-            Long.parseLong(str);
-            return true;
-        } catch (NumberFormatException e) {
-            return false;
-        }
-    }
-
-    private String singularize(String word) {
-        if (word.endsWith("ies")) {
-            return word.substring(0, word.length() - 3) + "y";
-        }
-        if (word.endsWith("s") && !word.endsWith("ss")) {
-            return word.substring(0, word.length() - 1);
-        }
-        return word;
+    private String buildDescription(String userName, String action) {
+        String user = userName != null ? userName : "User";
+        String act = action != null ? action.toLowerCase() : "performed action";
+        return user + " performed " + act;
     }
 }
