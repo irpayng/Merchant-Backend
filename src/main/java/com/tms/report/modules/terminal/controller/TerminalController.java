@@ -337,8 +337,8 @@ public class TerminalController {
         }
         try {
             boolean delivered = configHttpClient.requestPrep(serial);
-            return ApiResponse.success(Map.of("serial", serial, "delivered", delivered),
-                    delivered ? "Prep signal sent to " + serial : "Terminal offline — prep queued");
+            return ApiResponse.success(Map.of("serial", serial, "delivered", delivered, "message",
+                    delivered ? "Prep signal sent to " + serial : "Terminal offline — prep queued"));
         } catch (Exception e) {
             return ApiResponse.error(500, "Failed to request prep: " + e.getMessage());
         }
@@ -365,7 +365,8 @@ public class TerminalController {
         }
         try {
             configHttpClient.postJson("/terminals/" + serial + "/lock", Map.of("message", message));
-            return ApiResponse.success(Map.of("serial", serial, "locked", true), "Terminal " + serial + " locked");
+            return ApiResponse
+                    .success(Map.of("serial", serial, "locked", true, "message", "Terminal " + serial + " locked"));
         } catch (Exception e) {
             return ApiResponse.error(500, "Failed to lock terminal: " + e.getMessage());
         }
@@ -385,7 +386,8 @@ public class TerminalController {
         }
         try {
             configHttpClient.postJson("/terminals/" + serial + "/unlock", Map.of());
-            return ApiResponse.success(Map.of("serial", serial, "locked", false), "Terminal " + serial + " unlocked");
+            return ApiResponse
+                    .success(Map.of("serial", serial, "locked", false, "message", "Terminal " + serial + " unlocked"));
         } catch (Exception e) {
             return ApiResponse.error(500, "Failed to unlock terminal: " + e.getMessage());
         }
