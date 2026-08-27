@@ -1075,6 +1075,36 @@ public class GrpcClient {
         }
     }
 
+    // ── Get User Balances → wallet-service ──
+
+    /**
+     * Get wallet balances for a user. Returns both main (default) and commission
+     * wallet balances. Used by merchant dashboard to display wallet information.
+     *
+     * @param userId the user's id in the system
+     * @return map with main_balance and commission_balance as strings
+     */
+    public Map<String, Object> getUserBalances(long userId) {
+        logRequest("GetUserBalances", String.valueOf(userId));
+        try {
+            var resp = walletStub.getUserBalances(
+                    com.tms.report.grpc.wallet.GetUserBalancesRequest.newBuilder().setUserId(userId).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("main_balance", resp.getMainBalance());
+            result.put("commission_balance", resp.getCommissionBalance());
+            return result;
+        } catch (StatusRuntimeException e) {
+            log.warn("GetUserBalances failed for userId={}: {}", userId, e.getMessage());
+            // Return zeros on error rather than throwing, so dashboard can still render
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", false);
+            result.put("main_balance", "0");
+            result.put("commission_balance", "0");
+            return result;
+        }
+    }
+
     // ── Address / KYC commands → kyc-service ──
 
     public Map<String, Object> updateAddress(String addressId, Map<String, Object> data) {

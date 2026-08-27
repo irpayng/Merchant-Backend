@@ -1,6 +1,7 @@
 package com.tms.report.modules.dashboard.service;
 
 import com.tms.report.core.security.MerchantScope;
+import com.tms.report.modules.grpc.service.GrpcClient;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import java.time.Duration;
@@ -13,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,12 +24,14 @@ import org.springframework.transaction.annotation.Transactional;
  * business sees only its own terminals/TIDs/transactions. No platform finance
  * (revenue/liquidity/ledger).
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DashboardService {
 
     private final EntityManager entityManager;
     private final MerchantScope merchantScope;
+    private final GrpcClient grpcClient;
 
     private static final DateTimeFormatter LABEL_FMT = DateTimeFormatter.ofPattern("MMM d");
     private static final List<String> TREND_STATUSES = List.of("completed", "processing", "reversed");
@@ -85,6 +89,14 @@ public class DashboardService {
             data.put("alerts", getAlerts());
         } catch (Exception e) {
             data.put("alerts", List.of());
+        }
+
+        // Wallet balances
+        try {
+            data.put("wallet", getWalletData());
+        } catch (Exception e) {
+            log.warn("Failed to fetch wallet data: {}", e.getMessage());
+            data.put("wallet", Map.of("main_balance", "0", "commission_balance", "0"));
         }
 
         return data;
@@ -194,6 +206,26 @@ public class DashboardService {
         }
 
         return alerts;
+    }
+
+    // ---------------------------------------------------------------------
+    // Wallet balances
+    // ---------------------------------------------------------------------
+
+    /**
+     * Fetch wallet balances for the authenticated merchant from wallet-service.
+     * Returns main (default) and commission wallet balances.
+     */
+    private Map<String, Object> getWalletData() {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return Map.of("main_balance", "0", "commission_balance", "0");
+        }
+        Map<String, Object> balances = grpcClient.getUserBalances(merchantId);
+        Map<String, Object> wallet = new LinkedHashMap<>();
+        wallet.put("main_balance", balances.getOrDefault("main_balance", "0"));
+        wallet.put("commission_balance", balances.getOrDefault("commission_balance", "0"));
+        return wallet;
     }
 
     // ---------------------------------------------------------------------
