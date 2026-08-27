@@ -79,8 +79,8 @@ public class StatementController {
 
         // Build filters for frontend
         Map<String, Object> filters = new LinkedHashMap<>();
-        filters.put("wallet_types",
-                List.of(Map.of("id", "default", "name", "Main Wallet"), Map.of("id", "commission", "name", "Commission Wallet")));
+        filters.put("wallet_types", List.of(Map.of("id", "default", "name", "Main Wallet"),
+                Map.of("id", "commission", "name", "Commission Wallet")));
         filters.put("types", List.of(Map.of("id", "credit", "name", "Credit"), Map.of("id", "debit", "name", "Debit")));
 
         Map<String, Object> extra = new LinkedHashMap<>();

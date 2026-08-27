@@ -1110,13 +1110,20 @@ public class GrpcClient {
      * List wallet statements for a user. Paginated statement history showing all
      * credits and debits. Used by merchant dashboard statements page.
      *
-     * @param userId     the user's id in the system
-     * @param walletType "default" or "commission", null for both
-     * @param page       page number (1-indexed)
-     * @param limit      items per page
-     * @param startDate  ISO date yyyy-MM-dd, null for no start filter
-     * @param endDate    ISO date yyyy-MM-dd, null for no end filter
-     * @param type       "credit" or "debit", null for both
+     * @param userId
+     *            the user's id in the system
+     * @param walletType
+     *            "default" or "commission", null for both
+     * @param page
+     *            page number (1-indexed)
+     * @param limit
+     *            items per page
+     * @param startDate
+     *            ISO date yyyy-MM-dd, null for no start filter
+     * @param endDate
+     *            ISO date yyyy-MM-dd, null for no end filter
+     * @param type
+     *            "credit" or "debit", null for both
      * @return map with success, statements list, total, page, limit
      */
     public Map<String, Object> listStatements(long userId, String walletType, int page, int limit, String startDate,
