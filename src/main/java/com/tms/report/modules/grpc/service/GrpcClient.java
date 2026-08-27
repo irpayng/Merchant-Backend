@@ -2160,6 +2160,10 @@ public class GrpcClient {
 
     // ── Dispute commands → dispute-service ──
 
+    /**
+     * Add a message as an admin/agent. Sets sender_type = 'agent'. Used by
+     * tms-report-java admin panel.
+     */
     public Map<String, Object> addDisputeConversation(long disputeId, String message) {
         String ref = Ulid.generate();
         logRequest("AddDisputeConversation", ref);
@@ -2170,6 +2174,30 @@ public class GrpcClient {
             return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
         } catch (StatusRuntimeException e) {
             throw grpcError("AddDisputeConversation", ref, e);
+        }
+    }
+
+    /**
+     * Add a message as a user/merchant. Sets sender_type = 'user'. Used by
+     * Merchant-Backend for merchant-sent messages.
+     */
+    public Map<String, Object> addUserDisputeConversation(long disputeId, long userId, String message) {
+        String ref = Ulid.generate();
+        logRequest("AddUserDisputeConversation", ref);
+        try {
+            var builder = com.tms.report.grpc.dispute.AddUserConversationRequest.newBuilder().setDisputeId(disputeId)
+                    .setUserId(userId).setMessage(message);
+
+            // Get merchant name for sender display
+            MerchantUser merchant = currentAdmin();
+            if (merchant != null && merchant.getName() != null) {
+                builder.setSenderName(merchant.getName());
+            }
+
+            var resp = disputeStub.addUserConversation(builder.build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("AddUserDisputeConversation", ref, e);
         }
     }
 

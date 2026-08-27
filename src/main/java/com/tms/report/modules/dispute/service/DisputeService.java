@@ -44,7 +44,9 @@ public class DisputeService {
         if (disputeRepository.findByIdAndUserId(disputeId, merchantId).isEmpty()) {
             return Map.of("success", false, "message", "Dispute not found.");
         }
-        return grpcClient.addDisputeConversation(disputeId, message);
+        // Use the REST endpoint which sets sender_type = 'user' for merchant messages.
+        // The gRPC endpoint is for admin/agent messages from tms-report-java.
+        return grpcClient.addUserDisputeConversation(disputeId, merchantId, message);
     }
 
     public Map<String, Object> close(Long disputeId) {
