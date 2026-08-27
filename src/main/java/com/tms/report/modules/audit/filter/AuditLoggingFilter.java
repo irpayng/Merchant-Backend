@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,14 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
     private static final Set<String> SENSITIVE_FIELDS = Set.of("password", "pin", "otp", "token", "secret",
             "card_number", "cvv", "pan");
 
+    /** Maps path prefixes to module names. */
+    private static final Map<String, String> PATH_TO_MODULE = Map.ofEntries(Map.entry("/terminals", "Terminals"),
+            Map.entry("/transactions", "Transactions"), Map.entry("/disputes", "Disputes"),
+            Map.entry("/settlements", "Settlements"), Map.entry("/statements", "Statements"),
+            Map.entry("/dashboard", "Dashboard"), Map.entry("/merchant-users", "Team"), Map.entry("/roles", "Roles"),
+            Map.entry("/settings", "Settings"), Map.entry("/notifications", "Notifications"),
+            Map.entry("/auth", "Authentication"), Map.entry("/profile", "Profile"));
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
@@ -58,7 +67,7 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
         }
 
         // Wrap request and response to capture body
-        ContentCachingRequestWrapper wrappedRequest = new ContentCachingRequestWrapper(request, 10240);
+        ContentCachingRequestWrapper wrappedRequest = new ContentCachingRequestWrapper(request);
         ContentCachingResponseWrapper wrappedResponse = new ContentCachingResponseWrapper(response);
 
         try {
@@ -96,13 +105,15 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
 
         String requestBody = getRequestBody(request);
         String sanitizedBody = sanitizeBody(requestBody);
+        String module = deriveModule(path);
         String action = deriveAction(method, path);
+        String description = buildDescription(method, path, user.getName());
 
         AuditLog auditLog = AuditLog.builder().merchantId(user.getMerchantId()).userId(user.getId())
                 .userName(user.getName()).userEmail(user.getEmail()).userRole(user.getRole()).method(method)
-                .path(truncate(path, 500)).action(action).requestBody(truncate(sanitizedBody, 10000))
-                .responseStatus(response.getStatus()).ipAddress(resolveClientIp(request))
-                .userAgent(truncate(request.getHeader("User-Agent"), 500)).build();
+                .path(truncate(path, 500)).module(module).action(action).description(description)
+                .requestBody(truncate(sanitizedBody, 10000)).responseStatus(response.getStatus())
+                .ipAddress(resolveClientIp(request)).userAgent(truncate(request.getHeader("User-Agent"), 500)).build();
 
         auditLogRepository.save(auditLog);
     }
@@ -129,6 +140,18 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
             sanitized = pattern.matcher(sanitized).replaceAll("$1\"[REDACTED]\"");
         }
         return sanitized;
+    }
+
+    /**
+     * Derive the module name from the request path.
+     */
+    private String deriveModule(String path) {
+        for (Map.Entry<String, String> entry : PATH_TO_MODULE.entrySet()) {
+            if (path.startsWith(entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+        return "Other";
     }
 
     /**
@@ -170,6 +193,15 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
         };
 
         return capitalize(action);
+    }
+
+    /**
+     * Build a human-readable description of the action.
+     */
+    private String buildDescription(String method, String path, String userName) {
+        String action = deriveAction(method, path).toLowerCase();
+        String user = userName != null ? userName : "User";
+        return user + " performed " + action;
     }
 
     private boolean isNumeric(String str) {

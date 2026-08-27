@@ -1,5 +1,6 @@
 package com.tms.report.modules.audit.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
@@ -55,9 +56,17 @@ public class AuditLog {
     @Column(nullable = false, length = 500)
     private String path;
 
+    /** Module/resource this action belongs to (e.g. Terminals, Disputes). */
+    @Column(length = 100)
+    private String module;
+
     /** Human-readable action description derived from the endpoint. */
     @Column(length = 255)
     private String action;
+
+    /** Longer description of what happened. */
+    @Column(length = 500)
+    private String description;
 
     /** Request body (sanitized, excludes sensitive fields). */
     @Column(name = "request_body", columnDefinition = "TEXT")
@@ -78,4 +87,25 @@ public class AuditLog {
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
+
+    // ── Transient fields for API response ───────────────────
+
+    /**
+     * User object for frontend compatibility. Built from
+     * userName/userEmail/userRole.
+     */
+    @Transient
+    @JsonProperty("user")
+    public UserInfo getUser() {
+        return new UserInfo(userId, userName, userEmail, userRole);
+    }
+
+    @Data
+    @AllArgsConstructor
+    public static class UserInfo {
+        private Long id;
+        private String name;
+        private String email;
+        private String role;
+    }
 }
