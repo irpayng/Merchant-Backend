@@ -106,6 +106,22 @@ public class DashboardService {
             data.put("wallet", Map.of("main_balance", "0", "commission_balance", "0"));
         }
 
+        // Recent transactions for homepage widget
+        try {
+            data.put("recent_transactions", getRecentTransactions(5));
+        } catch (Exception e) {
+            log.warn("Failed to fetch recent transactions: {}", e.getMessage());
+            data.put("recent_transactions", List.of());
+        }
+
+        // Terminal status for homepage widget
+        try {
+            data.put("terminal_status", getTerminalStatus());
+        } catch (Exception e) {
+            log.warn("Failed to fetch terminal status: {}", e.getMessage());
+            data.put("terminal_status", List.of());
+        }
+
         return data;
     }
 
@@ -233,6 +249,77 @@ public class DashboardService {
         wallet.put("main_balance", balances.getOrDefault("main_balance", "0"));
         wallet.put("commission_balance", balances.getOrDefault("commission_balance", "0"));
         return wallet;
+    }
+
+    // ---------------------------------------------------------------------
+    // Recent transactions for dashboard widget
+    // ---------------------------------------------------------------------
+
+    /**
+     * Fetch the most recent transactions for the dashboard widget. Excludes manual
+     * funding entries (admin wallet adjustments).
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> getRecentTransactions(int limit) {
+        String sql = """
+                SELECT t.id, t.reference, t.amount, t.status_code, t.created_at,
+                       COALESCE(t.metadata->>'card_holder_name', t.metadata->>'card_holder',
+                                t.metadata->>'account_name', t.metadata->>'beneficiary_name') as customer,
+                       COALESCE(t.metadata->>'serial', t.terminal_id) as terminal_serial
+                FROM transactions t
+                WHERE 1=1
+                """ + userScope("t.user_id")
+                + " AND COALESCE(t.product_code, '') NOT IN ('manual-funding', 'manual-credit', 'manual-debit')"
+                + " ORDER BY t.created_at DESC LIMIT :lim";
+        Query q = entityManager.createNativeQuery(sql);
+        bindScope(q);
+        q.setParameter("lim", limit);
+        List<Object[]> rows = q.getResultList();
+
+        List<Map<String, Object>> transactions = new ArrayList<>();
+        for (Object[] row : rows) {
+            Map<String, Object> txn = new LinkedHashMap<>();
+            txn.put("id", row[0] != null ? ((Number) row[0]).longValue() : null);
+            txn.put("reference", row[1] != null ? row[1].toString() : null);
+            txn.put("amount", row[2] != null ? row[2].toString() : "0");
+            txn.put("status", row[3] != null ? row[3].toString() : null);
+            txn.put("created_at", row[4] != null ? row[4].toString() : null);
+            txn.put("customer", row[5] != null ? row[5].toString() : null);
+            txn.put("terminal_serial", row[6] != null ? row[6].toString() : null);
+            transactions.add(txn);
+        }
+        return transactions;
+    }
+
+    // ---------------------------------------------------------------------
+    // Terminal status for dashboard widget
+    // ---------------------------------------------------------------------
+
+    /**
+     * Fetch terminal status for the dashboard widget. Shows terminal name, make,
+     * and active status.
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> getTerminalStatus() {
+        String sql = """
+                SELECT t.serial, t.make, t.active, t.last_seen_at
+                FROM terminals t
+                WHERE 1=1
+                """ + userScope("t.user_id") + " ORDER BY t.serial LIMIT 10";
+        Query q = entityManager.createNativeQuery(sql);
+        bindScope(q);
+        List<Object[]> rows = q.getResultList();
+
+        List<Map<String, Object>> terminals = new ArrayList<>();
+        for (Object[] row : rows) {
+            Map<String, Object> terminal = new LinkedHashMap<>();
+            terminal.put("serial", row[0] != null ? row[0].toString() : null);
+            terminal.put("make", row[1] != null ? row[1].toString() : null);
+            terminal.put("active", row[2] != null ? (Boolean) row[2] : false);
+            terminal.put("last_seen_at", row[3] != null ? row[3].toString() : null);
+            terminals.add(terminal);
+        }
+        return terminals;
     }
 
     // ---------------------------------------------------------------------

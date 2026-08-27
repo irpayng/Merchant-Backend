@@ -274,7 +274,7 @@ public class TransactionService {
                 "t.metadata->>'serial'");
         // Exclude manual funding — administrative wallet adjustments are not
         // customer-facing transactions and should only appear on statements.
-        where.append(" AND COALESCE(t.product_code, '') <> 'manual-funding'");
+        where.append(" AND COALESCE(t.product_code, '') NOT IN ('manual-funding', 'manual-credit', 'manual-debit')");
         return where;
     }
 
@@ -934,7 +934,7 @@ public class TransactionService {
                 "t.metadata->>'serial'");
         // Exclude manual funding — administrative wallet adjustments are not
         // customer-facing transactions and should only appear on statements.
-        sql.append(" AND COALESCE(t.product_code, '') <> 'manual-funding'");
+        sql.append(" AND COALESCE(t.product_code, '') NOT IN ('manual-funding', 'manual-credit', 'manual-debit')");
         sql.append(" GROUP BY t.status_code");
 
         Query q = entityManager.createNativeQuery(sql.toString());
