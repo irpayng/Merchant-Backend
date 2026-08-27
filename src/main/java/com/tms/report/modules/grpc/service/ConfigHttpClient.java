@@ -198,6 +198,22 @@ public class ConfigHttpClient {
         }
     }
 
+    /**
+     * Request a remote prep (key injection) for a terminal. Sends an MQTT signal to
+     * the device so it re-downloads TMK/TPK pairs and re-injects them into the
+     * secure PIN pad.
+     *
+     * @param serial
+     *            Terminal serial number
+     * @return true if the device was online and the signal was delivered, false if
+     *         the device is offline (prep queued for when it comes online)
+     */
+    public boolean requestPrep(String serial) {
+        Map<String, Object> result = postGrpcCommand("RequestPrep", Map.of("serial", serial));
+        Object delivered = result.get("delivered");
+        return delivered instanceof Boolean b ? b : Boolean.parseBoolean(String.valueOf(delivered));
+    }
+
     private Map<String, Object> uploadFile(String path, MultipartFile file, Boolean internal) {
         return uploadFile(path, file, internal, Map.of());
     }

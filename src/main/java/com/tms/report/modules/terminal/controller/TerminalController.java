@@ -319,6 +319,31 @@ public class TerminalController {
                 .orElseGet(() -> ApiResponse.error(404, "No metrics recorded for terminal"));
     }
 
+    // ── Remote Prep ────────────────────────────────────────────
+
+    /**
+     * POST /terminals/{id}/request-prep — remotely trigger key injection on a
+     * terminal. Pushes an MQTT message to the device so it re-downloads TMK/TPK
+     * pairs from the provider and re-injects them into the secure PIN pad. Useful
+     * after key rotation or when a device is stuck on stale keys.
+     */
+    @PostMapping("/{id}/request-prep")
+    @PreAuthorize("hasAuthority('manage_terminal')")
+    public ApiResponse<Map<String, Object>> requestPrep(@PathVariable Long id) {
+        Terminal terminal = loadScopedTerminal(id);
+        String serial = terminal.getSerial();
+        if (serial == null || serial.isBlank()) {
+            return ApiResponse.error(400, "Terminal has no serial number");
+        }
+        try {
+            boolean delivered = configHttpClient.requestPrep(serial);
+            return ApiResponse.success(Map.of("serial", serial, "delivered", delivered),
+                    delivered ? "Prep signal sent to " + serial : "Terminal offline — prep queued");
+        } catch (Exception e) {
+            return ApiResponse.error(500, "Failed to request prep: " + e.getMessage());
+        }
+    }
+
     /**
      * GET /terminals/{serial}/metrics — paged time-series for one device. Optional
      * {@code from} / {@code to} are ISO-8601 date-times.
