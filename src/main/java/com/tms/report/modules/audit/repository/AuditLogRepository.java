@@ -23,16 +23,9 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     Page<AuditLog> findByMerchantIdAndActionContainingIgnoreCaseOrderByCreatedAtDesc(Long merchantId, String action,
             Pageable pageable);
 
-    /** Filter audit logs by module. */
-    Page<AuditLog> findByMerchantIdAndModuleOrderByCreatedAtDesc(Long merchantId, String module, Pageable pageable);
-
     /** Get distinct actions for a merchant (for filter dropdowns). */
     @Query("SELECT DISTINCT a.action FROM AuditLog a WHERE a.merchantId = :merchantId AND a.action IS NOT NULL")
     List<String> findDistinctActionsByMerchantId(@Param("merchantId") Long merchantId);
-
-    /** Get distinct modules for a merchant (for filter dropdowns). */
-    @Query("SELECT DISTINCT a.module FROM AuditLog a WHERE a.merchantId = :merchantId AND a.module IS NOT NULL")
-    List<String> findDistinctModulesByMerchantId(@Param("merchantId") Long merchantId);
 
     /** Search audit logs by user name, email, action, or path. */
     @Query("SELECT a FROM AuditLog a WHERE a.merchantId = :merchantId AND "
