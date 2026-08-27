@@ -147,3 +147,29 @@ ALTER TABLE merchant.merchant_users ADD COLUMN IF NOT EXISTS role_id BIGINT REFE
 -- owner logins have operator_id=NULL (they auth via users table).
 ALTER TABLE merchant.merchant_users ADD COLUMN IF NOT EXISTS operator_id BIGINT UNIQUE;
 CREATE INDEX IF NOT EXISTS idx_merchant_users_operator_id ON merchant.merchant_users(operator_id);
+
+
+-- =============================================================================
+-- AUDIT_LOGS — captures all non-GET HTTP requests by merchant/operator users.
+-- Used for security auditing and compliance reporting.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS merchant.audit_logs (
+    id              BIGSERIAL PRIMARY KEY,
+    merchant_id     BIGINT NOT NULL,
+    user_id         BIGINT NOT NULL,
+    user_name       VARCHAR(255),
+    user_email      VARCHAR(255),
+    user_role       VARCHAR(50),
+    method          VARCHAR(10) NOT NULL,
+    path            VARCHAR(500) NOT NULL,
+    action          VARCHAR(255),
+    request_body    TEXT,
+    response_status INTEGER,
+    ip_address      VARCHAR(64),
+    user_agent      VARCHAR(500),
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_merchant_id ON merchant.audit_logs(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON merchant.audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON merchant.audit_logs(created_at);
