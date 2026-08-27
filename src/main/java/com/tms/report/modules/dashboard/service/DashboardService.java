@@ -36,10 +36,10 @@ public class DashboardService {
     private static final DateTimeFormatter LABEL_FMT = DateTimeFormatter.ofPattern("MMM d");
     private static final List<String> TREND_STATUSES = List.of("completed", "processing", "reversed");
     /**
-     * Product codes that represent inflows to the merchant's wallet. Used to
-     * filter dashboard "Total Sales" metrics to show only money coming in.
-     * - purchase: Card purchase at POS terminal (customer pays merchant)
-     * - virtual-funding: Bank transfer to merchant's virtual account
+     * Product codes that represent inflows to the merchant's wallet. Used to filter
+     * dashboard "Total Sales" metrics to show only money coming in. - purchase:
+     * Card purchase at POS terminal (customer pays merchant) - virtual-funding:
+     * Bank transfer to merchant's virtual account
      */
     private static final List<String> INFLOW_PRODUCT_CODES = List.of("purchase", "virtual-funding");
 

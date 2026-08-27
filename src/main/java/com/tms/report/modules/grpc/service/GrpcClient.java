@@ -1081,7 +1081,8 @@ public class GrpcClient {
      * Get wallet balances for a user. Returns both main (default) and commission
      * wallet balances. Used by merchant dashboard to display wallet information.
      *
-     * @param userId the user's id in the system
+     * @param userId
+     *            the user's id in the system
      * @return map with main_balance and commission_balance as strings
      */
     public Map<String, Object> getUserBalances(long userId) {
