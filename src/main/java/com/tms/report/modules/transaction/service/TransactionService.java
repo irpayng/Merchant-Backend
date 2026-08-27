@@ -272,6 +272,9 @@ public class TransactionService {
         // Per-bank tenant scope: restrict to the bank's direct merchants.
         merchantScope.appendTransactionScope(where, qParams, "t.user_id", cashierTerminalSerial(), "t.terminal_id",
                 "t.metadata->>'serial'");
+        // Exclude manual funding — administrative wallet adjustments are not
+        // customer-facing transactions and should only appear on statements.
+        where.append(" AND COALESCE(t.product_code, '') <> 'manual-funding'");
         return where;
     }
 
@@ -929,6 +932,9 @@ public class TransactionService {
         addFilter(sql, qp, params, "payment_method_id", "t.payment_method");
         merchantScope.appendTransactionScope(sql, qp, "t.user_id", cashierTerminalSerial(), "t.terminal_id",
                 "t.metadata->>'serial'");
+        // Exclude manual funding — administrative wallet adjustments are not
+        // customer-facing transactions and should only appear on statements.
+        sql.append(" AND COALESCE(t.product_code, '') <> 'manual-funding'");
         sql.append(" GROUP BY t.status_code");
 
         Query q = entityManager.createNativeQuery(sql.toString());
