@@ -63,7 +63,7 @@ public class ActivityService {
 
         String sql = """
                 SELECT al.id, al.action, al.path, al.user_name,
-                       'Terminal' as actionable_type, NULL as actionable_id, al.created_at
+                       al.module, NULL as actionable_id, al.created_at
                 FROM merchant.audit_logs al
                 """ + where + " ORDER BY al.created_at DESC";
 
@@ -91,10 +91,13 @@ public class ActivityService {
                     createdAt = ldt;
                 else if (row[6] instanceof java.time.OffsetDateTime odt)
                     createdAt = odt.toLocalDateTime();
+                else if (row[6] instanceof java.time.Instant inst)
+                    createdAt = LocalDateTime.ofInstant(inst, java.time.ZoneId.systemDefault());
             }
 
             String path = row[2] != null ? row[2].toString() : null;
-            String actionableType = extractActionableType(path);
+            String module = row[4] != null ? row[4].toString() : null;
+            String actionableType = module != null ? module : extractActionableType(path);
             Long actionableId = extractActionableId(path);
 
             return ActivityDto.builder().id(((Number) row[0]).longValue())
@@ -152,6 +155,8 @@ public class ActivityService {
                 ldt = ts.toLocalDateTime();
             else if (r[10] instanceof java.time.OffsetDateTime odt)
                 ldt = odt.toLocalDateTime();
+            else if (r[10] instanceof java.time.Instant inst)
+                ldt = LocalDateTime.ofInstant(inst, java.time.ZoneId.systemDefault());
             else
                 ldt = (LocalDateTime) r[10];
             data.put("created_at", ldt.format(TIME_FORMAT));
@@ -186,6 +191,8 @@ public class ActivityService {
                     createdAt = ldt;
                 else if (row[2] instanceof java.time.OffsetDateTime odt)
                     createdAt = odt.toLocalDateTime();
+                else if (row[2] instanceof java.time.Instant inst)
+                    createdAt = LocalDateTime.ofInstant(inst, java.time.ZoneId.systemDefault());
             }
             map.put("date", createdAt != null ? createdAt.format(FMT) : null);
             return map;
