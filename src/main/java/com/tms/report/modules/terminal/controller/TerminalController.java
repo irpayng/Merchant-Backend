@@ -53,7 +53,7 @@ public class TerminalController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('manage_terminal')")
-    public Map<String, Object> index(@RequestParam Map<String, String> params) {
+    public Map<String, Object> index(@RequestParam Map<String, String> params, HttpServletRequest request) {
         int page = Integer.parseInt(params.getOrDefault("page", "1")) - 1;
         int limit = Integer.parseInt(params.getOrDefault("limit", "15"));
 
@@ -80,6 +80,11 @@ public class TerminalController {
         LocalDateTime staleSince = parseStaleCutoff(params.get("stale"));
         String mapped = parseMapped(params.get("mapped"));
 
+        // Parse date range from dates[] array params
+        extractDates(request, params);
+        LocalDateTime dateFrom = parseLocalDateTimeOrNull(params.get("dates[0]"));
+        LocalDateTime dateTo = parseLocalDateTimeOrNull(params.get("dates[1]"));
+
         // Sort is baked into the native query (ORDER BY t.created_at DESC),
         // so we don't pass a Sort here — Spring would append it post-WHERE
         // using the entity property name `createdAt`, which doesn't exist
@@ -87,13 +92,14 @@ public class TerminalController {
         var pageable = PageRequest.of(page, limit);
         var result = terminalRepository.findFiltered(searchPattern, make, os, networkType, batteryBelow, printerStatus,
                 staleSince, mapped, parseLocked(params.get("status")), merchantScopeId(), merchantScope.terminalId(),
-                pageable);
+                dateFrom, dateTo, pageable);
         attachMappedUsers(result.getContent());
         return PagedResponse.from(result, "/terminals", extra);
     }
 
     @GetMapping("/download")
-    public void download(@RequestParam Map<String, String> params, HttpServletResponse response) throws Exception {
+    public void download(@RequestParam Map<String, String> params, HttpServletRequest request,
+            HttpServletResponse response) throws Exception {
         String s = trimToNull(params.get("search"));
         final String searchPattern = s != null ? "%" + s.toLowerCase() + "%" : null;
         final String make = trimToNull(params.get("make"));
@@ -107,13 +113,17 @@ public class TerminalController {
         final Long merchantId = merchantScopeId();
         final Long terminalId = merchantScope.terminalId();
 
+        // Parse date range
+        extractDates(request, params);
+        final LocalDateTime dateFrom = parseLocalDateTimeOrNull(params.get("dates[0]"));
+        final LocalDateTime dateTo = parseLocalDateTimeOrNull(params.get("dates[1]"));
+
         XlsxExporter.streamPaged(response, "terminals",
                 new String[]{"ID", "Serial", "OS", "Model", "Make", "User ID", "Agent", "Active", "Created At"}, 1000,
                 (page, size) -> {
-                    var content = terminalRepository
-                            .findFiltered(searchPattern, make, os, networkType, batteryBelow, printerStatus, staleSince,
-                                    mapped, locked, merchantId, terminalId, PageRequest.of(page, size))
-                            .getContent();
+                    var content = terminalRepository.findFiltered(searchPattern, make, os, networkType, batteryBelow,
+                            printerStatus, staleSince, mapped, locked, merchantId, terminalId, dateFrom, dateTo,
+                            PageRequest.of(page, size)).getContent();
                     attachMappedUsers(content);
                     return content;
                 },
