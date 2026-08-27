@@ -51,6 +51,7 @@ public class RolePrivilegeSeedCommand implements CommandLineRunner {
             put("access_financial_report", new String[]{"Access Financial Reports", "Reports"});
             put("manage_settlement", new String[]{"Manage Settlements", "Reports"});
             put("audit", new String[]{"View Audit Trail", "Activity"});
+            put("manage_audit", new String[]{"Manage Audit Logs", "Activity"});
             put("manage_role", new String[]{"Manage Roles & Privileges", "Administration"});
             put("manage_user", new String[]{"Manage Team Members", "Administration"});
             put("manage_notification", new String[]{"Manage Notifications", "Notifications"});
