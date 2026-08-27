@@ -344,6 +344,53 @@ public class TerminalController {
         }
     }
 
+    // ── Lock / Unlock ────────────────────────────────────────────
+
+    /**
+     * POST /terminals/{id}/lock — lock a terminal with a reason message. The POS
+     * polls the per-serial status endpoint and renders a contact-support block
+     * screen until the lock is cleared.
+     */
+    @PostMapping("/{id}/lock")
+    @PreAuthorize("hasAuthority('manage_terminal')")
+    public ApiResponse<Map<String, Object>> lock(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        Terminal terminal = loadScopedTerminal(id);
+        String serial = terminal.getSerial();
+        if (serial == null || serial.isBlank()) {
+            return ApiResponse.error(400, "Terminal has no serial number");
+        }
+        String message = body.get("message") != null ? body.get("message").toString() : "";
+        if (message.isBlank()) {
+            return ApiResponse.error(400, "Lock message is required");
+        }
+        try {
+            configHttpClient.postJson("/terminals/" + serial + "/lock", Map.of("message", message));
+            return ApiResponse.success(Map.of("serial", serial, "locked", true), "Terminal " + serial + " locked");
+        } catch (Exception e) {
+            return ApiResponse.error(500, "Failed to lock terminal: " + e.getMessage());
+        }
+    }
+
+    /**
+     * POST /terminals/{id}/unlock — clear an existing lock so the device can resume
+     * taking transactions.
+     */
+    @PostMapping("/{id}/unlock")
+    @PreAuthorize("hasAuthority('manage_terminal')")
+    public ApiResponse<Map<String, Object>> unlock(@PathVariable Long id) {
+        Terminal terminal = loadScopedTerminal(id);
+        String serial = terminal.getSerial();
+        if (serial == null || serial.isBlank()) {
+            return ApiResponse.error(400, "Terminal has no serial number");
+        }
+        try {
+            configHttpClient.postJson("/terminals/" + serial + "/unlock", Map.of());
+            return ApiResponse.success(Map.of("serial", serial, "locked", false), "Terminal " + serial + " unlocked");
+        } catch (Exception e) {
+            return ApiResponse.error(500, "Failed to unlock terminal: " + e.getMessage());
+        }
+    }
+
     /**
      * GET /terminals/{serial}/metrics — paged time-series for one device. Optional
      * {@code from} / {@code to} are ISO-8601 date-times.
