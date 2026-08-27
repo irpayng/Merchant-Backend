@@ -8,6 +8,8 @@ import com.tms.report.modules.dispute.model.Dispute;
 import com.tms.report.modules.dispute.repository.ConversationRepository;
 import com.tms.report.modules.dispute.repository.DisputeRepository;
 import com.tms.report.modules.grpc.service.GrpcClient;
+import com.tms.report.modules.transaction.model.Transaction;
+import com.tms.report.modules.transaction.repository.TransactionRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import java.util.*;
@@ -25,6 +27,7 @@ public class DisputeService {
     private final MerchantScope merchantScope;
     private final DisputeRepository disputeRepository;
     private final ConversationRepository conversationRepository;
+    private final TransactionRepository transactionRepository;
     private final EntityManager entityManager;
 
     public Map<String, Object> create(CreateDisputeDto dto) {
@@ -168,6 +171,14 @@ public class DisputeService {
 
         Map<String, Object> view = toView(dispute);
 
+        // Fetch transaction details if transaction_reference is present
+        String txnRef = dispute.getTransactionReference();
+        if (txnRef != null && !txnRef.isBlank()) {
+            transactionRepository.findByReference(txnRef).ifPresent(txn -> {
+                view.put("transaction", mapTransaction(txn));
+            });
+        }
+
         // Fetch conversations separately to avoid lazy loading issues
         List<Conversation> conversations = conversationRepository.findByDisputeIdOrderByCreatedAtAsc(id);
         view.put("conversations", conversations.stream().map(this::conversationToView).toList());
@@ -210,5 +221,27 @@ public class DisputeService {
 
     private static String str(Object o) {
         return o != null ? o.toString().trim() : null;
+    }
+
+    private Map<String, Object> mapTransaction(Transaction txn) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", txn.getId());
+        m.put("reference", txn.getReference());
+        m.put("amount", txn.getAmount() != null ? txn.getAmount().toPlainString() : null);
+        m.put("status",
+                txn.getStatusCode() != null ? Map.of("code", txn.getStatusCode(), "name", txn.getStatusCode()) : null);
+        m.put("product", txn.getProductId() != null ? getProductName(txn.getProductId()) : null);
+        m.put("created_at", txn.getCreatedAt() != null ? txn.getCreatedAt().toString() : null);
+        return m;
+    }
+
+    private String getProductName(Long productId) {
+        try {
+            Object result = entityManager.createNativeQuery("SELECT name FROM products WHERE id = :id")
+                    .setParameter("id", productId).getSingleResult();
+            return result != null ? result.toString() : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
