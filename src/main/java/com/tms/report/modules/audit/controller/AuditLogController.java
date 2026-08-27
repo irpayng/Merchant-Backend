@@ -2,6 +2,7 @@ package com.tms.report.modules.audit.controller;
 
 import com.tms.report.core.dto.PagedResponse;
 import com.tms.report.core.security.MerchantScope;
+import com.tms.report.modules.audit.dto.AuditLogResponse;
 import com.tms.report.modules.audit.model.AuditLog;
 import com.tms.report.modules.audit.repository.AuditLogRepository;
 import java.util.Map;
@@ -16,7 +17,7 @@ import org.springframework.web.bind.annotation.*;
  * with manage_audit privilege).
  */
 @RestController
-@RequestMapping("/audit-logs")
+@RequestMapping("/activities")
 @RequiredArgsConstructor
 public class AuditLogController {
 
@@ -24,7 +25,7 @@ public class AuditLogController {
     private final MerchantScope merchantScope;
 
     /**
-     * GET /audit-logs — list audit logs for the current merchant. Supports
+     * GET /activities — list audit logs for the current merchant. Supports
      * pagination and search.
      */
     @GetMapping
@@ -36,7 +37,7 @@ public class AuditLogController {
 
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
-            return PagedResponse.from(Page.empty(), "/audit-logs");
+            return PagedResponse.from(Page.empty(), "/activities");
         }
 
         var pageable = PageRequest.of(page, limit);
@@ -48,6 +49,8 @@ public class AuditLogController {
             result = auditLogRepository.findByMerchantIdOrderByCreatedAtDesc(merchantId, pageable);
         }
 
-        return PagedResponse.from(result, "/audit-logs");
+        // Map to response DTOs for frontend compatibility
+        Page<AuditLogResponse> mapped = result.map(AuditLogResponse::from);
+        return PagedResponse.from(mapped, "/activities");
     }
 }
