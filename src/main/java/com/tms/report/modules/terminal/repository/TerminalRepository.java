@@ -73,7 +73,7 @@ public interface TerminalRepository extends JpaRepository<Terminal, Long>, JpaSp
                 LOWER(t.serial) LIKE CAST(:search AS text) OR
                 LOWER(COALESCE(t.make, '')) LIKE CAST(:search AS text) OR
                 LOWER(COALESCE(t.model, '')) LIKE CAST(:search AS text))
-              AND (CAST(:make AS text) IS NULL OR t.make = CAST(:make AS text))
+              AND (CAST(:make AS text) IS NULL OR UPPER(t.make) = UPPER(CAST(:make AS text)))
               AND (CAST(:os AS text) IS NULL OR t.os = CAST(:os AS text))
               AND (CAST(:networkType AS text) IS NULL OR m.network_type = CAST(:networkType AS text))
               AND (CAST(:batteryBelow AS integer) IS NULL OR m.battery_pct < CAST(:batteryBelow AS integer))
@@ -104,7 +104,7 @@ public interface TerminalRepository extends JpaRepository<Terminal, Long>, JpaSp
                 LOWER(t.serial) LIKE CAST(:search AS text) OR
                 LOWER(COALESCE(t.make, '')) LIKE CAST(:search AS text) OR
                 LOWER(COALESCE(t.model, '')) LIKE CAST(:search AS text))
-              AND (CAST(:make AS text) IS NULL OR t.make = CAST(:make AS text))
+              AND (CAST(:make AS text) IS NULL OR UPPER(t.make) = UPPER(CAST(:make AS text)))
               AND (CAST(:os AS text) IS NULL OR t.os = CAST(:os AS text))
               AND (CAST(:networkType AS text) IS NULL OR m.network_type = CAST(:networkType AS text))
               AND (CAST(:batteryBelow AS integer) IS NULL OR m.battery_pct < CAST(:batteryBelow AS integer))
