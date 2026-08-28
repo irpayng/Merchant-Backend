@@ -53,11 +53,15 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
         String method = request.getMethod();
         String path = request.getRequestURI();
 
+        log.debug("AuditLoggingFilter: method={}, path={}", method, path);
+
         // Skip GET requests and excluded paths
         if ("GET".equalsIgnoreCase(method) || isExcludedPath(path)) {
             filterChain.doFilter(request, response);
             return;
         }
+
+        log.debug("AuditLoggingFilter: processing non-GET request for path={}", path);
 
         // Wrap request and response to capture body
         ContentCachingRequestWrapper wrappedRequest = new ContentCachingRequestWrapper(request,
@@ -71,7 +75,7 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
             try {
                 logAction(wrappedRequest, wrappedResponse, method, path);
             } catch (Exception e) {
-                log.error("Failed to write audit log: {}", e.getMessage());
+                log.error("Failed to write audit log: {}", e.getMessage(), e);
             }
 
             // Copy response body to actual response
@@ -87,15 +91,23 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
             String path) {
 
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        log.info("AuditLoggingFilter.logAction: auth={}, path={}",
+                auth != null ? auth.getClass().getSimpleName() : "null", path);
+
         if (auth == null || !(auth.getPrincipal() instanceof MerchantUserDetails details)) {
             // Not authenticated or not a merchant user — skip
+            log.info("AuditLoggingFilter: skipping - auth is null or not MerchantUserDetails. Principal type: {}",
+                    auth != null ? auth.getPrincipal().getClass().getName() : "null");
             return;
         }
 
         MerchantUser user = details.getMerchantUser();
         if (user == null) {
+            log.info("AuditLoggingFilter: skipping - MerchantUser is null");
             return;
         }
+
+        log.info("AuditLoggingFilter: logging action for user={}, path={}", user.getEmail(), path);
 
         String requestBody = getRequestBody(request);
         String sanitizedBody = sanitizeBody(requestBody);
@@ -109,6 +121,7 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
                 .ipAddress(resolveClientIp(request)).userAgent(truncate(request.getHeader("User-Agent"), 500)).build();
 
         auditLogRepository.save(auditLog);
+        log.info("AuditLoggingFilter: successfully saved audit log for path={}", path);
     }
 
     private String getRequestBody(ContentCachingRequestWrapper request) {
