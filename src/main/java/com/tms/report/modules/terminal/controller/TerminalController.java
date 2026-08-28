@@ -80,10 +80,11 @@ public class TerminalController {
         LocalDateTime staleSince = parseStaleCutoff(params.get("stale"));
         String mapped = parseMapped(params.get("mapped"));
 
-        // Parse date range from dates[] array params
+        // Parse date range using QueryFilterHelper (handles toEndOfDay)
         extractDates(request, params);
-        LocalDateTime dateFrom = parseLocalDateTimeOrNull(params.get("dates[0]"));
-        LocalDateTime dateTo = parseLocalDateTimeOrNull(params.get("dates[1]"));
+        LocalDateTime[] dates = QueryFilterHelper.extractDates(params);
+        LocalDateTime dateFrom = dates[0];
+        LocalDateTime dateTo = dates[1];
 
         // Sort is baked into the native query (ORDER BY t.created_at DESC),
         // so we don't pass a Sort here — Spring would append it post-WHERE
@@ -113,10 +114,11 @@ public class TerminalController {
         final Long merchantId = merchantScopeId();
         final Long terminalId = merchantScope.terminalId();
 
-        // Parse date range
+        // Parse date range using QueryFilterHelper (handles toEndOfDay)
         extractDates(request, params);
-        final LocalDateTime dateFrom = parseLocalDateTimeOrNull(params.get("dates[0]"));
-        final LocalDateTime dateTo = parseLocalDateTimeOrNull(params.get("dates[1]"));
+        LocalDateTime[] dates = QueryFilterHelper.extractDates(params);
+        final LocalDateTime dateFrom = dates[0];
+        final LocalDateTime dateTo = dates[1];
 
         XlsxExporter.streamPaged(response, "terminals",
                 new String[]{"ID", "Serial", "OS", "Model", "Make", "User ID", "Agent", "Active", "Created At"}, 1000,
