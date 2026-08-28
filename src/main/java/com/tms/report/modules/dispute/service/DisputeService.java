@@ -1,6 +1,7 @@
 package com.tms.report.modules.dispute.service;
 
 import com.tms.report.core.export.XlsxExporter;
+import com.tms.report.core.filter.QueryFilterHelper;
 import com.tms.report.core.security.MerchantScope;
 import com.tms.report.modules.dispute.dto.CreateDisputeDto;
 import com.tms.report.modules.dispute.dto.DisputeThreadDto;
@@ -18,6 +19,7 @@ import java.time.format.DateTimeParseException;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
@@ -144,20 +146,46 @@ public class DisputeService {
             return Page.empty();
         }
 
-        int page = Integer.parseInt(params.getOrDefault("page", "1"));
+        int page = Integer.parseInt(params.getOrDefault("page", "1")) - 1;
         int limit = Integer.parseInt(params.getOrDefault("limit", "15"));
-        String search = trimToNull(params.get("search"));
+
+        Map<String, Object> qParams = new HashMap<>();
+        StringBuilder where = new StringBuilder("WHERE d.user_id = :merchantId");
+        qParams.put("merchantId", merchantId);
+
+        // Apply status filter
         String status = trimToNull(params.get("status"));
+        if (status != null) {
+            where.append(" AND d.status_code = :status");
+            qParams.put("status", status);
+        }
 
-        // Parse date range
-        LocalDateTime dateFrom = parseLocalDateTimeOrNull(params.get("dates[0]"));
-        LocalDateTime dateTo = parseLocalDateTimeOrNull(params.get("dates[1]"));
+        // Apply search filter
+        String search = trimToNull(params.get("search"));
+        if (search != null) {
+            where.append(" AND (LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
+            qParams.put("search", "%" + search.toLowerCase() + "%");
+        }
 
-        PageRequest pageable = PageRequest.of(Math.max(page - 1, 0), limit);
+        // Apply date range using QueryFilterHelper
+        QueryFilterHelper.applyDates(where, qParams, params, "d.created_at");
 
-        Page<Dispute> disputes = disputeRepository.findFiltered(merchantId, search, status, dateFrom, dateTo, pageable);
+        String sql = "SELECT * FROM disputes d " + where + " ORDER BY d.created_at DESC";
+        String countSql = "SELECT COUNT(*) FROM disputes d " + where;
 
-        return disputes.map(this::toView);
+        Query countQ = entityManager.createNativeQuery(countSql);
+        qParams.forEach(countQ::setParameter);
+        long total = ((Number) countQ.getSingleResult()).longValue();
+
+        Query q = entityManager.createNativeQuery(sql, Dispute.class);
+        qParams.forEach(q::setParameter);
+        q.setFirstResult(page * limit);
+        q.setMaxResults(limit);
+
+        @SuppressWarnings("unchecked")
+        List<Dispute> disputes = q.getResultList();
+
+        return new PageImpl<>(disputes.stream().map(this::toView).toList(), PageRequest.of(page, limit), total);
     }
 
     public Map<String, Object> filters() {
@@ -172,20 +200,41 @@ public class DisputeService {
             throw new IllegalStateException("No authenticated merchant");
         }
 
-        String search = trimToNull(params.get("search"));
+        Map<String, Object> qParams = new HashMap<>();
+        StringBuilder where = new StringBuilder("WHERE d.user_id = :merchantId");
+        qParams.put("merchantId", merchantId);
+
+        // Apply status filter
         String status = trimToNull(params.get("status"));
-        LocalDateTime dateFrom = parseLocalDateTimeOrNull(params.get("dates[0]"));
-        LocalDateTime dateTo = parseLocalDateTimeOrNull(params.get("dates[1]"));
+        if (status != null) {
+            where.append(" AND d.status_code = :status");
+            qParams.put("status", status);
+        }
+
+        // Apply search filter
+        String search = trimToNull(params.get("search"));
+        if (search != null) {
+            where.append(" AND (LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
+            qParams.put("search", "%" + search.toLowerCase() + "%");
+        }
+
+        // Apply date range using QueryFilterHelper
+        QueryFilterHelper.applyDates(where, qParams, params, "d.created_at");
+
+        String sql = "SELECT * FROM disputes d " + where + " ORDER BY d.created_at DESC";
 
         String[] headers = {"ID", "Subject", "Transaction Reference", "Status", "Created At", "Resolved At"};
         String[] keys = {"id", "subject", "transaction_reference", "status_code", "created_at", "resolved_at"};
 
-        XlsxExporter.streamPagedMaps(response, "disputes", headers, 500, (page, size) -> {
-            PageRequest pageable = PageRequest.of(page, size);
-            Page<Dispute> disputes = disputeRepository.findFiltered(merchantId, search, status, dateFrom, dateTo,
-                    pageable);
+        XlsxExporter.streamPaged(response, "disputes", headers, 500, (page, size) -> {
+            Query q = entityManager.createNativeQuery(sql, Dispute.class);
+            qParams.forEach(q::setParameter);
+            q.setFirstResult(page * size);
+            q.setMaxResults(size);
+            @SuppressWarnings("unchecked")
+            List<Dispute> disputes = q.getResultList();
 
-            return disputes.getContent().stream().map(d -> {
+            return disputes.stream().map(d -> {
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("id", d.getId());
                 m.put("subject", d.getSubject());
@@ -195,7 +244,14 @@ public class DisputeService {
                 m.put("resolved_at", d.getResolvedAt() != null ? d.getResolvedAt().toString() : "");
                 return m;
             }).toList();
-        }, keys);
+        }, row -> {
+            String[] vals = new String[keys.length];
+            for (int i = 0; i < keys.length; i++) {
+                Object v = row.get(keys[i]);
+                vals[i] = v != null ? v.toString() : "";
+            }
+            return vals;
+        });
     }
 
     public Map<String, Object> show(Long id) {
