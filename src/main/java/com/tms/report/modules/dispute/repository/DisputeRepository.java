@@ -1,6 +1,7 @@
 package com.tms.report.modules.dispute.repository;
 
 import com.tms.report.modules.dispute.model.Dispute;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -26,4 +27,31 @@ public interface DisputeRepository extends JpaRepository<Dispute, Long> {
             @Param("status") String status, Pageable pageable);
 
     Optional<Dispute> findByIdAndUserId(Long id, Long userId);
+
+    /**
+     * Filtered dispute query with optional search, status, and date range.
+     */
+    @Query(value = """
+            SELECT * FROM disputes d
+            WHERE d.user_id = :userId
+              AND (CAST(:search AS text) IS NULL
+                   OR LOWER(d.subject) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))
+                   OR LOWER(d.transaction_reference) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')))
+              AND (CAST(:status AS text) IS NULL OR d.status_code = CAST(:status AS text))
+              AND (CAST(:dateFrom AS timestamptz) IS NULL OR d.created_at >= CAST(:dateFrom AS timestamptz))
+              AND (CAST(:dateTo AS timestamptz) IS NULL OR d.created_at <= CAST(:dateTo AS timestamptz))
+            ORDER BY d.created_at DESC
+            """, countQuery = """
+            SELECT COUNT(*) FROM disputes d
+            WHERE d.user_id = :userId
+              AND (CAST(:search AS text) IS NULL
+                   OR LOWER(d.subject) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%'))
+                   OR LOWER(d.transaction_reference) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')))
+              AND (CAST(:status AS text) IS NULL OR d.status_code = CAST(:status AS text))
+              AND (CAST(:dateFrom AS timestamptz) IS NULL OR d.created_at >= CAST(:dateFrom AS timestamptz))
+              AND (CAST(:dateTo AS timestamptz) IS NULL OR d.created_at <= CAST(:dateTo AS timestamptz))
+            """, nativeQuery = true)
+    Page<Dispute> findFiltered(@Param("userId") Long userId, @Param("search") String search,
+            @Param("status") String status, @Param("dateFrom") LocalDateTime dateFrom,
+            @Param("dateTo") LocalDateTime dateTo, Pageable pageable);
 }

@@ -6,6 +6,7 @@ import com.tms.report.modules.dispute.dto.AddConversationDto;
 import com.tms.report.modules.dispute.dto.CreateDisputeDto;
 import com.tms.report.modules.dispute.dto.DisputeThreadDto;
 import com.tms.report.modules.dispute.service.DisputeService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +24,8 @@ public class DisputeController {
     private final DisputeService disputeService;
 
     @GetMapping
-    public Map<String, Object> index(@RequestParam Map<String, String> params) {
+    public Map<String, Object> index(@RequestParam Map<String, String> params, HttpServletRequest request) {
+        extractDates(request, params);
         Page<Map<String, Object>> page = disputeService.index(params);
         Map<String, Object> extra = new java.util.LinkedHashMap<>();
         extra.put("filters", disputeService.filters());
@@ -51,9 +53,18 @@ public class DisputeController {
 
     /** GET /disputes/download — export disputes to xlsx. */
     @GetMapping("/download")
-    public void download(@RequestParam Map<String, String> params, jakarta.servlet.http.HttpServletResponse response)
-            throws Exception {
+    public void download(@RequestParam Map<String, String> params, HttpServletRequest request,
+            jakarta.servlet.http.HttpServletResponse response) throws Exception {
+        extractDates(request, params);
         disputeService.export(params, response);
+    }
+
+    private void extractDates(HttpServletRequest request, Map<String, String> params) {
+        String[] dates = request.getParameterValues("dates[]");
+        if (dates != null && dates.length >= 2) {
+            params.put("dates[0]", dates[0]);
+            params.put("dates[1]", dates[1]);
+        }
     }
 
     /**

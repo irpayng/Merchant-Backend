@@ -13,11 +13,12 @@ import com.tms.report.modules.transaction.model.Transaction;
 import com.tms.report.modules.transaction.repository.TransactionRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -145,23 +146,16 @@ public class DisputeService {
 
         int page = Integer.parseInt(params.getOrDefault("page", "1"));
         int limit = Integer.parseInt(params.getOrDefault("limit", "15"));
-        String search = params.get("search");
-        String status = params.get("status");
+        String search = trimToNull(params.get("search"));
+        String status = trimToNull(params.get("status"));
 
-        PageRequest pageable = PageRequest.of(Math.max(page - 1, 0), limit, Sort.by(Sort.Direction.DESC, "createdAt"));
+        // Parse date range
+        LocalDateTime dateFrom = parseLocalDateTimeOrNull(params.get("dates[0]"));
+        LocalDateTime dateTo = parseLocalDateTimeOrNull(params.get("dates[1]"));
 
-        Page<Dispute> disputes;
-        if (search != null && !search.isBlank()) {
-            if (status != null && !status.isBlank()) {
-                disputes = disputeRepository.searchByUserIdAndStatus(merchantId, search.trim(), status, pageable);
-            } else {
-                disputes = disputeRepository.searchByUserId(merchantId, search.trim(), pageable);
-            }
-        } else if (status != null && !status.isBlank()) {
-            disputes = disputeRepository.findByUserIdAndStatusCodeOrderByCreatedAtDesc(merchantId, status, pageable);
-        } else {
-            disputes = disputeRepository.findByUserIdOrderByCreatedAtDesc(merchantId, pageable);
-        }
+        PageRequest pageable = PageRequest.of(Math.max(page - 1, 0), limit);
+
+        Page<Dispute> disputes = disputeRepository.findFiltered(merchantId, search, status, dateFrom, dateTo, pageable);
 
         return disputes.map(this::toView);
     }
@@ -178,28 +172,18 @@ public class DisputeService {
             throw new IllegalStateException("No authenticated merchant");
         }
 
-        String search = params.get("search");
-        String status = params.get("status");
+        String search = trimToNull(params.get("search"));
+        String status = trimToNull(params.get("status"));
+        LocalDateTime dateFrom = parseLocalDateTimeOrNull(params.get("dates[0]"));
+        LocalDateTime dateTo = parseLocalDateTimeOrNull(params.get("dates[1]"));
 
         String[] headers = {"ID", "Subject", "Transaction Reference", "Status", "Created At", "Resolved At"};
         String[] keys = {"id", "subject", "transaction_reference", "status_code", "created_at", "resolved_at"};
 
         XlsxExporter.streamPagedMaps(response, "disputes", headers, 500, (page, size) -> {
-            PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-            Page<Dispute> disputes;
-
-            if (search != null && !search.isBlank()) {
-                if (status != null && !status.isBlank()) {
-                    disputes = disputeRepository.searchByUserIdAndStatus(merchantId, search.trim(), status, pageable);
-                } else {
-                    disputes = disputeRepository.searchByUserId(merchantId, search.trim(), pageable);
-                }
-            } else if (status != null && !status.isBlank()) {
-                disputes = disputeRepository.findByUserIdAndStatusCodeOrderByCreatedAtDesc(merchantId, status,
-                        pageable);
-            } else {
-                disputes = disputeRepository.findByUserIdOrderByCreatedAtDesc(merchantId, pageable);
-            }
+            PageRequest pageable = PageRequest.of(page, size);
+            Page<Dispute> disputes = disputeRepository.findFiltered(merchantId, search, status, dateFrom, dateTo,
+                    pageable);
 
             return disputes.getContent().stream().map(d -> {
                 Map<String, Object> m = new LinkedHashMap<>();
@@ -297,6 +281,27 @@ public class DisputeService {
                     .setParameter("id", productId).getSingleResult();
             return result != null ? result.toString() : null;
         } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static LocalDateTime parseLocalDateTimeOrNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            // Accept full ISO timestamps; trim trailing Z if present (DB column is naive).
+            String trimmed = value.endsWith("Z") ? value.substring(0, value.length() - 1) : value;
+            return LocalDateTime.parse(trimmed);
+        } catch (DateTimeParseException e) {
             return null;
         }
     }
