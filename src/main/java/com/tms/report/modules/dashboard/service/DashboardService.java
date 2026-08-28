@@ -268,8 +268,7 @@ public class DashboardService {
                        COALESCE(t.metadata->>'serial', t.terminal_id) as terminal_serial
                 FROM transactions t
                 WHERE 1=1
-                """
-                + userScope("t.user_id")
+                """ + userScope("t.user_id")
                 + " AND COALESCE(t.product_code, '') NOT IN ('manual-funding', 'manual-credit', 'manual-debit')"
                 + " ORDER BY t.created_at DESC LIMIT :lim";
         Query q = entityManager.createNativeQuery(sql);
