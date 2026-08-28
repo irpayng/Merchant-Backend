@@ -56,7 +56,7 @@ public class RoleService {
     public Role updateRole(Long id, String name, String description, Set<Long> privilegeIds) {
         Role role = getRole(id);
         if (role.isSystemRole()) {
-            throw new AppException("System roles cannot be renamed", HttpStatus.FORBIDDEN);
+            throw new AppException("System roles cannot be modified", HttpStatus.FORBIDDEN);
         }
 
         role.setName(name);
