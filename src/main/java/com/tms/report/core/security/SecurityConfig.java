@@ -1,6 +1,7 @@
 package com.tms.report.core.security;
 
 import com.tms.report.modules.audit.filter.AuditLoggingFilter;
+import com.tms.report.modules.audit.repository.AuditLogRepository;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Arrays;
@@ -35,9 +36,9 @@ import tools.jackson.databind.ObjectMapper;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
-    private final AuditLoggingFilter auditLoggingFilter;
     private final MerchantUserDetailsService merchantUserDetailsService;
     private final ObjectMapper objectMapper;
+    private final AuditLogRepository auditLogRepository;
 
     /**
      * Comma-separated list of browser origins allowed to call this API. Defaults
@@ -85,7 +86,7 @@ public class SecurityConfig {
                 })).sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(auditLoggingFilter, JwtAuthenticationFilter.class);
+                .addFilterAfter(new AuditLoggingFilter(auditLogRepository), JwtAuthenticationFilter.class);
 
         return http.build();
     }

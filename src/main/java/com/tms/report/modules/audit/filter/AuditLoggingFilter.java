@@ -16,7 +16,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ContentCachingRequestWrapper;
 import org.springframework.web.util.ContentCachingResponseWrapper;
@@ -29,10 +28,10 @@ import org.springframework.web.util.ContentCachingResponseWrapper;
  * <p>
  * This filter is registered in the Spring Security filter chain AFTER the
  * JwtAuthenticationFilter so that the SecurityContext is populated when we
- * access the authenticated user.
+ * access the authenticated user. It is NOT auto-scanned as a servlet filter
+ * (no @Component) to avoid double registration.
  */
 @Slf4j
-@Component
 @RequiredArgsConstructor
 public class AuditLoggingFilter extends OncePerRequestFilter {
 
