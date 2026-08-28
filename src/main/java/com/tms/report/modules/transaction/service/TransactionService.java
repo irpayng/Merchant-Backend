@@ -299,7 +299,12 @@ public class TransactionService {
                        0 as provider_cost,
                        (t.reversal_blob IS NOT NULL AND COALESCE(t.metadata->>'card_reversal_exhausted','') <> 'true') as has_reversal,
                        t.metadata->>'rrn' as rrn,
-                       COALESCE(t.metadata->>'card_holder_name', t.metadata->>'card_holder', t.metadata->>'account_name', t.metadata->>'beneficiary_name') as card_holder,
+                       COALESCE(
+                           CASE WHEN t.metadata->>'card_holder_name' ~ '[A-Za-z].*/[A-Za-z]|[A-Za-z]+\s+[A-Za-z]' THEN t.metadata->>'card_holder_name' END,
+                           CASE WHEN t.metadata->>'card_holder' ~ '[A-Za-z].*/[A-Za-z]|[A-Za-z]+\s+[A-Za-z]' THEN t.metadata->>'card_holder' END,
+                           t.metadata->>'account_name',
+                           t.metadata->>'beneficiary_name'
+                       ) as card_holder,
                        t.metadata->>'pan' as masked_pan,
                        t.metadata->>'stan' as stan,
                        t.metadata->>'auth_code' as auth_code,

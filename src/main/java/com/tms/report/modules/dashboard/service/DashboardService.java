@@ -263,12 +263,16 @@ public class DashboardService {
     private List<Map<String, Object>> getRecentTransactions(int limit) {
         String sql = """
                 SELECT t.id, t.reference, t.amount, t.status_code, t.created_at,
-                       COALESCE(t.metadata->>'card_holder_name', t.metadata->>'card_holder',
-                                t.metadata->>'account_name', t.metadata->>'beneficiary_name') as customer,
+                       COALESCE(
+                           CASE WHEN t.metadata->>'card_holder_name' ~ '[A-Za-z].*/[A-Za-z]|[A-Za-z]+\s+[A-Za-z]' THEN t.metadata->>'card_holder_name' END,
+                           CASE WHEN t.metadata->>'card_holder' ~ '[A-Za-z].*/[A-Za-z]|[A-Za-z]+\s+[A-Za-z]' THEN t.metadata->>'card_holder' END,
+                           t.metadata->>'account_name',
+                           t.metadata->>'beneficiary_name') as customer,
                        COALESCE(t.metadata->>'serial', t.terminal_id) as terminal_serial
                 FROM transactions t
                 WHERE 1=1
-                """ + userScope("t.user_id")
+                """
+                + userScope("t.user_id")
                 + " AND COALESCE(t.product_code, '') NOT IN ('manual-funding', 'manual-credit', 'manual-debit')"
                 + " ORDER BY t.created_at DESC LIMIT :lim";
         Query q = entityManager.createNativeQuery(sql);
