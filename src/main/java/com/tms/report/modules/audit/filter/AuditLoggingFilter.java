@@ -14,7 +14,6 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.annotation.Order;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -26,10 +25,14 @@ import org.springframework.web.util.ContentCachingResponseWrapper;
  * Filter that captures audit logs for all non-GET requests made by
  * authenticated merchant users. Logs are written asynchronously after the
  * response is sent.
+ *
+ * <p>
+ * This filter is registered in the Spring Security filter chain AFTER the
+ * JwtAuthenticationFilter so that the SecurityContext is populated when we
+ * access the authenticated user.
  */
 @Slf4j
 @Component
-@Order(1)
 @RequiredArgsConstructor
 public class AuditLoggingFilter extends OncePerRequestFilter {
 

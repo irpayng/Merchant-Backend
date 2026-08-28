@@ -1,5 +1,6 @@
 package com.tms.report.core.security;
 
+import com.tms.report.modules.audit.filter.AuditLoggingFilter;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Arrays;
@@ -34,6 +35,7 @@ import tools.jackson.databind.ObjectMapper;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
+    private final AuditLoggingFilter auditLoggingFilter;
     private final MerchantUserDetailsService merchantUserDetailsService;
     private final ObjectMapper objectMapper;
 
@@ -82,7 +84,8 @@ public class SecurityConfig {
                             .write(objectMapper.writeValueAsString(Map.of("code", 403, "message", "Forbidden")));
                 })).sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider())
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(auditLoggingFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }
