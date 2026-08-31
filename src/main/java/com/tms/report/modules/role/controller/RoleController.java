@@ -5,11 +5,11 @@ import com.tms.report.modules.merchantuser.service.MerchantUserService;
 import com.tms.report.modules.role.dto.AssignRoleRequest;
 import com.tms.report.modules.role.dto.CreateRoleRequest;
 import com.tms.report.modules.role.dto.RoleResponse;
-import com.tms.report.modules.role.dto.UpdateRoleRequest;
 import com.tms.report.modules.role.service.RoleService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -44,13 +44,23 @@ public class RoleController {
         return ApiResponse.success(role);
     }
 
+    @SuppressWarnings("unchecked")
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('manage_role')")
-    public ApiResponse<RoleResponse> update(@PathVariable Long id, @Valid @RequestBody UpdateRoleRequest request) {
-        log.info("RoleController.update - id={}, request.name={}, request.description={}, request.privilegeIds={}", id,
-                request.getName(), request.getDescription(), request.getPrivilegeIds());
-        RoleResponse role = roleService.updateRole(id, request.getName(), request.getDescription(),
-                request.getPrivilegeIds());
+    public ApiResponse<RoleResponse> update(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        String name = body.get("name") != null ? body.get("name").toString() : null;
+        String description = body.get("description") != null ? body.get("description").toString() : null;
+
+        Set<Long> privilegeIds = null;
+        if (body.containsKey("privilegeIds") && body.get("privilegeIds") != null) {
+            List<?> rawIds = (List<?>) body.get("privilegeIds");
+            privilegeIds = rawIds.stream().map(o -> Long.parseLong(o.toString()))
+                    .collect(java.util.stream.Collectors.toSet());
+        }
+
+        log.info("RoleController.update - id={}, name={}, description={}, privilegeIds={}", id, name, description,
+                privilegeIds);
+        RoleResponse role = roleService.updateRole(id, name, description, privilegeIds);
         return ApiResponse.success(role);
     }
 
