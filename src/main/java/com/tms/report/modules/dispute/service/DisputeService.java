@@ -171,7 +171,8 @@ public class DisputeService {
         String search = trimToNull(params.get("search"));
         if (search != null) {
             if (search.matches("\\d+")) {
-                where.append(" AND (d.id = :searchId OR LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
+                where.append(
+                        " AND (d.id = :searchId OR LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
                 qParams.put("searchId", Long.parseLong(search));
             } else {
                 where.append(" AND (LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
@@ -227,7 +228,8 @@ public class DisputeService {
         String search = trimToNull(params.get("search"));
         if (search != null) {
             if (search.matches("\\d+")) {
-                where.append(" AND (d.id = :searchId OR LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
+                where.append(
+                        " AND (d.id = :searchId OR LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
                 qParams.put("searchId", Long.parseLong(search));
             } else {
                 where.append(" AND (LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
