@@ -72,11 +72,7 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
             filterChain.doFilter(wrappedRequest, wrappedResponse);
         } finally {
             // Log the action after the response is ready
-            try {
-                logAction(wrappedRequest, wrappedResponse, method, path);
-            } catch (Exception e) {
-                log.error("Failed to write audit log: {}", e.getMessage(), e);
-            }
+            logAction(wrappedRequest, wrappedResponse, method, path);
 
             // Copy response body to actual response
             wrappedResponse.copyBodyToResponse();
@@ -112,13 +108,12 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
         String requestBody = getRequestBody(request);
         String sanitizedBody = sanitizeBody(requestBody);
         String action = deriveAction(method, path);
-        String description = buildDescription(method, path, user.getName());
 
         AuditLog auditLog = AuditLog.builder().merchantId(user.getMerchantId()).userId(user.getId())
                 .userName(user.getName()).userEmail(user.getEmail()).userRole(user.getRole()).method(method)
-                .path(truncate(path, 500)).action(action).description(description)
-                .requestBody(truncate(sanitizedBody, 10000)).responseStatus(response.getStatus())
-                .ipAddress(resolveClientIp(request)).userAgent(truncate(request.getHeader("User-Agent"), 500)).build();
+                .path(truncate(path, 500)).action(action).requestBody(truncate(sanitizedBody, 10000))
+                .responseStatus(response.getStatus()).ipAddress(resolveClientIp(request))
+                .userAgent(truncate(request.getHeader("User-Agent"), 500)).build();
 
         auditLogRepository.save(auditLog);
         log.info("AuditLoggingFilter: successfully saved audit log for path={}", path);
@@ -187,15 +182,6 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
         };
 
         return capitalize(action);
-    }
-
-    /**
-     * Build a human-readable description of the action.
-     */
-    private String buildDescription(String method, String path, String userName) {
-        String action = deriveAction(method, path).toLowerCase();
-        String user = userName != null ? userName : "User";
-        return user + " performed " + action;
     }
 
     private boolean isNumeric(String str) {

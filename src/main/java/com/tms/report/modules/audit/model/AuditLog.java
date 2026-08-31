@@ -60,10 +60,6 @@ public class AuditLog {
     @Column(length = 255)
     private String action;
 
-    /** Longer description of what happened. */
-    @Column(length = 500)
-    private String description;
-
     /** Request body (sanitized, excludes sensitive fields). */
     @Column(name = "request_body", columnDefinition = "TEXT")
     private String requestBody;
