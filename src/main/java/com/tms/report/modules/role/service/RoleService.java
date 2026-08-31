@@ -75,6 +75,8 @@ public class RoleService {
 
     @Transactional
     public RoleResponse updateRole(Long id, String name, String description, Set<Long> privilegeIds) {
+        log.info("updateRole called: id={}, name={}, description={}, privilegeIds={}", id, name, description,
+                privilegeIds);
         Role role = getRole(id);
 
         // For system roles, only allow privilege updates (not name/description changes)
@@ -97,11 +99,15 @@ public class RoleService {
 
         // Privileges can be updated for all roles
         if (privilegeIds != null) {
+            log.info("Updating privileges for role {}: privilegeIds={}", id, privilegeIds);
             Set<Privilege> privileges = new HashSet<>(privilegeRepository.findAllById(privilegeIds));
+            log.info("Found {} privileges from DB: {}", privileges.size(),
+                    privileges.stream().map(p -> p.getId() + ":" + p.getCode()).toList());
             role.setPrivileges(privileges);
         }
 
         Role saved = roleRepository.save(role);
+        log.info("Role saved: id={}, privileges count={}", saved.getId(), saved.getPrivileges().size());
         List<MerchantUser> users = merchantUserRepository.findByRoleEntity(saved);
         return RoleResponse.from(saved, users);
     }
