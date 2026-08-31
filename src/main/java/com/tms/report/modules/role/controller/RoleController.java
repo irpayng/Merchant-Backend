@@ -4,6 +4,7 @@ import com.tms.report.core.dto.ApiResponse;
 import com.tms.report.modules.merchantuser.service.MerchantUserService;
 import com.tms.report.modules.role.dto.AssignRoleRequest;
 import com.tms.report.modules.role.dto.CreateRoleRequest;
+import com.tms.report.modules.role.dto.RoleResponse;
 import com.tms.report.modules.role.dto.UpdateRoleRequest;
 import com.tms.report.modules.role.model.Role;
 import com.tms.report.modules.role.service.RoleService;
@@ -24,14 +25,14 @@ public class RoleController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('manage_role')")
-    public ApiResponse<List<Role>> list() {
+    public ApiResponse<List<RoleResponse>> list() {
         return ApiResponse.success(roleService.listRoles());
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('manage_role')")
-    public ApiResponse<Role> get(@PathVariable Long id) {
-        return ApiResponse.success(roleService.getRole(id));
+    public ApiResponse<RoleResponse> get(@PathVariable Long id) {
+        return ApiResponse.success(roleService.getRoleWithUsers(id));
     }
 
     @PostMapping

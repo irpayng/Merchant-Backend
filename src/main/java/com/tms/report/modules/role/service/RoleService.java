@@ -4,6 +4,7 @@ import com.tms.report.core.exception.AppException;
 import com.tms.report.core.security.MerchantScope;
 import com.tms.report.modules.merchantuser.model.MerchantUser;
 import com.tms.report.modules.merchantuser.repository.MerchantUserRepository;
+import com.tms.report.modules.role.dto.RoleResponse;
 import com.tms.report.modules.role.model.Privilege;
 import com.tms.report.modules.role.model.Role;
 import com.tms.report.modules.role.repository.PrivilegeRepository;
@@ -25,8 +26,18 @@ public class RoleService {
     private final MerchantUserRepository merchantUserRepository;
     private final MerchantScope merchantScope;
 
-    public List<Role> listRoles() {
-        return roleRepository.findByMerchantId(merchantScope.merchantId());
+    public List<RoleResponse> listRoles() {
+        List<Role> roles = roleRepository.findByMerchantId(merchantScope.merchantId());
+        return roles.stream().map(role -> {
+            List<MerchantUser> users = merchantUserRepository.findByRoleEntity(role);
+            return RoleResponse.from(role, users);
+        }).toList();
+    }
+
+    public RoleResponse getRoleWithUsers(Long id) {
+        Role role = getRole(id);
+        List<MerchantUser> users = merchantUserRepository.findByRoleEntity(role);
+        return RoleResponse.from(role, users);
     }
 
     public Role getRole(Long id) {
