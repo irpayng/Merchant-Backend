@@ -11,9 +11,11 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+@Slf4j
 @RestController
 @RequestMapping("/roles")
 @RequiredArgsConstructor
@@ -45,6 +47,8 @@ public class RoleController {
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('manage_role')")
     public ApiResponse<RoleResponse> update(@PathVariable Long id, @Valid @RequestBody UpdateRoleRequest request) {
+        log.info("RoleController.update - id={}, request.name={}, request.description={}, request.privilegeIds={}", id,
+                request.getName(), request.getDescription(), request.getPrivilegeIds());
         RoleResponse role = roleService.updateRole(id, request.getName(), request.getDescription(),
                 request.getPrivilegeIds());
         return ApiResponse.success(role);
