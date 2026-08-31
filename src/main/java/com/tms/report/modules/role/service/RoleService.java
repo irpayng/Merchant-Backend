@@ -13,10 +13,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RoleService {
@@ -54,28 +56,46 @@ public class RoleService {
 
         Set<Privilege> privileges = new HashSet<>();
         if (privilegeIds != null && !privilegeIds.isEmpty()) {
-            privileges.addAll(privilegeRepository.findAllById(privilegeIds));
+            log.info("Creating role '{}' with privilegeIds: {}", name, privilegeIds);
+            List<Privilege> found = privilegeRepository.findAllById(privilegeIds);
+            log.info("Found {} privileges from DB: {}", found.size(),
+                    found.stream().map(p -> p.getId() + ":" + p.getCode()).toList());
+            privileges.addAll(found);
         }
 
         Role role = Role.builder().merchantId(merchantId).name(name).slug(slug).description(description)
                 .systemRole(false).privileges(privileges).build();
 
+        log.info("Role before save - privileges size: {}", role.getPrivileges().size());
         Role saved = roleRepository.save(role);
+        log.info("Role after save - id: {}, privileges size: {}", saved.getId(), saved.getPrivileges().size());
+
         return RoleResponse.from(saved, List.of());
     }
 
     @Transactional
     public RoleResponse updateRole(Long id, String name, String description, Set<Long> privilegeIds) {
         Role role = getRole(id);
+
+        // For system roles, only allow privilege updates (not name/description changes)
         if (role.isSystemRole()) {
-            throw new AppException("System roles cannot be modified", HttpStatus.FORBIDDEN);
+            if (name != null && !name.equals(role.getName())) {
+                throw new AppException("System role name cannot be modified", HttpStatus.FORBIDDEN);
+            }
+            if (description != null && !description.equals(role.getDescription())) {
+                throw new AppException("System role description cannot be modified", HttpStatus.FORBIDDEN);
+            }
+        } else {
+            // Non-system roles can update name and description
+            if (name != null) {
+                role.setName(name);
+            }
+            if (description != null) {
+                role.setDescription(description);
+            }
         }
 
-        role.setName(name);
-        if (description != null) {
-            role.setDescription(description);
-        }
-
+        // Privileges can be updated for all roles
         if (privilegeIds != null) {
             Set<Privilege> privileges = new HashSet<>(privilegeRepository.findAllById(privilegeIds));
             role.setPrivileges(privileges);
