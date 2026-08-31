@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Block Push Without Lint",
+      "trigger": "PreToolUse",
+      "description": "Blocks git push if lint/format checks fail",
+      "matcher": "execute_bash",
+      "action": {
+        "type": "command",
+        "command": "#!/bin/zsh\n\n# Read the command from stdin (JSON with tool parameters)\nINPUT=$(cat)\nCOMMAND=$(echo \"$INPUT\" | grep -o '\"command\":\"[^\"]*\"' | cut -d'\"' -f4)\n\n# Only run checks for git push commands\nif [[ \"$COMMAND\" != *\"git push\"* ]]; then\n  exit 0\nfi\n\n# Extract the working directory\nCWD=$(echo \"$INPUT\" | grep -o '\"cwd\":\"[^\"]*\"' | cut -d'\"' -f4)\nif [[ -z \"$CWD\" ]]; then\n  # Try to extract from command itself or use common paths\n  for dir in /Users/mathew/super-merchant /Users/mathew/Merchant-Backend /Users/mathew/super-merchant-ui /Users/mathew/merchant-fe /Users/mathew/tms-report-java; do\n    if [[ \"$COMMAND\" == *\"$dir\"* ]] || [[ \"$COMMAND\" == *\"cd $dir\"* ]]; then\n      CWD=\"$dir\"\n      break\n    fi\n  done\nfi\n\n# If we still can't determine the directory, allow the push\nif [[ -z \"$CWD\" ]]; then\n  exit 0\nfi\n\ncd \"$CWD\" 2>/dev/null || exit 0\n\n# Check project type and run appropriate linter\nif [[ -f \"pom.xml\" ]]; then\n  # Java/Maven project\n  echo \"Running Spotless check before push...\" >&2\n  mvn spotless:check -B -q 2>&1\n  if [[ $? -ne 0 ]]; then\n    echo \"BLOCKED: Spotless check failed. Run 'mvn spotless:apply -B' to fix formatting.\" >&2\n    exit 2\n  fi\nelif [[ -f \"package.json\" ]]; then\n  # Node.js project\n  echo \"Running lint check before push...\" >&2\n  npm run lint --silent 2>&1 | grep -i \"error\"\n  if [[ $? -eq 0 ]]; then\n    echo \"BLOCKED: Lint errors found. Fix them before pushing.\" >&2\n    exit 2\n  fi\nfi\n\nexit 0",
+        "timeout": 120
+      }
+    }
+  ]
+}

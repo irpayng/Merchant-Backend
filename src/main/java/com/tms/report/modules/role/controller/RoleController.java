@@ -11,11 +11,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-@Slf4j
 @RestController
 @RequestMapping("/roles")
 @RequiredArgsConstructor
@@ -58,8 +56,6 @@ public class RoleController {
                     .collect(java.util.stream.Collectors.toSet());
         }
 
-        log.info("RoleController.update - id={}, name={}, description={}, privilegeIds={}", id, name, description,
-                privilegeIds);
         RoleResponse role = roleService.updateRole(id, name, description, privilegeIds);
         return ApiResponse.success(role);
     }

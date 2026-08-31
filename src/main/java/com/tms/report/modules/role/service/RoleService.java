@@ -75,11 +75,7 @@ public class RoleService {
 
     @Transactional
     public RoleResponse updateRole(Long id, String name, String description, Set<Long> privilegeIds) {
-        log.info("updateRole called: id={}, name={}, description={}, privilegeIds={}", id, name, description,
-                privilegeIds);
         Role role = getRole(id);
-        log.info("Loaded role: id={}, name={}, current privileges count={}", role.getId(), role.getName(),
-                role.getPrivileges() != null ? role.getPrivileges().size() : "null");
 
         // For system roles, only allow privilege updates (not name/description changes)
         if (role.isSystemRole()) {
@@ -101,25 +97,11 @@ public class RoleService {
 
         // Privileges can be updated for all roles
         if (privilegeIds != null) {
-            log.info("Updating privileges for role {}: privilegeIds={}", id, privilegeIds);
-            List<Privilege> foundList = privilegeRepository.findAllById(privilegeIds);
-            log.info("Found {} privileges from DB: {}", foundList.size(),
-                    foundList.stream().map(p -> p.getId() + ":" + p.getCode()).toList());
-            Set<Privilege> privileges = new HashSet<>(foundList);
+            Set<Privilege> privileges = new HashSet<>(privilegeRepository.findAllById(privilegeIds));
             role.setPrivileges(privileges);
-            log.info("After setPrivileges, role.getPrivileges() size={}", role.getPrivileges().size());
-        } else {
-            log.warn("privilegeIds is NULL - privileges will not be updated");
         }
 
         Role saved = roleRepository.save(role);
-        log.info("Role saved: id={}, privileges count={}", saved.getId(), saved.getPrivileges().size());
-
-        // Re-fetch to verify persistence
-        Role refetched = roleRepository.findById(saved.getId()).orElse(null);
-        log.info("Re-fetched role: privileges count={}",
-                refetched != null && refetched.getPrivileges() != null ? refetched.getPrivileges().size() : "null");
-
         List<MerchantUser> users = merchantUserRepository.findByRoleEntity(saved);
         return RoleResponse.from(saved, users);
     }

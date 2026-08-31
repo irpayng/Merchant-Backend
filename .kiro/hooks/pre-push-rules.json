@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Pre-Push Verification Rules",
+      "trigger": "SessionStart",
+      "description": "Injects pre-push verification rules at the start of every session",
+      "action": {
+        "type": "agent",
+        "prompt": "**MANDATORY PRE-PUSH CHECKS:** Before running `git push` on ANY repository, you MUST first run the appropriate verification:\n\n- **Java projects (Maven):** Run `mvn spotless:apply -B && mvn spotless:check -B` in the project directory. If spotless:check fails, fix the issues before pushing.\n- **Next.js/TypeScript projects:** Run `npm run lint` in the project directory. If there are errors, fix them before pushing.\n\nNever push without passing these checks first."
+      }
+    }
+  ]
+}
