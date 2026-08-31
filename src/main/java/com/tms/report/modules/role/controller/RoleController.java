@@ -6,7 +6,6 @@ import com.tms.report.modules.role.dto.AssignRoleRequest;
 import com.tms.report.modules.role.dto.CreateRoleRequest;
 import com.tms.report.modules.role.dto.RoleResponse;
 import com.tms.report.modules.role.dto.UpdateRoleRequest;
-import com.tms.report.modules.role.model.Role;
 import com.tms.report.modules.role.service.RoleService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -37,16 +36,17 @@ public class RoleController {
 
     @PostMapping
     @PreAuthorize("hasAuthority('manage_role')")
-    public ApiResponse<Role> create(@Valid @RequestBody CreateRoleRequest request) {
-        Role role = roleService.createRole(request.getName(), request.getSlug(), request.getDescription(),
+    public ApiResponse<RoleResponse> create(@Valid @RequestBody CreateRoleRequest request) {
+        RoleResponse role = roleService.createRole(request.getName(), request.getSlug(), request.getDescription(),
                 request.getPrivilegeIds());
         return ApiResponse.success(role);
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('manage_role')")
-    public ApiResponse<Role> update(@PathVariable Long id, @Valid @RequestBody UpdateRoleRequest request) {
-        Role role = roleService.updateRole(id, request.getName(), request.getDescription(), request.getPrivilegeIds());
+    public ApiResponse<RoleResponse> update(@PathVariable Long id, @Valid @RequestBody UpdateRoleRequest request) {
+        RoleResponse role = roleService.updateRole(id, request.getName(), request.getDescription(),
+                request.getPrivilegeIds());
         return ApiResponse.success(role);
     }
 

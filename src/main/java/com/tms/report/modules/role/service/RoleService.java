@@ -46,7 +46,7 @@ public class RoleService {
     }
 
     @Transactional
-    public Role createRole(String name, String slug, String description, Set<Long> privilegeIds) {
+    public RoleResponse createRole(String name, String slug, String description, Set<Long> privilegeIds) {
         Long merchantId = merchantScope.merchantId();
         if (roleRepository.existsByMerchantIdAndSlug(merchantId, slug)) {
             throw new AppException("A role with this slug already exists", HttpStatus.CONFLICT);
@@ -60,11 +60,12 @@ public class RoleService {
         Role role = Role.builder().merchantId(merchantId).name(name).slug(slug).description(description)
                 .systemRole(false).privileges(privileges).build();
 
-        return roleRepository.save(role);
+        Role saved = roleRepository.save(role);
+        return RoleResponse.from(saved, List.of());
     }
 
     @Transactional
-    public Role updateRole(Long id, String name, String description, Set<Long> privilegeIds) {
+    public RoleResponse updateRole(Long id, String name, String description, Set<Long> privilegeIds) {
         Role role = getRole(id);
         if (role.isSystemRole()) {
             throw new AppException("System roles cannot be modified", HttpStatus.FORBIDDEN);
@@ -80,7 +81,9 @@ public class RoleService {
             role.setPrivileges(privileges);
         }
 
-        return roleRepository.save(role);
+        Role saved = roleRepository.save(role);
+        List<MerchantUser> users = merchantUserRepository.findByRoleEntity(saved);
+        return RoleResponse.from(saved, users);
     }
 
     @Transactional
