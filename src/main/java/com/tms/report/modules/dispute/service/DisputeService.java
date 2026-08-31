@@ -88,8 +88,15 @@ public class DisputeService {
         }
 
         if (search != null && !search.isBlank()) {
-            where.append(" AND (d.subject ILIKE :q OR d.transaction_reference ILIKE :q) ");
-            params.put("q", "%" + search.trim() + "%");
+            String trimmed = search.trim();
+            // If search is purely numeric, also match by dispute ID
+            if (trimmed.matches("\\d+")) {
+                where.append(" AND (d.id = :exactId OR d.subject ILIKE :q OR d.transaction_reference ILIKE :q) ");
+                params.put("exactId", Long.parseLong(trimmed));
+            } else {
+                where.append(" AND (d.subject ILIKE :q OR d.transaction_reference ILIKE :q) ");
+            }
+            params.put("q", "%" + trimmed + "%");
         }
 
         // Simplified query without unread tracking (merchants see their own disputes)
@@ -160,10 +167,15 @@ public class DisputeService {
             qParams.put("status", status);
         }
 
-        // Apply search filter
+        // Apply search filter (ID, subject, reference)
         String search = trimToNull(params.get("search"));
         if (search != null) {
-            where.append(" AND (LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
+            if (search.matches("\\d+")) {
+                where.append(" AND (d.id = :searchId OR LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
+                qParams.put("searchId", Long.parseLong(search));
+            } else {
+                where.append(" AND (LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
+            }
             qParams.put("search", "%" + search.toLowerCase() + "%");
         }
 
@@ -211,10 +223,15 @@ public class DisputeService {
             qParams.put("status", status);
         }
 
-        // Apply search filter
+        // Apply search filter (ID, subject, reference)
         String search = trimToNull(params.get("search"));
         if (search != null) {
-            where.append(" AND (LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
+            if (search.matches("\\d+")) {
+                where.append(" AND (d.id = :searchId OR LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
+                qParams.put("searchId", Long.parseLong(search));
+            } else {
+                where.append(" AND (LOWER(d.subject) ILIKE :search OR LOWER(d.transaction_reference) ILIKE :search)");
+            }
             qParams.put("search", "%" + search.toLowerCase() + "%");
         }
 
