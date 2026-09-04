@@ -90,6 +90,11 @@ public class DisputeService {
             return List.of();
         }
 
+        // Check if unread tracking table exists; if not, use simple query
+        if (!disputeReadsTableExists()) {
+            return threadsSimple(merchantId, filter, search, limit, offset);
+        }
+
         Map<String, Object> params = new LinkedHashMap<>();
         StringBuilder where = new StringBuilder(" WHERE d.user_id = :merchantId ");
         params.put("merchantId", merchantId);
@@ -158,11 +163,81 @@ public class DisputeService {
     }
 
     /**
+     * Simple threads query without unread tracking (fallback when table doesn't
+     * exist).
+     */
+    private List<DisputeThreadDto> threadsSimple(Long merchantId, String filter, String search, int limit, int offset) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        StringBuilder where = new StringBuilder(" WHERE d.user_id = :merchantId ");
+        params.put("merchantId", merchantId);
+
+        // For simple mode, "unread" filter returns empty (no tracking available)
+        if ("unread".equalsIgnoreCase(filter)) {
+            return List.of();
+        }
+
+        if (filter != null && !filter.isBlank() && !"all".equalsIgnoreCase(filter)) {
+            where.append(" AND d.status_code = :status ");
+            params.put("status", filter);
+        }
+
+        if (search != null && !search.isBlank()) {
+            String trimmed = search.trim();
+            if (trimmed.matches("\\d+")) {
+                where.append(" AND (d.id = :exactId OR d.subject ILIKE :q OR d.transaction_reference ILIKE :q) ");
+                params.put("exactId", Long.parseLong(trimmed));
+            } else {
+                where.append(" AND (d.subject ILIKE :q OR d.transaction_reference ILIKE :q) ");
+            }
+            params.put("q", "%" + trimmed + "%");
+        }
+
+        String sql = "SELECT d.id, d.subject, d.status_code, "
+                + "  lm.message, lm.sender_type, lm.created_at AS last_message_at, lm.attachment_url, "
+                + "  d.created_at " + "FROM disputes d " + "LEFT JOIN LATERAL ( "
+                + "  SELECT c.message, c.sender_type, c.created_at, c.attachment_url "
+                + "  FROM conversations c WHERE c.dispute_id = d.id "
+                + "  ORDER BY c.created_at DESC, c.id DESC LIMIT 1 " + ") lm ON TRUE " + where
+                + " ORDER BY COALESCE(lm.created_at, d.created_at) DESC LIMIT :limit OFFSET :offset";
+
+        Query q = entityManager.createNativeQuery(sql);
+        q.setParameter("limit", Math.max(1, Math.min(limit, 200)));
+        q.setParameter("offset", Math.max(0, offset));
+        params.forEach(q::setParameter);
+
+        List<DisputeThreadDto> out = new ArrayList<>();
+        for (Object row : q.getResultList()) {
+            Object[] r = (Object[]) row;
+            String attachmentKey = str(r[6]);
+            out.add(new DisputeThreadDto(lng(r[0]), str(r[1]), str(r[2]), str(r[3]), normalizeSender(str(r[4])),
+                    str(r[5]), attachmentKey != null, 0L, str(r[7])));
+        }
+        return out;
+    }
+
+    /** Check if the dispute_reads table exists (for graceful degradation). */
+    private boolean disputeReadsTableExists() {
+        try {
+            entityManager.createNativeQuery(
+                    "SELECT 1 FROM information_schema.tables WHERE table_schema = 'merchant' AND table_name = 'dispute_reads'")
+                    .getSingleResult();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
      * Total unread admin/agent messages across all disputes for this merchant user.
      */
     public long totalUnread(Long merchantUserId) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null || merchantUserId == null) {
+            return 0L;
+        }
+
+        // If table doesn't exist, return 0
+        if (!disputeReadsTableExists()) {
             return 0L;
         }
 
@@ -184,6 +259,10 @@ public class DisputeService {
     @Transactional
     public void markRead(Long merchantUserId, Long disputeId) {
         if (merchantUserId == null || disputeId == null) {
+            return;
+        }
+        // Skip if table doesn't exist
+        if (!disputeReadsTableExists()) {
             return;
         }
         entityManager.createNativeQuery("INSERT INTO merchant.dispute_reads "

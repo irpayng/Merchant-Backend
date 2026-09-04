@@ -1,11 +1,12 @@
 package com.tms.report.modules.grpc.service;
 
-import com.tms.report.modules.grpc.exception.GrpcException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,6 +16,10 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * HTTP client for calling tms-notification REST endpoints. Used to fetch and
  * manage notifications for the logged-in merchant user.
+ *
+ * <p>
+ * Fails gracefully: if the notification service is unavailable, returns empty
+ * results rather than throwing exceptions — notifications are non-critical.
  */
 @Slf4j
 @Service
@@ -56,16 +61,12 @@ public class NotificationHttpClient {
             if (response.statusCode() >= 400) {
                 String message = result.getOrDefault("message", "Failed to fetch notifications").toString();
                 log.error("Notification list failed for user {}: {} - {}", userId, response.statusCode(), message);
-                throw new GrpcException("Failed to fetch notifications: " + message, "FETCH_FAILED",
-                        Map.of("userId", userId));
+                return emptyListResponse(page, perPage);
             }
             return result;
-        } catch (GrpcException e) {
-            throw e;
         } catch (Exception e) {
-            log.error("Notification service unavailable: {}", e.getMessage());
-            throw new GrpcException("Notification service unavailable: " + e.getMessage(), "UNAVAILABLE",
-                    Map.of("userId", userId));
+            log.warn("Notification service unavailable for user {}: {}", userId, e.getMessage());
+            return emptyListResponse(page, perPage);
         }
     }
 
@@ -89,16 +90,13 @@ public class NotificationHttpClient {
             Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
             if (response.statusCode() >= 400) {
                 String message = result.getOrDefault("message", "Notification not found").toString();
-                throw new GrpcException("Failed to fetch notification: " + message, "NOT_FOUND",
-                        Map.of("notificationId", notificationId));
+                log.warn("Failed to fetch notification {}: {}", notificationId, message);
+                return Map.of("code", response.statusCode(), "message", message);
             }
             return result;
-        } catch (GrpcException e) {
-            throw e;
         } catch (Exception e) {
-            log.error("Notification service unavailable: {}", e.getMessage());
-            throw new GrpcException("Notification service unavailable: " + e.getMessage(), "UNAVAILABLE",
-                    Map.of("notificationId", notificationId));
+            log.warn("Notification service unavailable: {}", e.getMessage());
+            return Map.of("code", 503, "message", "Notification service temporarily unavailable");
         }
     }
 
@@ -122,16 +120,12 @@ public class NotificationHttpClient {
             Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
             if (response.statusCode() >= 400) {
                 String message = result.getOrDefault("message", "Failed to mark as read").toString();
-                throw new GrpcException("Failed to mark notification as read: " + message, "UPDATE_FAILED",
-                        Map.of("notificationId", notificationId));
+                log.warn("Failed to mark notification {} as read: {}", notificationId, message);
             }
             return result;
-        } catch (GrpcException e) {
-            throw e;
         } catch (Exception e) {
-            log.error("Notification service unavailable: {}", e.getMessage());
-            throw new GrpcException("Notification service unavailable: " + e.getMessage(), "UNAVAILABLE",
-                    Map.of("notificationId", notificationId));
+            log.warn("Notification service unavailable: {}", e.getMessage());
+            return Map.of("code", 503, "message", "Notification service temporarily unavailable");
         }
     }
 
@@ -153,16 +147,12 @@ public class NotificationHttpClient {
             Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
             if (response.statusCode() >= 400) {
                 String message = result.getOrDefault("message", "Failed to mark all as read").toString();
-                throw new GrpcException("Failed to mark all notifications as read: " + message, "UPDATE_FAILED",
-                        Map.of("userId", userId));
+                log.warn("Failed to mark all notifications as read for user {}: {}", userId, message);
             }
             return result;
-        } catch (GrpcException e) {
-            throw e;
         } catch (Exception e) {
-            log.error("Notification service unavailable: {}", e.getMessage());
-            throw new GrpcException("Notification service unavailable: " + e.getMessage(), "UNAVAILABLE",
-                    Map.of("userId", userId));
+            log.warn("Notification service unavailable: {}", e.getMessage());
+            return Map.of("code", 503, "message", "Notification service temporarily unavailable");
         }
     }
 
@@ -180,5 +170,18 @@ public class NotificationHttpClient {
             return ((Number) unreadCount).intValue();
         }
         return 0;
+    }
+
+    private Map<String, Object> emptyListResponse(int page, int perPage) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("data", new ArrayList<>());
+        response.put("current_page", page);
+        response.put("per_page", perPage);
+        response.put("total", 0);
+        response.put("last_page", 1);
+        response.put("unread_count", 0);
+        response.put("code", 200);
+        response.put("message", "success");
+        return response;
     }
 }
