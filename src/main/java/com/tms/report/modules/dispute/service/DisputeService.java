@@ -22,10 +22,17 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
 public class DisputeService {
+
+    /**
+     * Sentinel for "user has never opened the thread", so every existing message
+     * counts as unread.
+     */
+    private static final String NEVER_READ = "1970-01-01 00:00:00";
 
     private final GrpcClient grpcClient;
     private final MerchantScope merchantScope;
@@ -69,8 +76,15 @@ public class DisputeService {
 
     /**
      * Fetch inbox threads for the current merchant, newest activity first.
+     *
+     * @param merchantUserId
+     *            the logged-in merchant user's ID for unread tracking
+     * @param filter
+     *            optional status filter or "unread" for unread-only
+     * @param search
+     *            optional search term
      */
-    public List<DisputeThreadDto> threads(String filter, String search, int limit, int offset) {
+    public List<DisputeThreadDto> threads(Long merchantUserId, String filter, String search, int limit, int offset) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
             return List.of();
@@ -80,9 +94,10 @@ public class DisputeService {
         StringBuilder where = new StringBuilder(" WHERE d.user_id = :merchantId ");
         params.put("merchantId", merchantId);
 
+        boolean unreadOnly = "unread".equalsIgnoreCase(filter);
+
         // Status filter (open, closed, etc.)
-        if (filter != null && !filter.isBlank() && !"all".equalsIgnoreCase(filter)
-                && !"unread".equalsIgnoreCase(filter)) {
+        if (filter != null && !filter.isBlank() && !"all".equalsIgnoreCase(filter) && !unreadOnly) {
             where.append(" AND d.status_code = :status ");
             params.put("status", filter);
         }
@@ -99,17 +114,27 @@ public class DisputeService {
             params.put("q", "%" + trimmed + "%");
         }
 
-        // Simplified query without unread tracking (merchants see their own disputes)
+        // Filter to only unread if requested
+        if (unreadOnly) {
+            where.append(" AND COALESCE(uc.cnt, 0) > 0 ");
+        }
+
         String sql = "SELECT d.id, d.subject, d.status_code, "
                 + "  lm.message, lm.sender_type, lm.created_at AS last_message_at, lm.attachment_url, "
-                + "  d.created_at " + "FROM disputes d "
+                + "  COALESCE(uc.cnt, 0) AS unread_count, d.created_at " + "FROM disputes d "
+                + "LEFT JOIN merchant.dispute_reads dr ON dr.dispute_id = d.id AND dr.merchant_user_id = :muId "
                 // Last message in the thread
                 + "LEFT JOIN LATERAL ( " + "  SELECT c.message, c.sender_type, c.created_at, c.attachment_url "
                 + "  FROM conversations c WHERE c.dispute_id = d.id "
-                + "  ORDER BY c.created_at DESC, c.id DESC LIMIT 1 " + ") lm ON TRUE " + where
-                + " ORDER BY COALESCE(lm.created_at, d.created_at) DESC LIMIT :limit OFFSET :offset";
+                + "  ORDER BY c.created_at DESC, c.id DESC LIMIT 1 " + ") lm ON TRUE "
+                // Inbound messages (from admin/agent) this merchant user hasn't seen
+                + "LEFT JOIN LATERAL ( " + "  SELECT COUNT(*) AS cnt FROM conversations c2 "
+                + "  WHERE c2.dispute_id = d.id AND c2.sender_type IN ('admin', 'agent') "
+                + "    AND c2.created_at > COALESCE(dr.last_read_at, TIMESTAMP '" + NEVER_READ + "') " + ") uc ON TRUE "
+                + where + " ORDER BY COALESCE(lm.created_at, d.created_at) DESC LIMIT :limit OFFSET :offset";
 
         Query q = entityManager.createNativeQuery(sql);
+        q.setParameter("muId", merchantUserId != null ? merchantUserId : 0L);
         q.setParameter("limit", Math.max(1, Math.min(limit, 200)));
         q.setParameter("offset", Math.max(0, offset));
         params.forEach(q::setParameter);
@@ -125,19 +150,47 @@ public class DisputeService {
                     normalizeSender(str(r[4])), // last_message_sender
                     str(r[5]), // last_message_at
                     attachmentKey != null, // last_message_has_attachment
-                    0L, // unread_count (not tracked for merchant portal)
-                    str(r[7]) // created_at
+                    r[7] != null ? ((Number) r[7]).longValue() : 0L, // unread_count
+                    str(r[8]) // created_at
             ));
         }
         return out;
     }
 
     /**
-     * Total unread admin messages across all disputes for this merchant. Returns 0
-     * since read-state tracking is not implemented for the merchant portal.
+     * Total unread admin/agent messages across all disputes for this merchant user.
      */
-    public long totalUnread() {
-        return 0L;
+    public long totalUnread(Long merchantUserId) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null || merchantUserId == null) {
+            return 0L;
+        }
+
+        String sql = "SELECT COUNT(*) FROM conversations c " + "JOIN disputes d ON d.id = c.dispute_id "
+                + "LEFT JOIN merchant.dispute_reads dr ON dr.dispute_id = d.id AND dr.merchant_user_id = :muId "
+                + "WHERE d.user_id = :merchantId AND c.sender_type IN ('admin', 'agent') "
+                + "  AND c.created_at > COALESCE(dr.last_read_at, TIMESTAMP '" + NEVER_READ + "')";
+
+        Query q = entityManager.createNativeQuery(sql);
+        q.setParameter("muId", merchantUserId);
+        q.setParameter("merchantId", merchantId);
+        Object result = q.getSingleResult();
+        return result != null ? ((Number) result).longValue() : 0L;
+    }
+
+    /**
+     * Mark a thread read up to now for this merchant user.
+     */
+    @Transactional
+    public void markRead(Long merchantUserId, Long disputeId) {
+        if (merchantUserId == null || disputeId == null) {
+            return;
+        }
+        entityManager.createNativeQuery("INSERT INTO merchant.dispute_reads "
+                + "(merchant_user_id, dispute_id, last_read_at, created_at, updated_at) "
+                + "VALUES (:muId, :disputeId, NOW(), NOW(), NOW()) " + "ON CONFLICT (merchant_user_id, dispute_id) "
+                + "DO UPDATE SET last_read_at = NOW(), updated_at = NOW()").setParameter("muId", merchantUserId)
+                .setParameter("disputeId", disputeId).executeUpdate();
     }
 
     private static String normalizeSender(String senderType) {

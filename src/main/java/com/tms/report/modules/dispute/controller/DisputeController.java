@@ -2,10 +2,12 @@ package com.tms.report.modules.dispute.controller;
 
 import com.tms.report.core.dto.ApiResponse;
 import com.tms.report.core.dto.PagedResponse;
+import com.tms.report.core.security.MerchantScope;
 import com.tms.report.modules.dispute.dto.AddConversationDto;
 import com.tms.report.modules.dispute.dto.CreateDisputeDto;
 import com.tms.report.modules.dispute.dto.DisputeThreadDto;
 import com.tms.report.modules.dispute.service.DisputeService;
+import com.tms.report.modules.merchantuser.model.MerchantUser;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 public class DisputeController {
 
     private final DisputeService disputeService;
+    private final MerchantScope merchantScope;
 
     @GetMapping
     public Map<String, Object> index(@RequestParam Map<String, String> params, HttpServletRequest request) {
@@ -42,13 +45,15 @@ public class DisputeController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false, defaultValue = "60") int limit,
             @RequestParam(required = false, defaultValue = "0") int offset) {
-        return ApiResponse.success(disputeService.threads(filter, search, limit, offset));
+        return ApiResponse.success(disputeService.threads(currentMerchantUserId(), filter, search, limit, offset));
     }
 
-    /** GET /disputes/unread-count — total unread messages for this merchant. */
+    /**
+     * GET /disputes/unread-count — total unread messages for this merchant user.
+     */
     @GetMapping("/unread-count")
     public ApiResponse<Map<String, Object>> unreadCount() {
-        return ApiResponse.success(Map.of("unread_count", disputeService.totalUnread()));
+        return ApiResponse.success(Map.of("unread_count", disputeService.totalUnread(currentMerchantUserId())));
     }
 
     /** GET /disputes/download — export disputes to xlsx. */
@@ -68,13 +73,14 @@ public class DisputeController {
     }
 
     /**
-     * PATCH /disputes/{id}/mark-read — mark a dispute as read by this merchant. For
-     * merchants, this is a no-op since they only see their own disputes, but it
-     * keeps the frontend API consistent.
+     * PATCH /disputes/{id}/mark-read — mark a dispute as read by this merchant
+     * user.
      */
     @PatchMapping("/{id}/mark-read")
     public ApiResponse<Map<String, Object>> markRead(@PathVariable Long id) {
-        return ApiResponse.success(Map.of("dispute_id", id, "unread_count", disputeService.totalUnread()));
+        disputeService.markRead(currentMerchantUserId(), id);
+        return ApiResponse
+                .success(Map.of("dispute_id", id, "unread_count", disputeService.totalUnread(currentMerchantUserId())));
     }
 
     @GetMapping("/{id}")
@@ -83,7 +89,15 @@ public class DisputeController {
         if (dispute == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiResponse.error(404, "Dispute not found."));
         }
+        // Mark as read when opening the dispute
+        disputeService.markRead(currentMerchantUserId(), id);
         return ResponseEntity.ok(ApiResponse.success(dispute));
+    }
+
+    /** The signed-in merchant user's id, used for per-user unread state. */
+    private Long currentMerchantUserId() {
+        MerchantUser mu = merchantScope.current();
+        return mu != null ? mu.getId() : null;
     }
 
     @PostMapping

@@ -173,3 +173,21 @@ CREATE TABLE IF NOT EXISTS merchant.audit_logs (
 CREATE INDEX IF NOT EXISTS idx_audit_logs_merchant_id ON merchant.audit_logs(merchant_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON merchant.audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON merchant.audit_logs(created_at);
+
+
+-- =============================================================================
+-- DISPUTE_READS — tracks when each merchant user last read each dispute thread.
+-- Used to compute per-user unread counts in the chatbox UI.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS merchant.dispute_reads (
+    id              BIGSERIAL PRIMARY KEY,
+    merchant_user_id BIGINT NOT NULL,
+    dispute_id      BIGINT NOT NULL,
+    last_read_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+    created_at      TIMESTAMP DEFAULT NOW(),
+    updated_at      TIMESTAMP DEFAULT NOW(),
+    UNIQUE(merchant_user_id, dispute_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dispute_reads_user ON merchant.dispute_reads(merchant_user_id);
+CREATE INDEX IF NOT EXISTS idx_dispute_reads_dispute ON merchant.dispute_reads(dispute_id);
