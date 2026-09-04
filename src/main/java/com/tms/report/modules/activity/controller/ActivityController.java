@@ -8,11 +8,13 @@ import com.tms.report.modules.activity.service.ActivityService;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/activities")
 @RequiredArgsConstructor
+@PreAuthorize("hasAuthority('audit')")
 public class ActivityController {
 
     private final ActivityService activityService;

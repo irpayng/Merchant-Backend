@@ -6,6 +6,7 @@ import com.tms.report.modules.grpc.service.NotificationHttpClient;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -20,6 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/my-notifications")
 @RequiredArgsConstructor
+@PreAuthorize("hasAuthority('manage_notification')")
 public class MerchantNotificationController {
 
     private final NotificationHttpClient notificationHttpClient;
