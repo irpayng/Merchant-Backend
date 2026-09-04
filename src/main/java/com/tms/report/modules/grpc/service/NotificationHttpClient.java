@@ -14,8 +14,9 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * HTTP client for calling tms-notification REST endpoints. Used to fetch and
- * manage notifications for the logged-in merchant user.
+ * HTTP client for calling tms-notification internal REST endpoints. Uses the
+ * /internal/notifications path which bypasses JWT authentication and instead
+ * uses X-Internal-Key header for service-to-service authorization.
  *
  * <p>
  * Fails gracefully: if the notification service is unavailable, returns empty
@@ -26,12 +27,14 @@ import tools.jackson.databind.ObjectMapper;
 public class NotificationHttpClient {
 
     private final String baseUrl;
+    private final String internalApiKey;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
 
     public NotificationHttpClient(@Value("${notification.service.url:http://notification-service}") String baseUrl,
-            ObjectMapper objectMapper) {
+            @Value("${grpc.api.key:secret}") String internalApiKey, ObjectMapper objectMapper) {
         this.baseUrl = baseUrl;
+        this.internalApiKey = internalApiKey;
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(10)).build();
@@ -51,11 +54,10 @@ public class NotificationHttpClient {
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> listNotifications(Long userId, int page, int perPage) {
-        String url = baseUrl + "/notifications?page=" + page + "&per_page=" + perPage;
+        String url = baseUrl + "/internal/notifications/user/" + userId + "?page=" + page + "&per_page=" + perPage;
         try {
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofSeconds(30))
-                    .header("Content-Type", "application/json").header("X-User-Id", String.valueOf(userId)).GET()
-                    .build();
+                    .header("Content-Type", "application/json").header("X-Internal-Key", internalApiKey).GET().build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
             if (response.statusCode() >= 400) {
@@ -81,23 +83,20 @@ public class NotificationHttpClient {
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> getNotification(Long userId, Long notificationId) {
-        String url = baseUrl + "/notifications/" + notificationId;
-        try {
-            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofSeconds(30))
-                    .header("Content-Type", "application/json").header("X-User-Id", String.valueOf(userId)).GET()
-                    .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
-            if (response.statusCode() >= 400) {
-                String message = result.getOrDefault("message", "Notification not found").toString();
-                log.warn("Failed to fetch notification {}: {}", notificationId, message);
-                return Map.of("code", response.statusCode(), "message", message);
+        // Use the list endpoint with filters — internal API doesn't have single-get
+        // For now, fetch from list and filter client-side
+        Map<String, Object> result = listNotifications(userId, 1, 100);
+        @SuppressWarnings("unchecked")
+        var data = (java.util.List<Map<String, Object>>) result.get("data");
+        if (data != null) {
+            for (Map<String, Object> notification : data) {
+                Object id = notification.get("id");
+                if (id != null && id.toString().equals(notificationId.toString())) {
+                    return Map.of("data", notification, "code", 200, "message", "success");
+                }
             }
-            return result;
-        } catch (Exception e) {
-            log.warn("Notification service unavailable: {}", e.getMessage());
-            return Map.of("code", 503, "message", "Notification service temporarily unavailable");
         }
+        return Map.of("code", 404, "message", "Notification not found");
     }
 
     /**
@@ -111,10 +110,10 @@ public class NotificationHttpClient {
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> markAsRead(Long userId, Long notificationId) {
-        String url = baseUrl + "/notifications/" + notificationId + "/mark-as-read";
+        String url = baseUrl + "/internal/notifications/user/" + userId + "/" + notificationId + "/mark-as-read";
         try {
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofSeconds(30))
-                    .header("Content-Type", "application/json").header("X-User-Id", String.valueOf(userId))
+                    .header("Content-Type", "application/json").header("X-Internal-Key", internalApiKey)
                     .method("PATCH", HttpRequest.BodyPublishers.noBody()).build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
@@ -138,10 +137,10 @@ public class NotificationHttpClient {
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> markAllAsRead(Long userId) {
-        String url = baseUrl + "/notifications/mark-all-as-read";
+        String url = baseUrl + "/internal/notifications/user/" + userId + "/mark-all-as-read";
         try {
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofSeconds(30))
-                    .header("Content-Type", "application/json").header("X-User-Id", String.valueOf(userId))
+                    .header("Content-Type", "application/json").header("X-Internal-Key", internalApiKey)
                     .method("PATCH", HttpRequest.BodyPublishers.noBody()).build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
@@ -163,11 +162,25 @@ public class NotificationHttpClient {
      *            the user ID
      * @return unread count
      */
+    @SuppressWarnings("unchecked")
     public int getUnreadCount(Long userId) {
-        Map<String, Object> result = listNotifications(userId, 1, 1);
-        Object unreadCount = result.get("unread_count");
-        if (unreadCount instanceof Number) {
-            return ((Number) unreadCount).intValue();
+        String url = baseUrl + "/internal/notifications/user/" + userId + "/unread-count";
+        try {
+            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofSeconds(30))
+                    .header("Content-Type", "application/json").header("X-Internal-Key", internalApiKey).GET().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 400) {
+                Map<String, Object> result = objectMapper.readValue(response.body(), Map.class);
+                Object data = result.get("data");
+                if (data instanceof Map) {
+                    Object unreadCount = ((Map<?, ?>) data).get("unread_count");
+                    if (unreadCount instanceof Number) {
+                        return ((Number) unreadCount).intValue();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Notification service unavailable for unread count: {}", e.getMessage());
         }
         return 0;
     }
