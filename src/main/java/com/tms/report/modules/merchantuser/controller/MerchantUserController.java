@@ -33,11 +33,24 @@ public class MerchantUserController {
         return PagedResponse.from(page, "/admins", extra);
     }
 
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('manage_user')")
+    public ApiResponse<Map<String, Object>> show(@PathVariable Long id) {
+        return ApiResponse.success(merchantUserService.show(id));
+    }
+
     @PostMapping
     @PreAuthorize("hasAuthority('manage_user')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> create(@RequestBody Map<String, Object> data) {
         Map<String, Object> user = merchantUserService.create(data);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.<Map<String, Object>>builder().code(201)
                 .message("User created successfully").data(user).build());
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('manage_user')")
+    public ApiResponse<Map<String, Object>> update(@PathVariable Long id, @RequestBody Map<String, Object> data) {
+        return ApiResponse.<Map<String, Object>>builder().code(200).message("User updated successfully")
+                .data(merchantUserService.update(id, data)).build();
     }
 }

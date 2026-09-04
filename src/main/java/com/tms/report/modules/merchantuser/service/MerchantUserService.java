@@ -147,6 +147,64 @@ public class MerchantUserService {
         return toView(user);
     }
 
+    public Map<String, Object> show(Long userId) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            throw new AppException("Not authenticated", HttpStatus.UNAUTHORIZED);
+        }
+
+        MerchantUser user = merchantUserRepository.findById(userId)
+                .orElseThrow(() -> new AppException("User not found", HttpStatus.NOT_FOUND));
+
+        if (!user.getMerchantId().equals(merchantId)) {
+            throw new AppException("User not found", HttpStatus.NOT_FOUND);
+        }
+
+        return toView(user);
+    }
+
+    @Transactional
+    public Map<String, Object> update(Long userId, Map<String, Object> data) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            throw new AppException("Not authenticated", HttpStatus.UNAUTHORIZED);
+        }
+
+        MerchantUser user = merchantUserRepository.findById(userId)
+                .orElseThrow(() -> new AppException("User not found", HttpStatus.NOT_FOUND));
+
+        if (!user.getMerchantId().equals(merchantId)) {
+            throw new AppException("User not found", HttpStatus.NOT_FOUND);
+        }
+
+        // Update name if provided
+        String name = str(data, "name");
+        if (!name.isBlank()) {
+            user.setName(name);
+        }
+
+        // Update phone number if provided
+        String phoneNumber = str(data, "phone_number");
+        if (!phoneNumber.isBlank()) {
+            user.setPhoneNumber(phoneNumber);
+        }
+
+        // Update role if provided
+        @SuppressWarnings("unchecked")
+        List<String> roleIds = data.get("roles") instanceof List ? (List<String>) data.get("roles") : null;
+        if (roleIds != null && !roleIds.isEmpty()) {
+            Long roleId = Long.parseLong(roleIds.get(0));
+            Role role = roleRepository.findByMerchantIdAndId(merchantId, roleId)
+                    .orElseThrow(() -> new AppException("Role not found", HttpStatus.NOT_FOUND));
+            user.setRoleEntity(role);
+            user.setRole(role.getSlug());
+        }
+
+        merchantUserRepository.save(user);
+
+        return toView(user);
+    }
+
     @Transactional
     public void assignRoles(Long userId, List<String> roleIds) {
         Long merchantId = merchantScope.merchantId();
