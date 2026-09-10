@@ -303,7 +303,7 @@ public class DashboardService {
     private List<Map<String, Object>> getTerminalStatus() {
         String sql = """
                 SELECT t.serial, t.make, t.last_seen_at,
-                       (SELECT MAX(tx.created_at) FROM transactions tx WHERE tx.metadata->>'device_serial' = t.serial) as last_txn
+                       (SELECT MAX(tx.created_at) FROM transactions tx WHERE tx.metadata->>'device_serial' = t.serial OR tx.metadata->>'serial' = t.serial) as last_txn
                 FROM terminals t
                 WHERE 1=1
                 """
