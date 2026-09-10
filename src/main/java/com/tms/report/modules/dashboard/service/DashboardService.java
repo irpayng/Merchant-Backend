@@ -296,16 +296,18 @@ public class DashboardService {
     // ---------------------------------------------------------------------
 
     /**
-     * Fetch terminal status for the dashboard widget. Shows terminal name, make,
-     * and active status.
+     * Fetch terminal status for the dashboard widget. Shows terminal serial, make,
+     * and status based on transaction activity (active if transacted in last 24h).
      */
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> getTerminalStatus() {
         String sql = """
-                SELECT t.serial, t.make, t.active, t.last_seen_at
+                SELECT t.serial, t.make, t.last_seen_at,
+                       (SELECT MAX(tx.created_at) FROM transactions tx WHERE tx.metadata->>'device_serial' = t.serial) as last_txn
                 FROM terminals t
                 WHERE 1=1
-                """ + userScope("t.user_id") + " ORDER BY t.serial LIMIT 10";
+                """
+                + userScope("t.user_id") + " ORDER BY t.serial LIMIT 10";
         Query q = entityManager.createNativeQuery(sql);
         bindScope(q);
         List<Object[]> rows = q.getResultList();
@@ -315,11 +317,33 @@ public class DashboardService {
             Map<String, Object> terminal = new LinkedHashMap<>();
             terminal.put("serial", row[0] != null ? row[0].toString() : null);
             terminal.put("make", row[1] != null ? row[1].toString() : null);
-            terminal.put("active", row[2] != null ? (Boolean) row[2] : false);
-            terminal.put("last_seen_at", row[3] != null ? row[3].toString() : null);
+            terminal.put("last_seen_at", row[2] != null ? row[2].toString() : null);
+            // Derive status: active if transacted in last 24h, idle otherwise
+            String status = "idle";
+            if (row[3] != null) {
+                try {
+                    LocalDateTime lastTxn = toLocalDateTime(row[3]);
+                    if (lastTxn.isAfter(LocalDateTime.now().minusHours(24))) {
+                        status = "active";
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            terminal.put("status", status);
+            terminal.put("last_transaction_at", row[3] != null ? row[3].toString() : null);
             terminals.add(terminal);
         }
         return terminals;
+    }
+
+    private LocalDateTime toLocalDateTime(Object o) {
+        if (o instanceof java.sql.Timestamp ts) {
+            return ts.toLocalDateTime();
+        }
+        if (o instanceof LocalDateTime dt) {
+            return dt;
+        }
+        return LocalDateTime.parse(o.toString());
     }
 
     // ---------------------------------------------------------------------
