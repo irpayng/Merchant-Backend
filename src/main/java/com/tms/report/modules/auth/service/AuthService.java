@@ -325,7 +325,27 @@ public class AuthService {
         Optional<MerchantUser> byMerchantId = merchantUserRepository.findByMerchantId(merchantId).stream()
                 .filter(u -> MerchantUser.ROLE_OWNER.equalsIgnoreCase(u.getRole())).findFirst();
         if (byMerchantId.isPresent()) {
-            return byMerchantId.get();
+            MerchantUser existing = byMerchantId.get();
+            boolean updated = false;
+            // Update email if it was previously null (e.g., user originally signed up via
+            // phone)
+            if (existing.getEmail() == null && normalizedEmail != null) {
+                // Check no other user has this email
+                if (merchantUserRepository.findByEmail(normalizedEmail).isEmpty()) {
+                    existing.setEmail(normalizedEmail);
+                    updated = true;
+                    log.info("Updated email for merchantId={} from null to {}", merchantId, normalizedEmail);
+                }
+            }
+            // Update phone if it was previously null
+            if (existing.getPhoneNumber() == null && phoneNumber != null && !phoneNumber.isBlank()) {
+                existing.setPhoneNumber(phoneNumber);
+                updated = true;
+            }
+            if (updated) {
+                return merchantUserRepository.save(existing);
+            }
+            return existing;
         }
 
         // 2. Check if a MerchantUser already exists with this email (avoid duplicate

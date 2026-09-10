@@ -60,7 +60,12 @@ public class MerchantUserDetails implements UserDetails {
 
     @Override
     public String getUsername() {
-        return merchantUser.getEmail();
+        // Mobile-onboarded merchants may not have an email; use phone as fallback
+        String email = merchantUser.getEmail();
+        if (email != null && !email.isBlank()) {
+            return email;
+        }
+        return merchantUser.getPhoneNumber();
     }
 
     @Override
