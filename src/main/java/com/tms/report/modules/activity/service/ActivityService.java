@@ -62,6 +62,25 @@ public class ActivityService {
             queryParams.add(merchantId);
         }
 
+        // Filter by action
+        String action = params.get("action");
+        if (action != null && !action.isBlank()) {
+            where.append(" AND al.action = ?").append(paramIndex++);
+            queryParams.add(action);
+        }
+
+        // Filter by date range
+        String dateFrom = params.get("date_from");
+        String dateTo = params.get("date_to");
+        if (dateFrom != null && !dateFrom.isBlank()) {
+            where.append(" AND al.created_at >= ?").append(paramIndex++);
+            queryParams.add(java.sql.Timestamp.valueOf(dateFrom + " 00:00:00"));
+        }
+        if (dateTo != null && !dateTo.isBlank()) {
+            where.append(" AND al.created_at <= ?").append(paramIndex++);
+            queryParams.add(java.sql.Timestamp.valueOf(dateTo + " 23:59:59"));
+        }
+
         String sql = """
                 SELECT al.id, al.action, al.path, al.user_id, al.user_name, al.user_email, al.user_role,
                        CASE
@@ -101,13 +120,13 @@ public class ActivityService {
             Map<String, Object> item = new java.util.LinkedHashMap<>();
             item.put("id", ((Number) row[0]).longValue());
 
-            String action = row[1] != null ? row[1].toString() : null;
+            String rowAction = row[1] != null ? row[1].toString() : null;
             String userName = row[4] != null ? row[4].toString() : null;
             String module = row[7] != null ? row[7].toString() : null;
 
-            item.put("action", action);
+            item.put("action", rowAction);
             item.put("module", module);
-            item.put("description", buildDescription(userName, action));
+            item.put("description", buildDescription(userName, rowAction));
 
             // User object for the table
             if (row[3] != null) {
@@ -248,5 +267,28 @@ public class ActivityService {
         String user = userName != null ? userName : "User";
         String act = action != null ? action.toLowerCase() : "performed action";
         return user + " performed " + act;
+    }
+
+    /**
+     * Get filter options for the audit log listing. Returns distinct actions for
+     * the current merchant so the frontend can populate the Action dropdown.
+     */
+    @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> getFilters() {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return Map.of("actions", List.of());
+        }
+
+        List<String> rows = entityManager
+                .createNativeQuery("SELECT DISTINCT al.action FROM merchant.audit_logs al "
+                        + "WHERE al.merchant_id = :merchantId AND al.action IS NOT NULL " + "ORDER BY al.action")
+                .setParameter("merchantId", merchantId).getResultList();
+
+        List<Map<String, String>> actions = rows.stream().filter(action -> action != null && !action.isBlank())
+                .map(action -> Map.of("id", action, "name", action)).toList();
+
+        return Map.of("actions", actions);
     }
 }
