@@ -359,7 +359,8 @@ public class GrpcClient {
      * staff via the dashboard.
      */
     public Map<String, Object> createOperator(long merchantUserId, String username, String password, String name,
-            String email, String phoneNumber, String pin, boolean dashboardEnabled, boolean posEnabled) {
+            String email, String phoneNumber, String pin, boolean dashboardEnabled, boolean posEnabled,
+            String terminalMode) {
         logRequest("CreateOperator", username);
         try {
             var builder = com.tms.report.grpc.user.CreateOperatorRequest.newBuilder().setMerchantUserId(merchantUserId)
@@ -371,6 +372,8 @@ public class GrpcClient {
                 builder.setEmail(email);
             if (phoneNumber != null)
                 builder.setPhoneNumber(phoneNumber);
+            if (terminalMode != null)
+                builder.setTerminalMode(terminalMode);
 
             var resp = userStub.createOperator(builder.build());
             Map<String, Object> result = new HashMap<>();
@@ -390,7 +393,7 @@ public class GrpcClient {
      * Update an operator's status, password, or access flags.
      */
     public Map<String, Object> updateOperator(long operatorId, long merchantUserId, String status, String password,
-            Boolean dashboardEnabled, Boolean posEnabled) {
+            Boolean dashboardEnabled, Boolean posEnabled, String terminalMode) {
         logRequest("UpdateOperator", String.valueOf(operatorId));
         try {
             var builder = com.tms.report.grpc.user.UpdateOperatorRequest.newBuilder().setOperatorId(operatorId)
@@ -407,6 +410,9 @@ public class GrpcClient {
             }
             if (posEnabled != null) {
                 builder.setUpdatePosEnabled(true).setPosEnabled(posEnabled);
+            }
+            if (terminalMode != null) {
+                builder.setUpdateTerminalMode(true).setTerminalMode(terminalMode);
             }
 
             var resp = userStub.updateOperator(builder.build());
