@@ -790,10 +790,21 @@ public class GrpcClient {
                 builder.setTerminalId(str(data, "terminal_id"));
             if (data.containsKey("merchant_id"))
                 builder.setMerchantId(str(data, "merchant_id"));
-            if (data.containsKey("internal"))
+            // Each optional field carries its own guard flag so a partial update
+            // touches only what the caller supplied. `internal` needs one most:
+            // a bool has no "absent" state, so config applied the proto default
+            // `false` and every processor/product scope change silently demoted
+            // the TID to external. Saying preserve_internal when the caller did
+            // not supply `internal` is what stops that.
+            if (data.containsKey("internal")) {
                 builder.setInternal((Boolean) data.get("internal"));
+            } else {
+                builder.setPreserveInternal(true);
+            }
             if (data.containsKey("processor"))
                 builder.setProcessor(str(data, "processor")).setUpdateProcessor(true);
+            if (data.containsKey("product"))
+                builder.setProduct(str(data, "product")).setUpdateProduct(true);
 
             var resp = configStub.updateTid(builder.build());
             return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
