@@ -115,7 +115,8 @@ public class UserService {
                        u.bvn_photo_url,
                        (SELECT w.pnd_reason FROM wallets w WHERE w.user_id = u.id AND w.pnd = true AND w.pnd_reason IS NOT NULL LIMIT 1) as pnd_reason,
                        u.frozen_at, u.suspended_at, u.blocked_at,
-                       CASE WHEN EXISTS (SELECT 1 FROM instant_settlements ist WHERE ist.user_id = u.id AND ist.status = 'active') THEN true ELSE false END as instant_settlement
+                       CASE WHEN EXISTS (SELECT 1 FROM instant_settlements ist WHERE ist.user_id = u.id AND ist.status = 'active') THEN true ELSE false END as instant_settlement,
+                       CASE WHEN EXISTS (SELECT 1 FROM business_applications ba WHERE ba.user_id = u.id AND ba.status_code = 'completed') THEN true ELSE false END as has_cac
                 FROM users u
                 LEFT JOIN profiles p ON p.user_id = u.id
                 LEFT JOIN tiers t ON t.code = CAST(u.tier_id AS text)
@@ -628,13 +629,17 @@ public class UserService {
         // instant-settlement enrollment. Surfaced as a column on the Merchants
         // list so a bank can see at a glance who is enrolled.
         boolean instantSettlement = row.length > 19 && Boolean.TRUE.equals(row[19]);
+        // row[20]=has_cac — whether the agent has a completed business application
+        // (CAC registration). Surfaced as a column on the Users list.
+        boolean hasCac = row.length > 20 && Boolean.TRUE.equals(row[20]);
 
         return UserDto.builder().id(((Number) row[0]).longValue()).name(name)
                 .email(row[2] != null ? row[2].toString() : null).avatar(avatar)
                 .phoneNumber(row[3] != null ? row[3].toString() : null).tier(tierDto)
                 .type(row[4] != null ? row[4].toString() : null).lastTransactionDate(lastTxDate)
                 .active((Boolean) row[8]).pnd((Boolean) row[9]).pndReason(pndReason).frozen(frozen).suspended(suspended)
-                .blocked(blocked).instantSettlement(instantSettlement).parent(parent).createdAt(createdAt).build();
+                .blocked(blocked).instantSettlement(instantSettlement).hasCac(hasCac).parent(parent)
+                .createdAt(createdAt).build();
     }
 
     private UserDto toDto(User user) {

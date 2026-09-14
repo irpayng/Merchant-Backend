@@ -53,12 +53,19 @@ public class MerchantUserDetails implements UserDetails {
 
     @Override
     public String getPassword() {
-        return merchantUser.getPassword();
+        // Password authentication is delegated to tms-user via gRPC
+        // This method is not used for login but required by UserDetails interface
+        return "";
     }
 
     @Override
     public String getUsername() {
-        return merchantUser.getEmail();
+        // Mobile-onboarded merchants may not have an email; use phone as fallback
+        String email = merchantUser.getEmail();
+        if (email != null && !email.isBlank()) {
+            return email;
+        }
+        return merchantUser.getPhoneNumber();
     }
 
     @Override

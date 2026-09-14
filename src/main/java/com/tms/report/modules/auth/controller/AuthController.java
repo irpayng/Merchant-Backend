@@ -4,6 +4,7 @@ import com.tms.report.core.dto.ApiResponse;
 import com.tms.report.modules.auth.dto.ActivateOtpRequest;
 import com.tms.report.modules.auth.dto.ActivateRequest;
 import com.tms.report.modules.auth.dto.ChangePasswordRequest;
+import com.tms.report.modules.auth.dto.CrossLoginRequest;
 import com.tms.report.modules.auth.dto.ForgotPasswordRequest;
 import com.tms.report.modules.auth.dto.LoginRequest;
 import com.tms.report.modules.auth.dto.LoginResponse;
@@ -24,6 +25,22 @@ public class AuthController {
     @PostMapping("/login")
     public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return ApiResponse.success(authService.login(request));
+    }
+
+    /**
+     * Cross-system login for mobile-upgraded merchants. Validates credentials
+     * against tms-user (the microservices user store) and issues a merchant
+     * dashboard JWT.
+     *
+     * <p>
+     * Use this endpoint when the merchant was originally onboarded via the mobile
+     * app and later upgraded to merchant type. They can sign in with their existing
+     * mobile app credentials (email/phone + password) instead of going through the
+     * document-upload activation flow.
+     */
+    @PostMapping("/cross-login")
+    public ApiResponse<LoginResponse> crossLogin(@Valid @RequestBody CrossLoginRequest request) {
+        return ApiResponse.success(authService.crossLogin(request));
     }
 
     @GetMapping("/me")

@@ -63,6 +63,55 @@ public class PagedResponse {
     }
 
     /**
+     * Build a paged response from a list with explicit pagination params. Used when
+     * the data is fetched from an external service (gRPC) and not via Spring Data.
+     */
+    public static Map<String, Object> from(List<? extends Object> data, long total, int currentPage, int perPage,
+            String path, Map<String, Object> extra) {
+        Map<String, Object> response = new LinkedHashMap<>();
+
+        int lastPage = Math.max((int) Math.ceil((double) total / perPage), 1);
+
+        response.put("data", data);
+
+        // Links
+        Map<String, Object> links = new LinkedHashMap<>();
+        links.put("first", path + "?page=1");
+        links.put("last", path + "?page=" + lastPage);
+        links.put("prev", currentPage > 1 ? path + "?page=" + (currentPage - 1) : null);
+        links.put("next", currentPage < lastPage ? path + "?page=" + (currentPage + 1) : null);
+        response.put("links", links);
+
+        // Meta
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("current_page", currentPage);
+        meta.put("from", total > 0 ? (currentPage - 1) * perPage + 1 : null);
+        meta.put("last_page", lastPage);
+        meta.put("links", buildMetaLinks(currentPage, lastPage, path));
+        meta.put("path", path);
+        meta.put("per_page", perPage);
+        meta.put("to", total > 0 ? Math.min((long) currentPage * perPage, total) : null);
+        meta.put("total", total);
+        response.put("meta", meta);
+
+        if (extra != null) {
+            response.putAll(extra);
+        }
+
+        response.put("code", 200);
+        response.put("message", "Successful");
+
+        return response;
+    }
+
+    /**
+     * Empty paged response — returns the structure with no data.
+     */
+    public static Map<String, Object> empty(String path) {
+        return from(List.of(), 0, 1, 10, path, null);
+    }
+
+    /**
      * Build the meta.links array matching Laravel's LengthAwarePaginator. Format:
      * [Previous, 1, 2, ..., N, Next]
      */

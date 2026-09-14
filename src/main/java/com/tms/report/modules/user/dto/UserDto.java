@@ -42,6 +42,9 @@ public class UserDto {
     @JsonProperty("instant_settlement")
     private Boolean instantSettlement;
 
+    @JsonProperty("has_cac")
+    private Boolean hasCac;
+
     private Object parent;
 
     @JsonProperty("created_at")

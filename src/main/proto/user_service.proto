@@ -51,6 +51,28 @@ service UserService {
   rpc UnfreezeUser (UnfreezeUserRequest) returns (AccountActionResponse);
   rpc ResetDevice (ResetDeviceRequest) returns (AccountActionResponse);
   rpc ClearNewDeviceLimit (ClearNewDeviceLimitRequest) returns (AccountActionResponse);
+
+  // ── Cross-system authentication ──
+  // Authenticate a user by email/phone + password and return their profile.
+  // Used for cross-system login: mobile-upgraded merchants can sign into
+  // the merchant dashboard using their tms-user credentials.
+  rpc AuthUser (AuthUserRequest) returns (AuthUserResponse);
+
+  // ── Operator management ──
+  // Create an operator (staff) under a merchant. Called when a merchant invites
+  // staff via the dashboard.
+  rpc CreateOperator (CreateOperatorRequest) returns (CreateOperatorResponse);
+
+  // Authenticate an operator by email + password for dashboard login.
+  rpc AuthOperator (AuthOperatorRequest) returns (AuthOperatorResponse);
+
+  // Update an operator's status, password, or access flags.
+  rpc UpdateOperator (UpdateOperatorRequest) returns (UpdateOperatorResponse);
+
+  // ── Password sync (called by Merchant-Backend to sync to tms-user) ──
+  // Set a user's password in tms-user. Used by password reset and activation
+  // flows to keep credentials in sync between Merchant-Backend and tms-user.
+  rpc SetUserPassword (SetUserPasswordRequest) returns (SetUserPasswordResponse);
 }
 
 message UnfreezeUserRequest {
@@ -151,6 +173,7 @@ message FindUserRequest {
 
 message UserExistsResponse {
   bool exists = 1;
+  int64 user_id = 2;
 }
 
 message UpdateUserTierRequest {
@@ -183,6 +206,8 @@ message GetUserProfileResponse {
   string type = 8;
   string email = 9;
   int64 parent_id = 10;
+  string phone_number = 11;
+  string business_name = 12;
 }
 
 // Admin command messages
@@ -260,4 +285,101 @@ message MarkAccountDeletionRequestProcessedRequest {
   // Optional support note; kept on the row for audit.
   string note = 3;
   Actor actor = 4;
+}
+
+// ── Cross-system authentication (for merchant dashboard login) ──
+
+message AuthUserRequest {
+  // Email or phone number
+  string identifier = 1;
+  string password = 2;
+}
+
+message AuthUserResponse {
+  bool success = 1;
+  // "ok", "invalid_credentials", "blocked", "not_merchant", or error message
+  string reason = 2;
+  string message = 3;
+  // Populated only on success
+  int64 user_id = 4;
+  string type = 5;
+  string email = 6;
+  string phone_number = 7;
+  string first_name = 8;
+  string last_name = 9;
+  string business_name = 10;
+}
+
+// ── Operator management messages ──
+
+message CreateOperatorRequest {
+  int64 merchant_user_id = 1;
+  string username = 2;
+  string password = 3;
+  string name = 4;
+  string email = 5;
+  string phone_number = 6;
+  string pin = 7;
+  bool dashboard_enabled = 8;
+  bool pos_enabled = 9;
+}
+
+message CreateOperatorResponse {
+  bool success = 1;
+  string reason = 2;
+  string message = 3;
+  int64 operator_id = 4;
+}
+
+message AuthOperatorRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message AuthOperatorResponse {
+  bool success = 1;
+  string reason = 2;
+  string message = 3;
+  int64 operator_id = 4;
+  int64 merchant_user_id = 5;
+  string name = 6;
+  string email = 7;
+  string phone_number = 8;
+  string username = 9;
+}
+
+message UpdateOperatorRequest {
+  int64 operator_id = 1;
+  int64 merchant_user_id = 2;
+  bool update_status = 3;
+  string status = 4;
+  bool update_password = 5;
+  string password = 6;
+  bool update_dashboard_enabled = 7;
+  bool dashboard_enabled = 8;
+  bool update_pos_enabled = 9;
+  bool pos_enabled = 10;
+}
+
+message UpdateOperatorResponse {
+  bool success = 1;
+  string reason = 2;
+  string message = 3;
+}
+
+
+// ── Password sync (called by Merchant-Backend to sync to tms-user) ──
+
+message SetUserPasswordRequest {
+  // The user's id in tms-user
+  int64 user_id = 1;
+  // Plain-text password (will be BCrypt hashed by tms-user)
+  string password = 2;
+}
+
+message SetUserPasswordResponse {
+  bool success = 1;
+  // "ok", "not_found", "invalid_password", "protected_account", or error
+  string reason = 2;
+  string message = 3;
 }

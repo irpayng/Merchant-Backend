@@ -19,6 +19,8 @@ service WalletService {
   rpc SetPnd (SetPndRequest) returns (SetPndResponse);
   // Balance reconciliation — recalculates from statements, resets checksum, clears PND
   rpc ReconcileBalance (ReconcileBalanceRequest) returns (WalletCommandResponse);
+  // List wallet statements for a user — paginated statement history
+  rpc ListStatements (ListStatementsRequest) returns (ListStatementsResponse);
 }
 
 message WalletOperationRequest {
@@ -137,4 +139,39 @@ message ReconcileBalanceRequest {
   string wallet_type = 2;
   Actor actor = 3;
   bool skip_hold_release = 4;
+}
+
+
+// ── Statement listing messages ──
+
+message ListStatementsRequest {
+  int64 user_id = 1;
+  string wallet_type = 2; // "default" or "commission", blank for both
+  int32 page = 3;
+  int32 limit = 4;
+  string start_date = 5; // ISO date yyyy-MM-dd
+  string end_date = 6;   // ISO date yyyy-MM-dd
+  string type = 7;       // "credit" or "debit", blank for both
+}
+
+message StatementItem {
+  int64 id = 1;
+  string type = 2;       // "credit" or "debit"
+  string amount = 3;
+  string previous_balance = 4;
+  string current_balance = 5;
+  string description = 6;
+  string category = 7;
+  string source_type = 8;
+  string source_reference = 9;
+  string wallet_type = 10;
+  string created_at = 11;
+}
+
+message ListStatementsResponse {
+  bool success = 1;
+  repeated StatementItem statements = 2;
+  int64 total = 3;
+  int32 page = 4;
+  int32 limit = 5;
 }

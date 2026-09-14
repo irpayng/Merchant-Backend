@@ -17,6 +17,11 @@ public interface MerchantUserRepository
     Optional<MerchantUser> findByPhoneNumber(String phoneNumber);
 
     /**
+     * Find a staff user by their tms-user operator id.
+     */
+    Optional<MerchantUser> findByOperatorId(Long operatorId);
+
+    /**
      * All logins (owner + cashiers) for a merchant — powers the owner's staff list.
      */
     List<MerchantUser> findByMerchantId(Long merchantId);

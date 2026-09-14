@@ -1,6 +1,7 @@
 package com.tms.report.modules.dashboard.service;
 
 import com.tms.report.core.security.MerchantScope;
+import com.tms.report.modules.grpc.service.GrpcClient;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import java.time.Duration;
@@ -13,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,15 +24,24 @@ import org.springframework.transaction.annotation.Transactional;
  * business sees only its own terminals/TIDs/transactions. No platform finance
  * (revenue/liquidity/ledger).
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DashboardService {
 
     private final EntityManager entityManager;
     private final MerchantScope merchantScope;
+    private final GrpcClient grpcClient;
 
     private static final DateTimeFormatter LABEL_FMT = DateTimeFormatter.ofPattern("MMM d");
     private static final List<String> TREND_STATUSES = List.of("completed", "processing", "reversed");
+    /**
+     * Product codes that represent inflows to the merchant's wallet. Used to filter
+     * dashboard "Total Sales" metrics to show only money coming in. - purchase:
+     * Card purchase at POS terminal (customer pays merchant) - virtual-funding:
+     * Bank transfer to merchant's virtual account
+     */
+    private static final List<String> INFLOW_PRODUCT_CODES = List.of("purchase", "virtual-funding");
 
     // ---------------------------------------------------------------------
     // Scope helpers
@@ -85,6 +96,30 @@ public class DashboardService {
             data.put("alerts", getAlerts());
         } catch (Exception e) {
             data.put("alerts", List.of());
+        }
+
+        // Wallet balances
+        try {
+            data.put("wallet", getWalletData());
+        } catch (Exception e) {
+            log.warn("Failed to fetch wallet data: {}", e.getMessage());
+            data.put("wallet", Map.of("main_balance", "0", "commission_balance", "0"));
+        }
+
+        // Recent transactions for homepage widget
+        try {
+            data.put("recent_transactions", getRecentTransactions(5));
+        } catch (Exception e) {
+            log.warn("Failed to fetch recent transactions: {}", e.getMessage());
+            data.put("recent_transactions", List.of());
+        }
+
+        // Terminal status for homepage widget
+        try {
+            data.put("terminal_status", getTerminalStatus());
+        } catch (Exception e) {
+            log.warn("Failed to fetch terminal status: {}", e.getMessage());
+            data.put("terminal_status", List.of());
         }
 
         return data;
@@ -197,6 +232,121 @@ public class DashboardService {
     }
 
     // ---------------------------------------------------------------------
+    // Wallet balances
+    // ---------------------------------------------------------------------
+
+    /**
+     * Fetch wallet balances for the authenticated merchant from wallet-service.
+     * Returns main (default) and commission wallet balances.
+     */
+    private Map<String, Object> getWalletData() {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return Map.of("main_balance", "0", "commission_balance", "0");
+        }
+        Map<String, Object> balances = grpcClient.getUserBalances(merchantId);
+        Map<String, Object> wallet = new LinkedHashMap<>();
+        wallet.put("main_balance", balances.getOrDefault("main_balance", "0"));
+        wallet.put("commission_balance", balances.getOrDefault("commission_balance", "0"));
+        return wallet;
+    }
+
+    // ---------------------------------------------------------------------
+    // Recent transactions for dashboard widget
+    // ---------------------------------------------------------------------
+
+    /**
+     * Fetch the most recent transactions for the dashboard widget. Excludes manual
+     * funding entries (admin wallet adjustments).
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> getRecentTransactions(int limit) {
+        String sql = """
+                SELECT t.id, t.reference, t.amount, t.status_code, t.created_at,
+                       COALESCE(t.metadata->>'card_holder_name', t.metadata->>'card_holder',
+                                t.metadata->>'account_name', t.metadata->>'beneficiary_name') as customer,
+                       COALESCE(t.metadata->>'serial', t.terminal_id) as terminal_serial
+                FROM transactions t
+                WHERE 1=1
+                """ + userScope("t.user_id")
+                + " AND COALESCE(t.product_code, '') NOT IN ('manual-funding', 'manual-credit', 'manual-debit')"
+                + " ORDER BY t.created_at DESC LIMIT :lim";
+        Query q = entityManager.createNativeQuery(sql);
+        bindScope(q);
+        q.setParameter("lim", limit);
+        List<Object[]> rows = q.getResultList();
+
+        List<Map<String, Object>> transactions = new ArrayList<>();
+        for (Object[] row : rows) {
+            Map<String, Object> txn = new LinkedHashMap<>();
+            txn.put("id", row[0] != null ? ((Number) row[0]).longValue() : null);
+            txn.put("reference", row[1] != null ? row[1].toString() : null);
+            txn.put("amount", row[2] != null ? row[2].toString() : "0");
+            txn.put("status", row[3] != null ? row[3].toString() : null);
+            txn.put("created_at", row[4] != null ? row[4].toString() : null);
+            txn.put("customer", row[5] != null ? row[5].toString() : null);
+            txn.put("terminal_serial", row[6] != null ? row[6].toString() : null);
+            transactions.add(txn);
+        }
+        return transactions;
+    }
+
+    // ---------------------------------------------------------------------
+    // Terminal status for dashboard widget
+    // ---------------------------------------------------------------------
+
+    /**
+     * Fetch terminal status for the dashboard widget. Shows terminal serial, make,
+     * and status based on transaction activity (active if transacted in last 24h).
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> getTerminalStatus() {
+        String sql = """
+                SELECT t.serial, t.make, t.last_seen_at,
+                       (SELECT MAX(tx.created_at) FROM transactions tx WHERE tx.terminal_id = t.serial OR tx.metadata->>'device_serial' = t.serial OR tx.metadata->>'serial' = t.serial) as last_txn
+                FROM terminals t
+                WHERE 1=1
+                """
+                + userScope("t.user_id") + " ORDER BY t.serial LIMIT 10";
+        Query q = entityManager.createNativeQuery(sql);
+        bindScope(q);
+        List<Object[]> rows = q.getResultList();
+
+        List<Map<String, Object>> terminals = new ArrayList<>();
+        for (Object[] row : rows) {
+            Map<String, Object> terminal = new LinkedHashMap<>();
+            terminal.put("serial", row[0] != null ? row[0].toString() : null);
+            terminal.put("make", row[1] != null ? row[1].toString() : null);
+            terminal.put("last_seen_at", row[2] != null ? row[2].toString() : null);
+            // Derive status: active if transacted in last 24h, idle otherwise
+            String status = "idle";
+            if (row[3] != null) {
+                try {
+                    LocalDateTime lastTxn = toLocalDateTime(row[3]);
+                    if (lastTxn.isAfter(LocalDateTime.now().minusHours(24))) {
+                        status = "active";
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+            terminal.put("status", status);
+            terminal.put("last_transaction_at", row[3] != null ? row[3].toString() : null);
+            terminals.add(terminal);
+        }
+        return terminals;
+    }
+
+    private LocalDateTime toLocalDateTime(Object o) {
+        if (o instanceof java.sql.Timestamp ts) {
+            return ts.toLocalDateTime();
+        }
+        if (o instanceof LocalDateTime dt) {
+            return dt;
+        }
+        return LocalDateTime.parse(o.toString());
+    }
+
+    // ---------------------------------------------------------------------
     // Transaction health
     // ---------------------------------------------------------------------
 
@@ -274,7 +424,7 @@ public class DashboardService {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("terminal_serial", row[0] != null ? row[0].toString() : "unknown");
             item.put("count", ((Number) row[1]).longValue());
-            item.put("total", ((Number) row[2]).doubleValue());
+            item.put("total", ((Number) row[2]).longValue());
             out.add(item);
         }
         return out;
@@ -297,12 +447,14 @@ public class DashboardService {
                 SELECT CAST(created_at AS date) as d, status_code, COALESCE(SUM(amount), 0)
                 FROM transactions
                 WHERE created_at >= :s AND created_at <= :e AND status_code IN ('completed', 'processing', 'reversed')
+                  AND product_code IN (:inflowCodes)
                 """ + userScope("user_id") + """
                  GROUP BY CAST(created_at AS date), status_code
                 ORDER BY d
                 """);
         q.setParameter("s", period.start);
         q.setParameter("e", period.end);
+        q.setParameter("inflowCodes", INFLOW_PRODUCT_CODES);
         bindScope(q);
         List<Object[]> rows = q.getResultList();
 
@@ -352,7 +504,7 @@ public class DashboardService {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("id", row[0] != null ? ((Number) row[0]).longValue() : null);
             item.put("name", row[1] != null ? row[1].toString() : "Unknown");
-            item.put("total", ((Number) row[2]).doubleValue());
+            item.put("total", ((Number) row[2]).longValue());
             return item;
         }).toList();
     }
@@ -367,11 +519,13 @@ public class DashboardService {
                 SELECT status_code, COUNT(*) as cnt, COALESCE(SUM(amount), 0) as amt
                 FROM transactions
                 WHERE created_at >= :s AND created_at <= :e
+                  AND product_code IN (:inflowCodes)
                 """ + userScope("user_id") + """
                  GROUP BY status_code
                 """);
         q.setParameter("s", start);
         q.setParameter("e", end);
+        q.setParameter("inflowCodes", INFLOW_PRODUCT_CODES);
         bindScope(q);
         List<Object[]> rows = q.getResultList();
 

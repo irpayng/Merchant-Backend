@@ -53,7 +53,7 @@ public class TerminalController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('manage_terminal')")
-    public Map<String, Object> index(@RequestParam Map<String, String> params) {
+    public Map<String, Object> index(@RequestParam Map<String, String> params, HttpServletRequest request) {
         int page = Integer.parseInt(params.getOrDefault("page", "1")) - 1;
         int limit = Integer.parseInt(params.getOrDefault("limit", "15"));
 
@@ -80,6 +80,12 @@ public class TerminalController {
         LocalDateTime staleSince = parseStaleCutoff(params.get("stale"));
         String mapped = parseMapped(params.get("mapped"));
 
+        // Parse date range using QueryFilterHelper (handles toEndOfDay)
+        extractDates(request, params);
+        LocalDateTime[] dates = QueryFilterHelper.extractDates(params);
+        LocalDateTime dateFrom = dates[0];
+        LocalDateTime dateTo = dates[1];
+
         // Sort is baked into the native query (ORDER BY t.created_at DESC),
         // so we don't pass a Sort here — Spring would append it post-WHERE
         // using the entity property name `createdAt`, which doesn't exist
@@ -87,13 +93,14 @@ public class TerminalController {
         var pageable = PageRequest.of(page, limit);
         var result = terminalRepository.findFiltered(searchPattern, make, os, networkType, batteryBelow, printerStatus,
                 staleSince, mapped, parseLocked(params.get("status")), merchantScopeId(), merchantScope.terminalId(),
-                pageable);
+                dateFrom, dateTo, pageable);
         attachMappedUsers(result.getContent());
         return PagedResponse.from(result, "/terminals", extra);
     }
 
     @GetMapping("/download")
-    public void download(@RequestParam Map<String, String> params, HttpServletResponse response) throws Exception {
+    public void download(@RequestParam Map<String, String> params, HttpServletRequest request,
+            HttpServletResponse response) throws Exception {
         String s = trimToNull(params.get("search"));
         final String searchPattern = s != null ? "%" + s.toLowerCase() + "%" : null;
         final String make = trimToNull(params.get("make"));
@@ -107,13 +114,18 @@ public class TerminalController {
         final Long merchantId = merchantScopeId();
         final Long terminalId = merchantScope.terminalId();
 
+        // Parse date range using QueryFilterHelper (handles toEndOfDay)
+        extractDates(request, params);
+        LocalDateTime[] dates = QueryFilterHelper.extractDates(params);
+        final LocalDateTime dateFrom = dates[0];
+        final LocalDateTime dateTo = dates[1];
+
         XlsxExporter.streamPaged(response, "terminals",
                 new String[]{"ID", "Serial", "OS", "Model", "Make", "User ID", "Agent", "Active", "Created At"}, 1000,
                 (page, size) -> {
-                    var content = terminalRepository
-                            .findFiltered(searchPattern, make, os, networkType, batteryBelow, printerStatus, staleSince,
-                                    mapped, locked, merchantId, terminalId, PageRequest.of(page, size))
-                            .getContent();
+                    var content = terminalRepository.findFiltered(searchPattern, make, os, networkType, batteryBelow,
+                            printerStatus, staleSince, mapped, locked, merchantId, terminalId, dateFrom, dateTo,
+                            PageRequest.of(page, size)).getContent();
                     attachMappedUsers(content);
                     return content;
                 },
@@ -122,6 +134,17 @@ public class TerminalController {
                         row.getUser() != null ? row.getUser().getName() : "",
                         row.getActive() != null ? row.getActive().toString() : "",
                         row.getCreatedAt() != null ? row.getCreatedAt().toString() : ""});
+    }
+
+    /**
+     * GET /terminals/download-sample — download a sample XLSX file for bulk
+     * terminal upload.
+     */
+    @GetMapping("/download-sample")
+    public void downloadSample(HttpServletResponse response) throws Exception {
+        XlsxExporter.streamSample(response, "terminals-upload-sample", new String[]{"Serial", "Make", "Model", "OS"},
+                List.of(new String[]{"ABC123456789", "PAX", "A920", "Android 7.1"},
+                        new String[]{"DEF987654321", "Newland", "N910", "Android 9.0"}));
     }
 
     @GetMapping("/{id}")
@@ -317,6 +340,80 @@ public class TerminalController {
     public ApiResponse<TerminalMetric> latestMetrics(@PathVariable String serial) {
         return terminalMetricRepository.findFirstBySerialOrderByCreatedAtDesc(serial).map(ApiResponse::success)
                 .orElseGet(() -> ApiResponse.error(404, "No metrics recorded for terminal"));
+    }
+
+    // ── Remote Prep ────────────────────────────────────────────
+
+    /**
+     * POST /terminals/{id}/request-prep — remotely trigger key injection on a
+     * terminal. Pushes an MQTT message to the device so it re-downloads TMK/TPK
+     * pairs from the provider and re-injects them into the secure PIN pad. Useful
+     * after key rotation or when a device is stuck on stale keys.
+     */
+    @PostMapping("/{id}/request-prep")
+    @PreAuthorize("hasAuthority('manage_terminal')")
+    public ApiResponse<Map<String, Object>> requestPrep(@PathVariable Long id) {
+        Terminal terminal = loadScopedTerminal(id);
+        String serial = terminal.getSerial();
+        if (serial == null || serial.isBlank()) {
+            return ApiResponse.error(400, "Terminal has no serial number");
+        }
+        try {
+            boolean delivered = configHttpClient.requestPrep(serial);
+            return ApiResponse.success(Map.of("serial", serial, "delivered", delivered, "message",
+                    delivered ? "Prep signal sent to " + serial : "Terminal offline — prep queued"));
+        } catch (Exception e) {
+            return ApiResponse.error(500, "Failed to request prep: " + e.getMessage());
+        }
+    }
+
+    // ── Lock / Unlock ────────────────────────────────────────────
+
+    /**
+     * POST /terminals/{id}/lock — lock a terminal with a reason message. The POS
+     * polls the per-serial status endpoint and renders a contact-support block
+     * screen until the lock is cleared.
+     */
+    @PostMapping("/{id}/lock")
+    @PreAuthorize("hasAuthority('manage_terminal')")
+    public ApiResponse<Map<String, Object>> lock(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        Terminal terminal = loadScopedTerminal(id);
+        String serial = terminal.getSerial();
+        if (serial == null || serial.isBlank()) {
+            return ApiResponse.error(400, "Terminal has no serial number");
+        }
+        String message = body.get("message") != null ? body.get("message").toString() : "";
+        if (message.isBlank()) {
+            return ApiResponse.error(400, "Lock message is required");
+        }
+        try {
+            configHttpClient.postJson("/terminals/" + serial + "/lock", Map.of("message", message));
+            return ApiResponse
+                    .success(Map.of("serial", serial, "locked", true, "message", "Terminal " + serial + " locked"));
+        } catch (Exception e) {
+            return ApiResponse.error(500, "Failed to lock terminal: " + e.getMessage());
+        }
+    }
+
+    /**
+     * POST /terminals/{id}/unlock — clear an existing lock so the device can resume
+     * taking transactions.
+     */
+    @PostMapping("/{id}/unlock")
+    @PreAuthorize("hasAuthority('manage_terminal')")
+    public ApiResponse<Map<String, Object>> unlock(@PathVariable Long id) {
+        Terminal terminal = loadScopedTerminal(id);
+        String serial = terminal.getSerial();
+        if (serial == null || serial.isBlank()) {
+            return ApiResponse.error(400, "Terminal has no serial number");
+        }
+        try {
+            configHttpClient.postJson("/terminals/" + serial + "/unlock", Map.of());
+            return ApiResponse
+                    .success(Map.of("serial", serial, "locked", false, "message", "Terminal " + serial + " unlocked"));
+        } catch (Exception e) {
+            return ApiResponse.error(500, "Failed to unlock terminal: " + e.getMessage());
+        }
     }
 
     /**

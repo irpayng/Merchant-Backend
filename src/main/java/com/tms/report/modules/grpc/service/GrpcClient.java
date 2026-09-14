@@ -291,6 +291,237 @@ public class GrpcClient {
         }
     }
 
+    /**
+     * Authenticate a user by email/phone + password against tms-user. Used for
+     * cross-system login: mobile-upgraded merchants can sign into the merchant
+     * dashboard using their tms-user credentials.
+     *
+     * @param identifier
+     *            email or phone number
+     * @param password
+     *            plain-text password
+     * @return map with success, reason, message, and on success: user_id, type,
+     *         email, phone_number, first_name, last_name, business_name
+     */
+    public Map<String, Object> authUser(String identifier, String password) {
+        logRequest("AuthUser", identifier);
+        try {
+            var resp = userStub.authUser(com.tms.report.grpc.user.AuthUserRequest.newBuilder().setIdentifier(identifier)
+                    .setPassword(password).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", resp.getSuccess());
+            result.put("reason", resp.getReason());
+            result.put("message", resp.getMessage());
+            if (resp.getSuccess()) {
+                result.put("user_id", resp.getUserId());
+                result.put("type", resp.getType());
+                result.put("email", resp.getEmail());
+                result.put("phone_number", resp.getPhoneNumber());
+                result.put("first_name", resp.getFirstName());
+                result.put("last_name", resp.getLastName());
+                result.put("business_name", resp.getBusinessName());
+            }
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("AuthUser", identifier, e);
+        }
+    }
+
+    /**
+     * Authenticate an operator by email + password for dashboard login. Returns
+     * operator profile and merchant_user_id so the caller can look up roles.
+     */
+    public Map<String, Object> authOperator(String email, String password) {
+        logRequest("AuthOperator", email);
+        try {
+            var resp = userStub.authOperator(com.tms.report.grpc.user.AuthOperatorRequest.newBuilder().setEmail(email)
+                    .setPassword(password).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", resp.getSuccess());
+            result.put("reason", resp.getReason());
+            result.put("message", resp.getMessage());
+            if (resp.getSuccess()) {
+                result.put("operator_id", resp.getOperatorId());
+                result.put("merchant_user_id", resp.getMerchantUserId());
+                result.put("name", resp.getName());
+                result.put("email", resp.getEmail());
+                result.put("phone_number", resp.getPhoneNumber());
+                result.put("username", resp.getUsername());
+            }
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("AuthOperator", email, e);
+        }
+    }
+
+    /**
+     * Create an operator (staff) under a merchant. Called when a merchant invites
+     * staff via the dashboard.
+     */
+    public Map<String, Object> createOperator(long merchantUserId, String username, String password, String name,
+            String email, String phoneNumber, String pin, boolean dashboardEnabled, boolean posEnabled) {
+        logRequest("CreateOperator", username);
+        try {
+            var builder = com.tms.report.grpc.user.CreateOperatorRequest.newBuilder().setMerchantUserId(merchantUserId)
+                    .setUsername(username).setPassword(password).setPin(pin).setDashboardEnabled(dashboardEnabled)
+                    .setPosEnabled(posEnabled);
+            if (name != null)
+                builder.setName(name);
+            if (email != null)
+                builder.setEmail(email);
+            if (phoneNumber != null)
+                builder.setPhoneNumber(phoneNumber);
+
+            var resp = userStub.createOperator(builder.build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", resp.getSuccess());
+            result.put("reason", resp.getReason());
+            result.put("message", resp.getMessage());
+            if (resp.getSuccess()) {
+                result.put("operator_id", resp.getOperatorId());
+            }
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("CreateOperator", username, e);
+        }
+    }
+
+    /**
+     * Update an operator's status, password, or access flags.
+     */
+    public Map<String, Object> updateOperator(long operatorId, long merchantUserId, String status, String password,
+            Boolean dashboardEnabled, Boolean posEnabled) {
+        logRequest("UpdateOperator", String.valueOf(operatorId));
+        try {
+            var builder = com.tms.report.grpc.user.UpdateOperatorRequest.newBuilder().setOperatorId(operatorId)
+                    .setMerchantUserId(merchantUserId);
+
+            if (status != null) {
+                builder.setUpdateStatus(true).setStatus(status);
+            }
+            if (password != null) {
+                builder.setUpdatePassword(true).setPassword(password);
+            }
+            if (dashboardEnabled != null) {
+                builder.setUpdateDashboardEnabled(true).setDashboardEnabled(dashboardEnabled);
+            }
+            if (posEnabled != null) {
+                builder.setUpdatePosEnabled(true).setPosEnabled(posEnabled);
+            }
+
+            var resp = userStub.updateOperator(builder.build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", resp.getSuccess());
+            result.put("reason", resp.getReason());
+            result.put("message", resp.getMessage());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("UpdateOperator", String.valueOf(operatorId), e);
+        }
+    }
+
+    /**
+     * Set a user's password in tms-user. Used by password reset and activation
+     * flows to keep credentials in sync between Merchant-Backend and tms-user. This
+     * enables TID-uploaded merchants to log into both the merchant dashboard and
+     * POS terminal using the same credentials.
+     *
+     * @param userId
+     *            the user's id in tms-user
+     * @param password
+     *            plain-text password (will be BCrypt hashed by tms-user)
+     * @return map with success, reason, message
+     */
+    public Map<String, Object> setUserPassword(long userId, String password) {
+        logRequest("SetUserPassword", String.valueOf(userId));
+        try {
+            var resp = userStub.setUserPassword(com.tms.report.grpc.user.SetUserPasswordRequest.newBuilder()
+                    .setUserId(userId).setPassword(password).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", resp.getSuccess());
+            result.put("reason", resp.getReason());
+            result.put("message", resp.getMessage());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("SetUserPassword", String.valueOf(userId), e);
+        }
+    }
+
+    /**
+     * Find a user by email address. Returns exists=true and user_id if found.
+     *
+     * @param email
+     *            the email address to look up
+     * @return map with exists (boolean) and user_id (Long, only if exists)
+     */
+    public Map<String, Object> findUserByEmail(String email) {
+        logRequest("FindUserByEmail", email);
+        try {
+            var resp = userStub
+                    .findUserByEmail(com.tms.report.grpc.user.FindUserRequest.newBuilder().setValue(email).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("exists", resp.getExists());
+            if (resp.getExists()) {
+                result.put("user_id", resp.getUserId());
+            }
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("FindUserByEmail", email, e);
+        }
+    }
+
+    /**
+     * Find a user by phone number. Returns exists=true and user_id if found.
+     *
+     * @param phoneNumber
+     *            the phone number to look up
+     * @return map with exists (boolean) and user_id (Long, only if exists)
+     */
+    public Map<String, Object> findUserByPhoneNumber(String phoneNumber) {
+        log.info("FindUserByPhoneNumber: calling gRPC with phoneNumber={}", phoneNumber);
+        try {
+            var resp = userStub.findUserByPhoneNumber(
+                    com.tms.report.grpc.user.FindUserRequest.newBuilder().setValue(phoneNumber).build());
+            log.info("FindUserByPhoneNumber: response exists={} userId={}", resp.getExists(), resp.getUserId());
+            Map<String, Object> result = new HashMap<>();
+            result.put("exists", resp.getExists());
+            if (resp.getExists()) {
+                result.put("user_id", resp.getUserId());
+            }
+            return result;
+        } catch (StatusRuntimeException e) {
+            log.error("FindUserByPhoneNumber: gRPC error for phoneNumber={}: {}", phoneNumber, e.getMessage(), e);
+            throw grpcError("FindUserByPhoneNumber", phoneNumber, e);
+        }
+    }
+
+    /**
+     * Get a user's profile from tms-user by user ID.
+     *
+     * @param userId
+     *            the user's id in tms-user
+     * @return map with user profile data: type, email, phone_number, first_name,
+     *         last_name, business_name
+     */
+    public Map<String, Object> getUserProfile(long userId) {
+        logRequest("GetUserProfile", String.valueOf(userId));
+        try {
+            var resp = userStub.getUserProfile(
+                    com.tms.report.grpc.user.GetUserProfileRequest.newBuilder().setUserId(userId).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("user_id", resp.getUserId());
+            result.put("type", resp.getType());
+            result.put("email", resp.getEmail());
+            result.put("phone_number", resp.getPhoneNumber());
+            result.put("first_name", resp.getFirstName());
+            result.put("last_name", resp.getLastName());
+            result.put("business_name", resp.getBusinessName());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetUserProfile", String.valueOf(userId), e);
+        }
+    }
+
     // ── Terminal commands → config-service ──
 
     public Map<String, Object> createTerminal(String serial, String make, String model, String os) {
@@ -559,10 +790,21 @@ public class GrpcClient {
                 builder.setTerminalId(str(data, "terminal_id"));
             if (data.containsKey("merchant_id"))
                 builder.setMerchantId(str(data, "merchant_id"));
-            if (data.containsKey("internal"))
+            // Each optional field carries its own guard flag so a partial update
+            // touches only what the caller supplied. `internal` needs one most:
+            // a bool has no "absent" state, so config applied the proto default
+            // `false` and every processor/product scope change silently demoted
+            // the TID to external. Saying preserve_internal when the caller did
+            // not supply `internal` is what stops that.
+            if (data.containsKey("internal")) {
                 builder.setInternal((Boolean) data.get("internal"));
+            } else {
+                builder.setPreserveInternal(true);
+            }
             if (data.containsKey("processor"))
                 builder.setProcessor(str(data, "processor")).setUpdateProcessor(true);
+            if (data.containsKey("product"))
+                builder.setProduct(str(data, "product")).setUpdateProduct(true);
 
             var resp = configStub.updateTid(builder.build());
             return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
@@ -841,6 +1083,113 @@ public class GrpcClient {
             return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
         } catch (StatusRuntimeException e) {
             throw grpcError("ReconcileBalance", ref, e);
+        }
+    }
+
+    // ── Get User Balances → wallet-service ──
+
+    /**
+     * Get wallet balances for a user. Returns both main (default) and commission
+     * wallet balances. Used by merchant dashboard to display wallet information.
+     *
+     * @param userId
+     *            the user's id in the system
+     * @return map with main_balance and commission_balance as strings
+     */
+    public Map<String, Object> getUserBalances(long userId) {
+        logRequest("GetUserBalances", String.valueOf(userId));
+        try {
+            var resp = walletStub.getUserBalances(
+                    com.tms.report.grpc.wallet.GetUserBalancesRequest.newBuilder().setUserId(userId).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("main_balance", resp.getMainBalance());
+            result.put("commission_balance", resp.getCommissionBalance());
+            return result;
+        } catch (StatusRuntimeException e) {
+            log.warn("GetUserBalances failed for userId={}: {}", userId, e.getMessage());
+            // Return zeros on error rather than throwing, so dashboard can still render
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", false);
+            result.put("main_balance", "0");
+            result.put("commission_balance", "0");
+            return result;
+        }
+    }
+
+    /**
+     * List wallet statements for a user. Paginated statement history showing all
+     * credits and debits. Used by merchant dashboard statements page.
+     *
+     * @param userId
+     *            the user's id in the system
+     * @param walletType
+     *            "default" or "commission", null for both
+     * @param page
+     *            page number (1-indexed)
+     * @param limit
+     *            items per page
+     * @param startDate
+     *            ISO date yyyy-MM-dd, null for no start filter
+     * @param endDate
+     *            ISO date yyyy-MM-dd, null for no end filter
+     * @param type
+     *            "credit" or "debit", null for both
+     * @return map with success, statements list, total, page, limit
+     */
+    public Map<String, Object> listStatements(long userId, String walletType, int page, int limit, String startDate,
+            String endDate, String type) {
+        logRequest("ListStatements", String.valueOf(userId));
+        try {
+            var builder = com.tms.report.grpc.wallet.ListStatementsRequest.newBuilder().setUserId(userId).setPage(page)
+                    .setLimit(limit);
+            if (walletType != null && !walletType.isEmpty()) {
+                builder.setWalletType(walletType);
+            }
+            if (startDate != null && !startDate.isEmpty()) {
+                builder.setStartDate(startDate);
+            }
+            if (endDate != null && !endDate.isEmpty()) {
+                builder.setEndDate(endDate);
+            }
+            if (type != null && !type.isEmpty()) {
+                builder.setType(type);
+            }
+
+            var resp = walletStub.listStatements(builder.build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", resp.getSuccess());
+            result.put("total", resp.getTotal());
+            result.put("page", resp.getPage());
+            result.put("limit", resp.getLimit());
+
+            List<Map<String, Object>> statements = new ArrayList<>();
+            for (var s : resp.getStatementsList()) {
+                Map<String, Object> stmt = new HashMap<>();
+                stmt.put("id", s.getId());
+                stmt.put("type", s.getType());
+                stmt.put("amount", s.getAmount());
+                stmt.put("previous_balance", s.getPreviousBalance());
+                stmt.put("current_balance", s.getCurrentBalance());
+                stmt.put("description", s.getDescription());
+                stmt.put("category", s.getCategory());
+                stmt.put("source_type", s.getSourceType());
+                stmt.put("source_reference", s.getSourceReference());
+                stmt.put("wallet_type", s.getWalletType());
+                stmt.put("created_at", s.getCreatedAt());
+                statements.add(stmt);
+            }
+            result.put("statements", statements);
+            return result;
+        } catch (StatusRuntimeException e) {
+            log.warn("ListStatements failed for userId={}: {}", userId, e.getMessage());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", false);
+            result.put("statements", List.of());
+            result.put("total", 0L);
+            result.put("page", page);
+            result.put("limit", limit);
+            return result;
         }
     }
 
@@ -1822,6 +2171,10 @@ public class GrpcClient {
 
     // ── Dispute commands → dispute-service ──
 
+    /**
+     * Add a message as an admin/agent. Sets sender_type = 'agent'. Used by
+     * tms-report-java admin panel.
+     */
     public Map<String, Object> addDisputeConversation(long disputeId, String message) {
         String ref = Ulid.generate();
         logRequest("AddDisputeConversation", ref);
@@ -1832,6 +2185,30 @@ public class GrpcClient {
             return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
         } catch (StatusRuntimeException e) {
             throw grpcError("AddDisputeConversation", ref, e);
+        }
+    }
+
+    /**
+     * Add a message as a user/merchant. Sets sender_type = 'user'. Used by
+     * Merchant-Backend for merchant-sent messages.
+     */
+    public Map<String, Object> addUserDisputeConversation(long disputeId, long userId, String message) {
+        String ref = Ulid.generate();
+        logRequest("AddUserDisputeConversation", ref);
+        try {
+            var builder = com.tms.report.grpc.dispute.AddUserConversationRequest.newBuilder().setDisputeId(disputeId)
+                    .setUserId(userId).setMessage(message);
+
+            // Get merchant name for sender display
+            MerchantUser merchant = currentAdmin();
+            if (merchant != null && merchant.getName() != null) {
+                builder.setSenderName(merchant.getName());
+            }
+
+            var resp = disputeStub.addUserConversation(builder.build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("AddUserDisputeConversation", ref, e);
         }
     }
 

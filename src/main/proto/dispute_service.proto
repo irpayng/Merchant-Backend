@@ -11,6 +11,8 @@ service DisputeService {
   rpc AddConversation (AddConversationRequest) returns (DisputeCommandResponse);
   rpc UpdateDispute (UpdateDisputeRequest) returns (DisputeCommandResponse);
   rpc CreateDispute (CreateDisputeRequest) returns (DisputeCommandResponse);
+  // User message — sets sender_type = 'user', not 'agent'
+  rpc AddUserConversation (AddUserConversationRequest) returns (DisputeCommandResponse);
 }
 
 message CloseDisputeRequest {
@@ -57,4 +59,12 @@ message CreateDisputeRequest {
   string subject = 3;
   string message = 4;
   Actor actor = 5;
+}
+
+// Request for user/merchant messages — uses sender_type = 'user'
+message AddUserConversationRequest {
+  int64 dispute_id = 1;
+  int64 user_id = 2;
+  string message = 3;
+  string sender_name = 4;  // Optional display name
 }

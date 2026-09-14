@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -35,6 +36,7 @@ public class TransactionController {
     private final TransactionService transactionService;
 
     @GetMapping
+    @PreAuthorize("hasAuthority('view_transaction')")
     public Map<String, Object> index(@RequestParam Map<String, String> params) {
         Page<TransactionDto> page = transactionService.index(params);
 
@@ -51,6 +53,7 @@ public class TransactionController {
     }
 
     @GetMapping("/download")
+    @PreAuthorize("hasAuthority('export_transaction')")
     public void download(@RequestParam Map<String, String> params, HttpServletRequest request,
             HttpServletResponse response) throws Exception {
         String[] dates = request.getParameterValues("dates[]");
@@ -172,21 +175,25 @@ public class TransactionController {
     }
 
     @GetMapping("/{idOrRef}")
+    @PreAuthorize("hasAuthority('view_transaction')")
     public ApiResponse<Map<String, Object>> show(@PathVariable String idOrRef) {
         return ApiResponse.success(transactionService.show(idOrRef));
     }
 
     @GetMapping("/filters")
+    @PreAuthorize("hasAuthority('view_transaction')")
     public ApiResponse<Map<String, Object>> filters() {
         return ApiResponse.success(transactionService.filters());
     }
 
     @GetMapping("/get-summary")
+    @PreAuthorize("hasAuthority('view_transaction')")
     public ApiResponse<Map<String, Object>> getSummary(@RequestParam Map<String, String> params) {
         return ApiResponse.success(transactionService.getSummary(params));
     }
 
     @GetMapping("/charts/channels")
+    @PreAuthorize("hasAuthority('view_transaction')")
     public ApiResponse<Map<String, Object>> channelChart(@RequestParam Map<String, String> params) {
         try {
             return ApiResponse.success(transactionService.getChannelChart(params));
@@ -196,6 +203,7 @@ public class TransactionController {
     }
 
     @GetMapping("/charts/products")
+    @PreAuthorize("hasAuthority('view_transaction')")
     public ApiResponse<Map<String, Object>> productChart(@RequestParam Map<String, String> params) {
         try {
             return ApiResponse.success(transactionService.getProductChart(params));
@@ -205,6 +213,7 @@ public class TransactionController {
     }
 
     @GetMapping("/charts/payment-methods")
+    @PreAuthorize("hasAuthority('view_transaction')")
     public ApiResponse<Map<String, Object>> paymentMethodChart(@RequestParam Map<String, String> params) {
         try {
             return ApiResponse.success(transactionService.getPaymentMethodChart(params));
@@ -214,6 +223,7 @@ public class TransactionController {
     }
 
     @GetMapping("/charts/time-volume")
+    @PreAuthorize("hasAuthority('view_transaction')")
     public ApiResponse<Map<String, Object>> timeVolumeChart(@RequestParam Map<String, String> params) {
         try {
             return ApiResponse.success(transactionService.getTimeVolumeChart(params));
@@ -223,6 +233,7 @@ public class TransactionController {
     }
 
     @GetMapping("/charts/location-distribution")
+    @PreAuthorize("hasAuthority('view_transaction')")
     public ApiResponse<Map<String, Object>> locationDistributionChart(@RequestParam Map<String, String> params) {
         try {
             return ApiResponse.success(transactionService.getLocationDistribution(params));

@@ -73,7 +73,7 @@ public interface TerminalRepository extends JpaRepository<Terminal, Long>, JpaSp
                 LOWER(t.serial) LIKE CAST(:search AS text) OR
                 LOWER(COALESCE(t.make, '')) LIKE CAST(:search AS text) OR
                 LOWER(COALESCE(t.model, '')) LIKE CAST(:search AS text))
-              AND (CAST(:make AS text) IS NULL OR t.make = CAST(:make AS text))
+              AND (CAST(:make AS text) IS NULL OR UPPER(t.make) = UPPER(CAST(:make AS text)))
               AND (CAST(:os AS text) IS NULL OR t.os = CAST(:os AS text))
               AND (CAST(:networkType AS text) IS NULL OR m.network_type = CAST(:networkType AS text))
               AND (CAST(:batteryBelow AS integer) IS NULL OR m.battery_pct < CAST(:batteryBelow AS integer))
@@ -87,6 +87,8 @@ public interface TerminalRepository extends JpaRepository<Terminal, Long>, JpaSp
                 OR (CAST(:locked AS text) = 'false' AND (t.locked IS FALSE OR t.locked IS NULL)))
               AND (CAST(:merchantId AS bigint) IS NULL OR t.user_id = CAST(:merchantId AS bigint))
               AND (CAST(:terminalId AS bigint) IS NULL OR t.id = CAST(:terminalId AS bigint))
+              AND (CAST(:dateFrom AS timestamptz) IS NULL OR t.created_at >= CAST(:dateFrom AS timestamptz))
+              AND (CAST(:dateTo AS timestamptz) IS NULL OR t.created_at <= CAST(:dateTo AS timestamptz))
             ORDER BY t.created_at DESC
             """, countQuery = """
             SELECT COUNT(*) FROM terminals t
@@ -102,7 +104,7 @@ public interface TerminalRepository extends JpaRepository<Terminal, Long>, JpaSp
                 LOWER(t.serial) LIKE CAST(:search AS text) OR
                 LOWER(COALESCE(t.make, '')) LIKE CAST(:search AS text) OR
                 LOWER(COALESCE(t.model, '')) LIKE CAST(:search AS text))
-              AND (CAST(:make AS text) IS NULL OR t.make = CAST(:make AS text))
+              AND (CAST(:make AS text) IS NULL OR UPPER(t.make) = UPPER(CAST(:make AS text)))
               AND (CAST(:os AS text) IS NULL OR t.os = CAST(:os AS text))
               AND (CAST(:networkType AS text) IS NULL OR m.network_type = CAST(:networkType AS text))
               AND (CAST(:batteryBelow AS integer) IS NULL OR m.battery_pct < CAST(:batteryBelow AS integer))
@@ -116,12 +118,15 @@ public interface TerminalRepository extends JpaRepository<Terminal, Long>, JpaSp
                 OR (CAST(:locked AS text) = 'false' AND (t.locked IS FALSE OR t.locked IS NULL)))
               AND (CAST(:merchantId AS bigint) IS NULL OR t.user_id = CAST(:merchantId AS bigint))
               AND (CAST(:terminalId AS bigint) IS NULL OR t.id = CAST(:terminalId AS bigint))
+              AND (CAST(:dateFrom AS timestamptz) IS NULL OR t.created_at >= CAST(:dateFrom AS timestamptz))
+              AND (CAST(:dateTo AS timestamptz) IS NULL OR t.created_at <= CAST(:dateTo AS timestamptz))
             """, nativeQuery = true)
     Page<Terminal> findFiltered(@Param("search") String search, @Param("make") String make, @Param("os") String os,
             @Param("networkType") String networkType, @Param("batteryBelow") Integer batteryBelow,
             @Param("printerStatus") Integer printerStatus, @Param("staleSince") LocalDateTime staleSince,
             @Param("mapped") String mapped, @Param("locked") String locked, @Param("merchantId") Long merchantId,
-            @Param("terminalId") Long terminalId, Pageable pageable);
+            @Param("terminalId") Long terminalId, @Param("dateFrom") LocalDateTime dateFrom,
+            @Param("dateTo") LocalDateTime dateTo, Pageable pageable);
 
     /**
      * All terminals tied to a user. Used by the user-detail page on tms-ui to

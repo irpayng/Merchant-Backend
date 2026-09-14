@@ -212,6 +212,9 @@ message CreateTidRequest {
   string merchant_physical_addr = 12;
   string merchant_address_lga_code = 13;
   string processor = 14;
+  // Optional product scope for an internal TID — comma/space separated product
+  // codes (e.g. "withdrawal" or "withdrawal,cash-advance"). Blank = any product.
+  string product = 15;
 }
 
 message UpdateTidRequest {
@@ -228,6 +231,21 @@ message UpdateTidRequest {
   string merchant_address_lga_code = 13;
   string processor = 14;
   bool update_processor = 15;
+  // Optional product scope for an internal TID — comma/space separated product
+  // codes (e.g. "withdrawal" or "withdrawal,cash-advance"). Blank = any product.
+  string product = 16;
+  // When true, apply `product` even if blank (blank clears the scope). Same
+  // guard as update_processor.
+  bool update_product = 17;
+  // When true, leave `internal` alone. `internal` is a bool, so it cannot
+  // distinguish "set false" from "not supplied" on its own, and every partial
+  // update (setting a processor or product scope) carried the proto default
+  // `false` — silently demoting the TID to external and dropping it out of card
+  // routing entirely. The flag is opt-OUT rather than opt-in so that a caller
+  // that predates it keeps today's behaviour exactly: an unset flag still
+  // applies `internal`, so the toggle-internal endpoint cannot become a no-op
+  // against a newer config-service that an older admin service is talking to.
+  bool preserve_internal = 18;
 }
 
 message DeleteTidRequest {
