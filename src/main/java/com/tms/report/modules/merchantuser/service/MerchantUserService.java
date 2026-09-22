@@ -102,13 +102,18 @@ public class MerchantUserService {
         }
 
         // Create operator in tms-user (credentials stored there)
+        String terminalMode = str(data, "terminal_mode");
+        if (terminalMode.isBlank()) {
+            terminalMode = "single_session"; // default
+        }
+
         Map<String, Object> operatorResult = grpcClient.createOperator(merchantId, username, password, // plain text —
                                                                                                        // tms-user will
                                                                                                        // hash it
                 name, email, phoneNumber, pin, // plain text — tms-user will hash it
                 true, // dashboardEnabled
-                true // posEnabled (staff can access both dashboard and POS)
-        );
+                true, // posEnabled (staff can access both dashboard and POS)
+                terminalMode);
 
         if (!Boolean.TRUE.equals(operatorResult.get("success"))) {
             String reason = (String) operatorResult.get("reason");
@@ -187,6 +192,16 @@ public class MerchantUserService {
         String phoneNumber = str(data, "phone_number");
         if (!phoneNumber.isBlank()) {
             user.setPhoneNumber(phoneNumber);
+        }
+
+        // Update terminal_mode if provided (sync to tms-user for operators)
+        String terminalMode = str(data, "terminal_mode");
+        if (!terminalMode.isBlank() && user.getOperatorId() != null) {
+            Map<String, Object> result = grpcClient.updateOperator(user.getOperatorId(), merchantId, null, null, null,
+                    null, terminalMode);
+            if (!Boolean.TRUE.equals(result.get("success"))) {
+                log.error("Failed to update operator terminal_mode: {}", result.get("message"));
+            }
         }
 
         // Update role if provided

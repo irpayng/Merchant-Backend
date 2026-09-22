@@ -3,6 +3,8 @@ package com.tms.report.modules.auth.service;
 import com.tms.report.core.exception.AppException;
 import com.tms.report.core.security.JwtService;
 import com.tms.report.core.security.MerchantUserDetails;
+import com.tms.report.modules.audit.model.AuditLog;
+import com.tms.report.modules.audit.repository.AuditLogRepository;
 import com.tms.report.modules.auth.dto.ActivateOtpRequest;
 import com.tms.report.modules.auth.dto.ActivateRequest;
 import com.tms.report.modules.auth.dto.ChangePasswordRequest;
@@ -24,6 +26,7 @@ import com.tms.report.modules.role.model.Privilege;
 import com.tms.report.modules.role.model.Role;
 import com.tms.report.modules.role.repository.PrivilegeRepository;
 import com.tms.report.modules.role.repository.RoleRepository;
+import jakarta.servlet.http.HttpServletRequest;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -60,6 +63,8 @@ public class AuthService {
     private final PrivilegeRepository privilegeRepository;
     private final JwtService jwtService;
     private final GrpcClient grpcClient;
+    private final AuditLogRepository auditLogRepository;
+    private final HttpServletRequest httpRequest;
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final int RESET_TOKEN_EXPIRY_MINUTES = 60;
@@ -166,6 +171,8 @@ public class AuthService {
 
         log.info("Staff login successful for operatorId={} merchantId={} email={}", operatorId, merchantUserId, email);
 
+        logLoginAudit(staffUser);
+
         return LoginResponse.builder().token(token).emailIsVerified(verified)
                 .user(UserData.builder().name(staffUser.getName()).email(staffUser.getEmail()).role(staffUser.getRole())
                         .merchantId(staffUser.getMerchantId()).terminalId(staffUser.getTerminalId())
@@ -205,6 +212,8 @@ public class AuthService {
         List<String> privileges = details.getAuthorities().stream().map(a -> a.getAuthority()).sorted().toList();
 
         log.info("Merchant owner login successful for merchantId={} email={}", userId, email);
+
+        logLoginAudit(merchantUser);
 
         return LoginResponse.builder().token(token).emailIsVerified(verified)
                 .user(UserData.builder().name(merchantUser.getName()).email(merchantUser.getEmail())
@@ -298,6 +307,8 @@ public class AuthService {
         List<String> privileges = details.getAuthorities().stream().map(a -> a.getAuthority()).sorted().toList();
 
         log.info("Cross-login successful for merchantId={} email={}", userId, email);
+
+        logLoginAudit(merchantUser);
 
         return LoginResponse.builder().token(token).emailIsVerified(verified)
                 .user(UserData.builder().name(merchantUser.getName()).email(merchantUser.getEmail())
@@ -848,5 +859,55 @@ public class AuthService {
             log.error("setPasswordInTmsUser: exception for userId={}: {}", userId, e.getMessage());
             throw new AppException("Failed to set password: " + e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    // ── Login audit logging ─────────────────────────────────
+
+    /**
+     * Log a successful login event to the audit log. Captures user info (name,
+     * email, role) and device info (IP address, User-Agent) for security tracking.
+     *
+     * @param user
+     *            the MerchantUser who logged in
+     */
+    private void logLoginAudit(MerchantUser user) {
+        try {
+            String ipAddress = resolveClientIp();
+            String userAgent = httpRequest.getHeader("User-Agent");
+
+            AuditLog auditLog = AuditLog.builder().merchantId(user.getMerchantId()).userId(user.getId())
+                    .userName(user.getName()).userEmail(user.getEmail()).userRole(user.getRole()).method("POST")
+                    .path("/auth/login").action("Login").requestBody(null) // Don't log credentials
+                    .responseStatus(200).ipAddress(truncate(ipAddress, 64)).userAgent(truncate(userAgent, 500)).build();
+
+            auditLogRepository.save(auditLog);
+            log.info("Login audit logged for user={} merchantId={} ip={}", user.getEmail(), user.getMerchantId(),
+                    ipAddress);
+        } catch (Exception e) {
+            // Don't fail the login if audit logging fails
+            log.error("Failed to log login audit for user={}: {}", user.getEmail(), e.getMessage());
+        }
+    }
+
+    /**
+     * Resolve the client's IP address from request headers or remote address.
+     */
+    private String resolveClientIp() {
+        String forwarded = httpRequest.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        String realIp = httpRequest.getHeader("X-Real-IP");
+        if (realIp != null && !realIp.isBlank()) {
+            return realIp.trim();
+        }
+        return httpRequest.getRemoteAddr();
+    }
+
+    private String truncate(String value, int max) {
+        if (value == null) {
+            return null;
+        }
+        return value.length() > max ? value.substring(0, max) : value;
     }
 }

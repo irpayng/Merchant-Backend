@@ -322,6 +322,7 @@ message CreateOperatorRequest {
   string pin = 7;
   bool dashboard_enabled = 8;
   bool pos_enabled = 9;
+  string terminal_mode = 10;  // "single_session" (default) or "device_bound"
 }
 
 message CreateOperatorResponse {
@@ -359,6 +360,8 @@ message UpdateOperatorRequest {
   bool dashboard_enabled = 8;
   bool update_pos_enabled = 9;
   bool pos_enabled = 10;
+  bool update_terminal_mode = 11;
+  string terminal_mode = 12;  // "single_session" or "device_bound"
 }
 
 message UpdateOperatorResponse {

@@ -21,7 +21,8 @@ public class ActivityController {
 
     @GetMapping
     public Map<String, Object> index(@RequestParam Map<String, String> params) {
-        return PagedResponse.from(activityService.index(params), "/activities");
+        return PagedResponse.from(activityService.index(params), "/activities",
+                Map.of("filters", activityService.getFilters()));
     }
 
     @GetMapping("/{id}")
