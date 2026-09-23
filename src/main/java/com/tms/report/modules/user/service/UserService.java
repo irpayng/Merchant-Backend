@@ -119,7 +119,7 @@ public class UserService {
                        CASE WHEN EXISTS (SELECT 1 FROM business_applications ba WHERE ba.user_id = u.id AND ba.status_code = 'completed') THEN true ELSE false END as has_cac
                 FROM users u
                 LEFT JOIN profiles p ON p.user_id = u.id
-                LEFT JOIN tiers t ON t.code = CAST(u.tier_id AS text)
+                LEFT JOIN tiers t ON t.id = u.tier_id
                 LEFT JOIN users pu ON pu.id = u.parent_id
                 LEFT JOIN profiles pp ON pp.user_id = pu.id
                 """
@@ -163,7 +163,7 @@ public class UserService {
                 + "t.id as tier_id, t.name as tier_name, t.code as tier_code, u.frozen_at, u.bvn_photo_url, "
                 + "u.suspended_at, u.suspended_reason, u.suspended_by_type, u.blocked_at, u.blocked_reason "
                 + "FROM users u LEFT JOIN profiles p ON p.user_id = u.id "
-                + "LEFT JOIN tiers t ON t.code = CAST(u.tier_id AS text) WHERE u.id = :id");
+                + "LEFT JOIN tiers t ON t.id = u.tier_id WHERE u.id = :id");
         q.setParameter("id", id);
         Object[] r = (Object[]) q.getSingleResult();
         // Columns: 0=id, 1=email, 2=phone, 3=type, 4=account_number,
