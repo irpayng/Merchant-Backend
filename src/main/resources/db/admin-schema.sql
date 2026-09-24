@@ -191,23 +191,3 @@ CREATE TABLE IF NOT EXISTS merchant.dispute_reads (
 
 CREATE INDEX IF NOT EXISTS idx_dispute_reads_user ON merchant.dispute_reads(merchant_user_id);
 CREATE INDEX IF NOT EXISTS idx_dispute_reads_dispute ON merchant.dispute_reads(dispute_id);
-
-
--- =============================================================================
--- ACTIVE_SESSIONS — tracks active login sessions to prevent concurrent logins.
--- Each merchant or operator can only have one active session at a time.
--- When a user logs in, any existing session is invalidated.
--- =============================================================================
-CREATE TABLE IF NOT EXISTS merchant.active_sessions (
-    id                  BIGSERIAL PRIMARY KEY,
-    merchant_user_id    BIGINT NOT NULL REFERENCES merchant.merchant_users(id) ON DELETE CASCADE,
-    session_id          VARCHAR(64) NOT NULL UNIQUE,
-    device_info         VARCHAR(500),
-    ip_address          VARCHAR(64),
-    created_at          TIMESTAMPTZ DEFAULT NOW(),
-    expires_at          TIMESTAMPTZ NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_active_sessions_user ON merchant.active_sessions(merchant_user_id);
-CREATE INDEX IF NOT EXISTS idx_active_sessions_session_id ON merchant.active_sessions(session_id);
-CREATE INDEX IF NOT EXISTS idx_active_sessions_expires ON merchant.active_sessions(expires_at);

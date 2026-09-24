@@ -49,8 +49,8 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ApiResponse<Void> logout(@RequestHeader("Authorization") String authHeader) {
-        authService.logout(authHeader);
+    public ApiResponse<Void> logout() {
+        // JWT is stateless; client discards the token
         return ApiResponse.success(null);
     }
 

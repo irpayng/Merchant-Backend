@@ -2,7 +2,6 @@ package com.tms.report.modules.auth.service;
 
 import com.tms.report.core.exception.AppException;
 import com.tms.report.core.security.JwtService;
-import com.tms.report.core.security.JwtService.TokenWithSession;
 import com.tms.report.core.security.MerchantUserDetails;
 import com.tms.report.modules.audit.model.AuditLog;
 import com.tms.report.modules.audit.repository.AuditLogRepository;
@@ -63,7 +62,6 @@ public class AuthService {
     private final RoleRepository roleRepository;
     private final PrivilegeRepository privilegeRepository;
     private final JwtService jwtService;
-    private final SessionService sessionService;
     private final GrpcClient grpcClient;
     private final AuditLogRepository auditLogRepository;
     private final HttpServletRequest httpRequest;
@@ -164,24 +162,18 @@ public class AuthService {
             throw new AppException("Your access has been revoked", HttpStatus.FORBIDDEN);
         }
 
-        // Issue JWT with session tracking (invalidates any existing session)
-        MerchantUserDetails details = new MerchantUserDetails(staffUser);
-        TokenWithSession tokenWithSession = jwtService.generateTokenWithSession(details);
-
-        // Create session record (invalidates any existing session for this user)
-        String deviceInfo = httpRequest.getHeader("User-Agent");
-        String ipAddress = resolveClientIp();
-        sessionService.createSession(staffUser, tokenWithSession.sessionId(), tokenWithSession.expirationMs(),
-                deviceInfo, ipAddress);
-
+        // Issue JWT
+        String token = jwtService.generateToken(new MerchantUserDetails(staffUser));
         boolean verified = staffUser.getEmailVerifiedAt() != null;
+
+        MerchantUserDetails details = new MerchantUserDetails(staffUser);
         List<String> privileges = details.getAuthorities().stream().map(a -> a.getAuthority()).sorted().toList();
 
         log.info("Staff login successful for operatorId={} merchantId={} email={}", operatorId, merchantUserId, email);
 
         logLoginAudit(staffUser);
 
-        return LoginResponse.builder().token(tokenWithSession.token()).emailIsVerified(verified)
+        return LoginResponse.builder().token(token).emailIsVerified(verified)
                 .user(UserData.builder().name(staffUser.getName()).email(staffUser.getEmail()).role(staffUser.getRole())
                         .merchantId(staffUser.getMerchantId()).terminalId(staffUser.getTerminalId())
                         .emailIsVerified(verified).privileges(privileges).build())
@@ -212,24 +204,18 @@ public class AuthService {
             throw new AppException("Your access has been revoked", HttpStatus.FORBIDDEN);
         }
 
-        // Issue JWT with session tracking (invalidates any existing session)
-        MerchantUserDetails details = new MerchantUserDetails(merchantUser);
-        TokenWithSession tokenWithSession = jwtService.generateTokenWithSession(details);
-
-        // Create session record (invalidates any existing session for this user)
-        String deviceInfo = httpRequest.getHeader("User-Agent");
-        String ipAddress = resolveClientIp();
-        sessionService.createSession(merchantUser, tokenWithSession.sessionId(), tokenWithSession.expirationMs(),
-                deviceInfo, ipAddress);
-
+        // Issue JWT
+        String token = jwtService.generateToken(new MerchantUserDetails(merchantUser));
         boolean verified = merchantUser.getEmailVerifiedAt() != null;
+
+        MerchantUserDetails details = new MerchantUserDetails(merchantUser);
         List<String> privileges = details.getAuthorities().stream().map(a -> a.getAuthority()).sorted().toList();
 
         log.info("Merchant owner login successful for merchantId={} email={}", userId, email);
 
         logLoginAudit(merchantUser);
 
-        return LoginResponse.builder().token(tokenWithSession.token()).emailIsVerified(verified)
+        return LoginResponse.builder().token(token).emailIsVerified(verified)
                 .user(UserData.builder().name(merchantUser.getName()).email(merchantUser.getEmail())
                         .role(merchantUser.getRole()).merchantId(merchantUser.getMerchantId())
                         .terminalId(merchantUser.getTerminalId()).emailIsVerified(verified).privileges(privileges)
@@ -312,24 +298,19 @@ public class AuthService {
             throw new AppException("Your access to the merchant dashboard has been revoked", HttpStatus.FORBIDDEN);
         }
 
-        // 6. Issue JWT with session tracking (invalidates any existing session)
-        MerchantUserDetails details = new MerchantUserDetails(merchantUser);
-        TokenWithSession tokenWithSession = jwtService.generateTokenWithSession(details);
-
-        // Create session record (invalidates any existing session for this user)
-        String deviceInfo = httpRequest.getHeader("User-Agent");
-        String ipAddress = resolveClientIp();
-        sessionService.createSession(merchantUser, tokenWithSession.sessionId(), tokenWithSession.expirationMs(),
-                deviceInfo, ipAddress);
-
+        // 6. Issue local JWT
+        String token = jwtService.generateToken(new MerchantUserDetails(merchantUser));
         boolean verified = merchantUser.getEmailVerifiedAt() != null;
+
+        // Resolve privilege codes from the role entity (or fallback)
+        MerchantUserDetails details = new MerchantUserDetails(merchantUser);
         List<String> privileges = details.getAuthorities().stream().map(a -> a.getAuthority()).sorted().toList();
 
         log.info("Cross-login successful for merchantId={} email={}", userId, email);
 
         logLoginAudit(merchantUser);
 
-        return LoginResponse.builder().token(tokenWithSession.token()).emailIsVerified(verified)
+        return LoginResponse.builder().token(token).emailIsVerified(verified)
                 .user(UserData.builder().name(merchantUser.getName()).email(merchantUser.getEmail())
                         .role(merchantUser.getRole()).merchantId(merchantUser.getMerchantId())
                         .terminalId(merchantUser.getTerminalId()).emailIsVerified(verified).privileges(privileges)
@@ -464,29 +445,6 @@ public class AuthService {
 
     public MerchantUser me() {
         return getCurrentMerchantUser();
-    }
-
-    /**
-     * Logout the current user by invalidating their session.
-     *
-     * @param authHeader
-     *            the Authorization header containing the JWT
-     */
-    public void logout(String authHeader) {
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return; // No token to invalidate
-        }
-        String jwt = authHeader.substring(7);
-        try {
-            String sessionId = jwtService.extractSessionId(jwt);
-            if (sessionId != null && !sessionId.isBlank()) {
-                sessionService.invalidateSession(sessionId);
-                log.info("Logout successful, session invalidated");
-            }
-        } catch (Exception e) {
-            // Token may be invalid/expired, but that's fine — user is logging out anyway
-            log.debug("Could not extract session from token during logout: {}", e.getMessage());
-        }
     }
 
     public MerchantUser getCurrentMerchantUser() {

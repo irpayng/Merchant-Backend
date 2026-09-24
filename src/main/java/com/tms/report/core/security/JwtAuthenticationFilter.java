@@ -1,6 +1,5 @@
 package com.tms.report.core.security;
 
-import com.tms.report.modules.auth.service.SessionService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,12 +20,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * login principal. Loads the account fresh from the database each request
  * (simple and correct for the dashboard's traffic); revoked/deactivated
  * accounts stop authenticating on their next call.
- *
- * <p>
- * Also validates that the session ID embedded in the token is still active,
- * which enforces single-session-per-user: when a user logs in on a new device,
- * their previous session is invalidated, and subsequent requests with the old
- * token will fail session validation.
  */
 @Slf4j
 @Component
@@ -35,7 +28,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final MerchantUserDetailsService merchantUserDetailsService;
-    private final SessionService sessionService;
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response,
@@ -61,13 +53,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             String username = jwtService.extractUsername(jwt);
-            String sessionId = jwtService.extractSessionId(jwt);
-
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = merchantUserDetailsService.loadUserByUsername(username);
-
-                // Validate both JWT signature/expiry and session existence
-                if (jwtService.isTokenValid(jwt, userDetails) && isSessionValid(sessionId)) {
+                if (jwtService.isTokenValid(jwt, userDetails)) {
                     var authToken = new UsernamePasswordAuthenticationToken(userDetails, null,
                             userDetails.getAuthorities());
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
@@ -79,22 +67,5 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
-    }
-
-    /**
-     * Check if the session ID is valid. Tokens without a session ID (legacy tokens
-     * issued before session tracking) are rejected.
-     */
-    private boolean isSessionValid(String sessionId) {
-        if (sessionId == null || sessionId.isBlank()) {
-            // Legacy token without session ID — reject to enforce re-login
-            log.debug("Token rejected: no session ID present");
-            return false;
-        }
-        boolean valid = sessionService.isSessionValid(sessionId);
-        if (!valid) {
-            log.debug("Token rejected: session {} is no longer valid (logged out or superseded)", sessionId);
-        }
-        return valid;
     }
 }
