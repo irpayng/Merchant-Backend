@@ -470,3 +470,53 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 CREATE INDEX IF NOT EXISTS idx_audit_logs_merchant_id ON public.audit_logs(merchant_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at);
+
+
+-- ─── operators (from tms-user) ──────────────────────────────────────────────
+-- Operators (outlet staff) who can login to POS terminals on behalf of merchants
+CREATE TABLE IF NOT EXISTS public.operators (
+    id                  BIGSERIAL PRIMARY KEY,
+    merchant_user_id    BIGINT NOT NULL,
+    username            VARCHAR(64) NOT NULL UNIQUE,
+    password_hash       VARCHAR(255) NOT NULL,
+    name                VARCHAR(120),
+    email               VARCHAR(255) UNIQUE,
+    phone_number        VARCHAR(32),
+    dashboard_enabled   BOOLEAN NOT NULL DEFAULT false,
+    pos_enabled         BOOLEAN NOT NULL DEFAULT true,
+    terminal_mode       VARCHAR(16) NOT NULL DEFAULT 'single_session',
+    device_serial       VARCHAR(64),
+    status              VARCHAR(16) NOT NULL DEFAULT 'active',
+    last_login_at       TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ,
+    updated_at          TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_operators_merchant_user_id ON public.operators(merchant_user_id);
+CREATE INDEX IF NOT EXISTS idx_operators_device_serial ON public.operators(device_serial);
+CREATE INDEX IF NOT EXISTS idx_operators_email ON public.operators(email);
+
+-- ─── device_activities (from merchant schema, for reference) ────────────────
+-- Note: This table lives in merchant schema, not public. See admin-schema.sql.
+-- It tracks operator login/logout events on POS terminals for merchant visibility.
+
+
+-- ─── activities (from activity_service) ─────────────────────────────────────
+-- Replicates the activities table from audit-service to support the
+-- device-activities page (operator login/logout events on terminals)
+CREATE TABLE IF NOT EXISTS public.activities (
+    id                  BIGSERIAL PRIMARY KEY,
+    user_id             BIGINT NOT NULL,
+    actionable_type     VARCHAR(255),
+    actionable_id       BIGINT,
+    action              VARCHAR(255) NOT NULL,
+    description         VARCHAR(255) NOT NULL,
+    reference           VARCHAR(100),
+    created_at          TIMESTAMPTZ,
+    updated_at          TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_activities_user_id ON public.activities(user_id);
+CREATE INDEX IF NOT EXISTS idx_activities_actionable ON public.activities(actionable_type, actionable_id);
+CREATE INDEX IF NOT EXISTS idx_activities_reference ON public.activities(reference);
+CREATE INDEX IF NOT EXISTS idx_activities_created_at ON public.activities(created_at);

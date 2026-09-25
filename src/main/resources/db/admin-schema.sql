@@ -191,3 +191,27 @@ CREATE TABLE IF NOT EXISTS merchant.dispute_reads (
 
 CREATE INDEX IF NOT EXISTS idx_dispute_reads_user ON merchant.dispute_reads(merchant_user_id);
 CREATE INDEX IF NOT EXISTS idx_dispute_reads_dispute ON merchant.dispute_reads(dispute_id);
+
+
+-- =============================================================================
+-- DEVICE_ACTIVITIES — tracks operator login/logout events on POS terminals.
+-- Populated via Kafka consumer from tms-user login events.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS merchant.device_activities (
+    id              BIGSERIAL PRIMARY KEY,
+    merchant_id     BIGINT NOT NULL,              -- users.id (the merchant)
+    terminal_id     BIGINT,                       -- terminals.id (nullable for lookup failures)
+    device_serial   VARCHAR(64) NOT NULL,         -- POS terminal serial number
+    operator_id     BIGINT,                       -- operators.id (null for direct merchant login)
+    operator_name   VARCHAR(255),                 -- Snapshot of operator name at event time
+    action          VARCHAR(20) NOT NULL,         -- 'login' or 'logout'
+    platform        VARCHAR(32),                  -- Device platform (Android, iOS)
+    app_version     VARCHAR(32),                  -- App version string
+    ip_address      VARCHAR(64),                  -- Client IP if available
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_activities_merchant_id ON merchant.device_activities(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_device_activities_device_serial ON merchant.device_activities(device_serial);
+CREATE INDEX IF NOT EXISTS idx_device_activities_operator_id ON merchant.device_activities(operator_id);
+CREATE INDEX IF NOT EXISTS idx_device_activities_created_at ON merchant.device_activities(created_at);
