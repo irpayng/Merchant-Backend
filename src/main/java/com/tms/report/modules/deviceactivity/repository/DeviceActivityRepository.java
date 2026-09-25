@@ -14,13 +14,20 @@ import org.springframework.stereotype.Repository;
 public interface DeviceActivityRepository extends JpaRepository<DeviceActivity, Long> {
 
     /**
+     * Actionable types that represent device activities (for filtering). Includes:
+     * device_login, device_logout, pin_verification, pin_change, pin_reset,
+     * account_freeze
+     */
+    String DEVICE_ACTIVITY_TYPES = "'device_login', 'device_logout', 'pin_verification', 'pin_change', 'pin_reset', 'account_freeze'";
+
+    /**
      * Paginated listing with optional filters. All filters are optional — pass null
-     * to skip filtering on that dimension. Only returns device_login activities.
+     * to skip filtering on that dimension. Returns all device-related activities.
      */
     @Query(value = """
             SELECT a.* FROM activities a
             WHERE a.user_id = :merchantId
-              AND a.actionable_type = 'device_login'
+              AND a.actionable_type IN ('device_login', 'device_logout', 'pin_verification', 'pin_change', 'pin_reset', 'account_freeze')
               AND (CAST(:search AS VARCHAR) IS NULL OR (
                     LOWER(a.reference) LIKE CAST(:search AS VARCHAR)
                     OR LOWER(a.description) LIKE CAST(:search AS VARCHAR)
@@ -35,7 +42,7 @@ public interface DeviceActivityRepository extends JpaRepository<DeviceActivity, 
             """, countQuery = """
             SELECT COUNT(*) FROM activities a
             WHERE a.user_id = :merchantId
-              AND a.actionable_type = 'device_login'
+              AND a.actionable_type IN ('device_login', 'device_logout', 'pin_verification', 'pin_change', 'pin_reset', 'account_freeze')
               AND (CAST(:search AS VARCHAR) IS NULL OR (
                     LOWER(a.reference) LIKE CAST(:search AS VARCHAR)
                     OR LOWER(a.description) LIKE CAST(:search AS VARCHAR)
@@ -53,11 +60,22 @@ public interface DeviceActivityRepository extends JpaRepository<DeviceActivity, 
             @Param("dateTo") LocalDateTime dateTo, Pageable pageable);
 
     /** Distinct actions for filter dropdown. */
-    @Query(value = "SELECT DISTINCT a.action FROM activities a WHERE a.user_id = :merchantId AND a.actionable_type = 'device_login' ORDER BY a.action", nativeQuery = true)
+    @Query(value = """
+            SELECT DISTINCT a.action FROM activities a
+            WHERE a.user_id = :merchantId
+              AND a.actionable_type IN ('device_login', 'device_logout', 'pin_verification', 'pin_change', 'pin_reset', 'account_freeze')
+            ORDER BY a.action
+            """, nativeQuery = true)
     List<String> findDistinctActions(@Param("merchantId") Long merchantId);
 
     /** Distinct device serials for filter dropdown. */
-    @Query(value = "SELECT DISTINCT a.reference FROM activities a WHERE a.user_id = :merchantId AND a.actionable_type = 'device_login' AND a.reference IS NOT NULL ORDER BY a.reference", nativeQuery = true)
+    @Query(value = """
+            SELECT DISTINCT a.reference FROM activities a
+            WHERE a.user_id = :merchantId
+              AND a.actionable_type IN ('device_login', 'device_logout', 'pin_verification', 'pin_change', 'pin_reset', 'account_freeze')
+              AND a.reference IS NOT NULL
+            ORDER BY a.reference
+            """, nativeQuery = true)
     List<String> findDistinctDeviceSerials(@Param("merchantId") Long merchantId);
 
     /** Operator IDs for filter dropdown (distinct actionable_id values). */
@@ -65,17 +83,28 @@ public interface DeviceActivityRepository extends JpaRepository<DeviceActivity, 
             SELECT DISTINCT a.actionable_id
             FROM activities a
             WHERE a.user_id = :merchantId
-              AND a.actionable_type = 'device_login'
+              AND a.actionable_type IN ('device_login', 'device_logout', 'pin_verification', 'pin_change', 'pin_reset', 'account_freeze')
               AND a.actionable_id IS NOT NULL
+              AND a.actionable_id > 0
             ORDER BY a.actionable_id
             """, nativeQuery = true)
     List<Long> findDistinctOperatorIds(@Param("merchantId") Long merchantId);
 
     /** Count device activities by merchant. */
-    @Query("SELECT COUNT(a) FROM DeviceActivity a WHERE a.userId = :merchantId AND a.actionableType = 'device_login'")
+    @Query(value = """
+            SELECT COUNT(*) FROM activities a
+            WHERE a.user_id = :merchantId
+              AND a.actionable_type IN ('device_login', 'device_logout', 'pin_verification', 'pin_change', 'pin_reset', 'account_freeze')
+            """, nativeQuery = true)
     long countByMerchantId(@Param("merchantId") Long merchantId);
 
     /** Count logins in the last N hours for a merchant. */
-    @Query("SELECT COUNT(a) FROM DeviceActivity a WHERE a.userId = :merchantId AND a.actionableType = 'device_login' AND a.action = 'login' AND a.createdAt >= :since")
+    @Query(value = """
+            SELECT COUNT(*) FROM activities a
+            WHERE a.user_id = :merchantId
+              AND a.actionable_type = 'device_login'
+              AND a.action = 'login'
+              AND a.created_at >= :since
+            """, nativeQuery = true)
     long countRecentLogins(@Param("merchantId") Long merchantId, @Param("since") LocalDateTime since);
 }
