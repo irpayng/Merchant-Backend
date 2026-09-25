@@ -21,31 +21,31 @@ public interface DeviceActivityRepository extends JpaRepository<DeviceActivity, 
             SELECT a.* FROM activities a
             WHERE a.user_id = :merchantId
               AND a.actionable_type = 'device_login'
-              AND (:search IS NULL OR (
-                    LOWER(a.reference) LIKE :search
-                    OR LOWER(a.description) LIKE :search
-                    OR LOWER(a.action) LIKE :search
+              AND (CAST(:search AS VARCHAR) IS NULL OR (
+                    LOWER(a.reference) LIKE CAST(:search AS VARCHAR)
+                    OR LOWER(a.description) LIKE CAST(:search AS VARCHAR)
+                    OR LOWER(a.action) LIKE CAST(:search AS VARCHAR)
               ))
-              AND (:action IS NULL OR a.action = :action)
-              AND (:deviceSerial IS NULL OR a.reference = :deviceSerial)
-              AND (:operatorId IS NULL OR a.actionable_id = :operatorId)
-              AND (:dateFrom IS NULL OR a.created_at >= :dateFrom)
-              AND (:dateTo IS NULL OR a.created_at <= :dateTo)
+              AND (CAST(:action AS VARCHAR) IS NULL OR a.action = CAST(:action AS VARCHAR))
+              AND (CAST(:deviceSerial AS VARCHAR) IS NULL OR a.reference = CAST(:deviceSerial AS VARCHAR))
+              AND (CAST(:operatorId AS BIGINT) IS NULL OR a.actionable_id = CAST(:operatorId AS BIGINT))
+              AND (CAST(:dateFrom AS TIMESTAMP) IS NULL OR a.created_at >= CAST(:dateFrom AS TIMESTAMP))
+              AND (CAST(:dateTo AS TIMESTAMP) IS NULL OR a.created_at <= CAST(:dateTo AS TIMESTAMP))
             ORDER BY a.created_at DESC
             """, countQuery = """
             SELECT COUNT(*) FROM activities a
             WHERE a.user_id = :merchantId
               AND a.actionable_type = 'device_login'
-              AND (:search IS NULL OR (
-                    LOWER(a.reference) LIKE :search
-                    OR LOWER(a.description) LIKE :search
-                    OR LOWER(a.action) LIKE :search
+              AND (CAST(:search AS VARCHAR) IS NULL OR (
+                    LOWER(a.reference) LIKE CAST(:search AS VARCHAR)
+                    OR LOWER(a.description) LIKE CAST(:search AS VARCHAR)
+                    OR LOWER(a.action) LIKE CAST(:search AS VARCHAR)
               ))
-              AND (:action IS NULL OR a.action = :action)
-              AND (:deviceSerial IS NULL OR a.reference = :deviceSerial)
-              AND (:operatorId IS NULL OR a.actionable_id = :operatorId)
-              AND (:dateFrom IS NULL OR a.created_at >= :dateFrom)
-              AND (:dateTo IS NULL OR a.created_at <= :dateTo)
+              AND (CAST(:action AS VARCHAR) IS NULL OR a.action = CAST(:action AS VARCHAR))
+              AND (CAST(:deviceSerial AS VARCHAR) IS NULL OR a.reference = CAST(:deviceSerial AS VARCHAR))
+              AND (CAST(:operatorId AS BIGINT) IS NULL OR a.actionable_id = CAST(:operatorId AS BIGINT))
+              AND (CAST(:dateFrom AS TIMESTAMP) IS NULL OR a.created_at >= CAST(:dateFrom AS TIMESTAMP))
+              AND (CAST(:dateTo AS TIMESTAMP) IS NULL OR a.created_at <= CAST(:dateTo AS TIMESTAMP))
             """, nativeQuery = true)
     Page<DeviceActivity> findFiltered(@Param("merchantId") Long merchantId, @Param("search") String search,
             @Param("action") String action, @Param("deviceSerial") String deviceSerial,
