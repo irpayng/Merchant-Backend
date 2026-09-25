@@ -115,9 +115,9 @@ public class DeviceActivityService {
         DeviceActivity da = deviceActivityRepository.findById(id)
                 .orElseThrow(() -> new java.util.NoSuchElementException("Device activity not found"));
 
-        // Verify merchant scope and actionable type
+        // Verify merchant scope and that this is a device activity (has reference)
         Long merchantId = merchantScopeId();
-        if (!merchantId.equals(da.getUserId()) || !"device_login".equals(da.getActionableType())) {
+        if (!merchantId.equals(da.getUserId()) || da.getReference() == null || da.getReference().isBlank()) {
             throw new java.util.NoSuchElementException("Device activity not found");
         }
 
@@ -141,11 +141,9 @@ public class DeviceActivityService {
         Map<String, Object> filters = new LinkedHashMap<>();
 
         try {
-            // Actions
-            List<Map<String, String>> actions = new ArrayList<>();
-            actions.add(Map.of("id", "login", "name", "Logged In"));
-            actions.add(Map.of("id", "logout", "name", "Logged Out"));
-            filters.put("actions", actions);
+            // Actions - dynamically fetch from database
+            List<String> actionValues = deviceActivityRepository.findDistinctActions(merchantId);
+            filters.put("actions", actionValues);
 
             // Devices
             List<String> serials = deviceActivityRepository.findDistinctDeviceSerials(merchantId);
