@@ -454,6 +454,56 @@ public class GrpcClient {
     }
 
     /**
+     * Get a user preference by key from tms-user.
+     *
+     * @param userId
+     *            the user's id in tms-user
+     * @param key
+     *            the preference key to look up
+     * @return map with found (boolean), key, and value (if found)
+     */
+    public Map<String, Object> getUserPreference(long userId, String key) {
+        logRequest("GetUserPreference", key);
+        try {
+            var resp = userStub.getUserPreference(com.tms.report.grpc.user.GetUserPreferenceRequest.newBuilder()
+                    .setUserId(userId).setKey(key).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("found", resp.getFound());
+            result.put("key", resp.getKey());
+            result.put("value", resp.getValue());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetUserPreference", key, e);
+        }
+    }
+
+    /**
+     * Set a user preference in tms-user.
+     *
+     * @param userId
+     *            the user's id in tms-user
+     * @param key
+     *            the preference key
+     * @param value
+     *            the preference value
+     * @return map with success, key, and value
+     */
+    public Map<String, Object> setUserPreference(long userId, String key, String value) {
+        logRequest("SetUserPreference", key);
+        try {
+            var resp = userStub.setUserPreference(com.tms.report.grpc.user.SetUserPreferenceRequest.newBuilder()
+                    .setUserId(userId).setKey(key).setValue(value).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("key", resp.getKey());
+            result.put("value", resp.getValue());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("SetUserPreference", key, e);
+        }
+    }
+
+    /**
      * Find a user by email address. Returns exists=true and user_id if found.
      *
      * @param email
@@ -860,6 +910,90 @@ public class GrpcClient {
             return toMap(resp.getSuccess(), ref, resp.getMessage(), null);
         } catch (StatusRuntimeException e) {
             throw grpcError("CreateSettlement", ref, e);
+        }
+    }
+
+    /**
+     * Get settlement history for a reference or merchant.
+     */
+    public Map<String, Object> getSettlementHistory(String reference, String merchantId, String startDate,
+            String endDate, int limit) {
+        String ref = Ulid.generate();
+        logRequest("GetSettlementHistory", ref);
+        try {
+            var resp = settlementStub.getSettlementHistory(com.tms.report.grpc.settlement.GetSettlementHistoryRequest
+                    .newBuilder().setReference(reference != null ? reference : "")
+                    .setMerchantId(merchantId != null ? merchantId : "")
+                    .setStartDate(startDate != null ? startDate : "").setEndDate(endDate != null ? endDate : "")
+                    .setLimit(limit > 0 ? limit : 100).build());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("reference", ref);
+            result.put("total_count", resp.getTotalCount());
+            result.put("history", resp.getHistoryList().stream().map(h -> {
+                Map<String, Object> hm = new HashMap<>();
+                hm.put("id", h.getId());
+                hm.put("settlement_reference", h.getSettlementReference());
+                hm.put("merchant_id", h.getMerchantId());
+                hm.put("event_type", h.getEventType());
+                hm.put("previous_status", h.getPreviousStatus());
+                hm.put("new_status", h.getNewStatus());
+                hm.put("amount", h.getAmount());
+                hm.put("net_amount", h.getNetAmount());
+                hm.put("settlement_type", h.getSettlementType());
+                hm.put("actor", h.getActor());
+                hm.put("actor_type", h.getActorType());
+                hm.put("notes", h.getNotes());
+                hm.put("related_reference", h.getRelatedReference());
+                hm.put("created_at", h.getCreatedAt());
+                return hm;
+            }).toList());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetSettlementHistory", ref, e);
+        }
+    }
+
+    /**
+     * Get settlements by resolution status.
+     */
+    public Map<String, Object> getSettlementsByResolutionStatus(String merchantId, String resolutionStatus,
+            String startDate, String endDate, int limit) {
+        String ref = Ulid.generate();
+        logRequest("GetSettlementsByResolutionStatus", ref);
+        try {
+            var resp = settlementStub.getSettlementsByResolutionStatus(
+                    com.tms.report.grpc.settlement.GetByResolutionStatusRequest.newBuilder().setMerchantId(merchantId)
+                            .setResolutionStatus(resolutionStatus).setStartDate(startDate != null ? startDate : "")
+                            .setEndDate(endDate != null ? endDate : "").setLimit(limit > 0 ? limit : 100).build());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("reference", ref);
+            result.put("settlements", resp.getSettlementsList().stream().map(s -> {
+                Map<String, Object> sm = new HashMap<>();
+                sm.put("reference", s.getReference());
+                sm.put("terminal_id", s.getTerminalId());
+                sm.put("merchant_id", s.getMerchantId());
+                sm.put("amount", s.getAmount());
+                sm.put("acquirer_fee", s.getAcquirerFee());
+                sm.put("status", s.getStatus());
+                sm.put("transaction_time", s.getTransactionTime());
+                sm.put("card_scheme", s.getCardScheme());
+                sm.put("bank", s.getBank());
+                sm.put("resolution_status", s.getResolutionStatus());
+                sm.put("settlement_type", s.getSettlementType());
+                sm.put("scheduled_resolution_date", s.getScheduledResolutionDate());
+                sm.put("resolved_at", s.getResolvedAt());
+                sm.put("paid_at", s.getPaidAt());
+                sm.put("net_amount", s.getNetAmount());
+                sm.put("payout_reference", s.getPayoutReference());
+                return sm;
+            }).toList());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetSettlementsByResolutionStatus", ref, e);
         }
     }
 
