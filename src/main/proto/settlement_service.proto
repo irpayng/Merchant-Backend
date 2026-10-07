@@ -6,7 +6,18 @@ option java_package = "com.tms.report.grpc.settlement";
 package settlement;
 
 service SettlementService {
+  // ── Existing RPCs ──
   rpc CreateSettlement (CreateSettlementRequest) returns (SettlementCommandResponse);
+  rpc GetSettlementsByTerminal (GetSettlementsByTerminalRequest) returns (SettlementsResponse);
+  rpc GetSettlementSummary (GetSettlementSummaryRequest) returns (SettlementSummaryResponse);
+
+  // ── Resolution RPCs ──
+  rpc ScheduleSettlement (ScheduleSettlementRequest) returns (SettlementCommandResponse);
+  rpc ResolveSettlement (ResolveSettlementRequest) returns (SettlementCommandResponse);
+  rpc MarkSettlementPaid (MarkSettlementPaidRequest) returns (SettlementCommandResponse);
+  rpc ResolveSettlementsByAgreement (ResolveByAgreementRequest) returns (BulkResolutionResponse);
+  rpc GetSettlementHistory (GetSettlementHistoryRequest) returns (SettlementHistoryResponse);
+  rpc GetSettlementsByResolutionStatus (GetByResolutionStatusRequest) returns (SettlementsResponse);
 }
 
 message CreateSettlementRequest {
@@ -32,4 +43,128 @@ message SettlementCommandResponse {
   bool success = 1;
   string message = 2;
   string reference = 3;
+}
+
+message GetSettlementsByTerminalRequest {
+  string terminal_id = 1;
+  string start_date = 2;
+  string end_date = 3;
+}
+
+message SettlementRecord {
+  string reference = 1;
+  string terminal_id = 2;
+  string merchant_id = 3;
+  double amount = 4;
+  double acquirer_fee = 5;
+  string status = 6;
+  string transaction_time = 7;
+  string card_scheme = 8;
+  string bank = 9;
+  string resolution_status = 10;
+  string settlement_type = 11;
+  string scheduled_resolution_date = 12;
+  string resolved_at = 13;
+  string paid_at = 14;
+  double net_amount = 15;
+  string payout_reference = 16;
+}
+
+message SettlementsResponse {
+  repeated SettlementRecord settlements = 1;
+}
+
+message GetSettlementSummaryRequest {
+  string terminal_id = 1;
+  string merchant_id = 2;
+  string start_date = 3;
+  string end_date = 4;
+}
+
+message SettlementSummaryResponse {
+  int32 total_count = 1;
+  double total_amount = 2;
+  double total_acquirer_fee = 3;
+}
+
+// Resolution messages
+message ScheduleSettlementRequest {
+  string reference = 1;
+  string settlement_type = 2;
+  string scheduled_resolution_date = 3;
+  string actor = 4;
+  string notes = 5;
+}
+
+message ResolveSettlementRequest {
+  string reference = 1;
+  string actor = 2;
+  string notes = 3;
+}
+
+message MarkSettlementPaidRequest {
+  string reference = 1;
+  string payout_reference = 2;
+  double net_amount = 3;
+  string actor = 4;
+  string notes = 5;
+}
+
+message ResolveByAgreementRequest {
+  string merchant_id = 1;
+  string settlement_type = 2;
+  string start_date = 3;
+  string end_date = 4;
+  string actor = 5;
+  string notes = 6;
+}
+
+message BulkResolutionResponse {
+  bool success = 1;
+  string message = 2;
+  int32 total_processed = 3;
+  int32 scheduled_count = 4;
+  int32 resolved_count = 5;
+  int32 failed_count = 6;
+  repeated string failed_references = 7;
+  double total_amount = 8;
+  double total_net_amount = 9;
+}
+
+message GetSettlementHistoryRequest {
+  string reference = 1;
+  string merchant_id = 2;
+  string start_date = 3;
+  string end_date = 4;
+  int32 limit = 5;
+}
+
+message SettlementHistoryRecord {
+  int64 id = 1;
+  string settlement_reference = 2;
+  string merchant_id = 3;
+  string event_type = 4;
+  string previous_status = 5;
+  string new_status = 6;
+  double amount = 7;
+  double net_amount = 8;
+  string settlement_type = 9;
+  string actor = 10;
+  string actor_type = 11;
+  string notes = 12;
+  string related_reference = 13;
+  string created_at = 14;
+}
+
+message SettlementHistoryResponse {
+  repeated SettlementHistoryRecord history = 1;
+  int32 total_count = 2;
+}
+
+message GetByResolutionStatusRequest {
+  string merchant_id = 1;
+  string resolution_status = 2;
+  string start_date = 3;
+  string end_date = 4;
+  int32 limit = 5;
 }
