@@ -1,8 +1,9 @@
 package com.tms.report.modules.settings.controller;
 
-import com.tms.report.core.response.ApiResponse;
-import com.tms.report.core.security.MerchantUser;
+import com.tms.report.core.dto.ApiResponse;
+import com.tms.report.core.security.MerchantUserDetails;
 import com.tms.report.modules.grpc.service.GrpcClient;
+import com.tms.report.modules.merchantuser.model.MerchantUser;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -37,8 +38,9 @@ public class MerchantSettingsController {
      * is enabled for the authenticated merchant.
      */
     @GetMapping("/receipt-reprint-guard")
-    public ApiResponse<Map<String, Object>> getReceiptReprintGuard(@AuthenticationPrincipal MerchantUser user) {
-        Long merchantId = merchantId(user);
+    public ApiResponse<Map<String, Object>> getReceiptReprintGuard(
+            @AuthenticationPrincipal MerchantUserDetails userDetails) {
+        Long merchantId = merchantId(userDetails);
         Map<String, Object> pref = grpcClient.getUserPreference(merchantId, "receipt_reprint_guard");
         boolean enabled = Boolean.TRUE.equals(pref.get("found")) && "true".equalsIgnoreCase((String) pref.get("value"));
         return ApiResponse.success(Map.of("enabled", enabled));
@@ -49,18 +51,22 @@ public class MerchantSettingsController {
      * reprint guard for the authenticated merchant.
      */
     @PutMapping("/receipt-reprint-guard")
-    public ApiResponse<Map<String, Object>> setReceiptReprintGuard(@AuthenticationPrincipal MerchantUser user,
-            @RequestBody Map<String, Object> body) {
-        Long merchantId = merchantId(user);
+    public ApiResponse<Map<String, Object>> setReceiptReprintGuard(
+            @AuthenticationPrincipal MerchantUserDetails userDetails, @RequestBody Map<String, Object> body) {
+        Long merchantId = merchantId(userDetails);
         Boolean enabled = (Boolean) body.get("enabled");
         if (enabled == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "enabled field is required");
         }
         grpcClient.setUserPreference(merchantId, "receipt_reprint_guard", enabled ? "true" : "false");
-        return ApiResponse.success(Map.of("enabled", enabled, "message", "Receipt reprint guard updated"));
+        return ApiResponse.success(Map.of("enabled", enabled), "Receipt reprint guard updated");
     }
 
-    private Long merchantId(MerchantUser user) {
+    private Long merchantId(MerchantUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Merchant authentication required");
+        }
+        MerchantUser user = userDetails.getMerchantUser();
         if (user == null || user.getMerchantId() == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Merchant authentication required");
         }
