@@ -520,3 +520,159 @@ CREATE INDEX IF NOT EXISTS idx_activities_user_id ON public.activities(user_id);
 CREATE INDEX IF NOT EXISTS idx_activities_actionable ON public.activities(actionable_type, actionable_id);
 CREATE INDEX IF NOT EXISTS idx_activities_reference ON public.activities(reference);
 CREATE INDEX IF NOT EXISTS idx_activities_created_at ON public.activities(created_at);
+
+-- =============================================================================
+-- Multi-branch merchant structure tables (2026-10)
+-- =============================================================================
+
+-- ─── merchant_settlement_accounts (from tms-config) ─────────────────────────
+-- Merchant-level settlement account pool. TIDs reference these via
+-- settlement_account_id for per-terminal settlement routing.
+CREATE TABLE IF NOT EXISTS public.merchant_settlement_accounts (
+    id                  BIGSERIAL PRIMARY KEY,
+    user_id             BIGINT NOT NULL,
+    account_number      VARCHAR(30) NOT NULL,
+    bank_code           VARCHAR(20) NOT NULL,
+    account_name        VARCHAR(255),
+    label               VARCHAR(100),
+    is_default          BOOLEAN NOT NULL DEFAULT false,
+    status              VARCHAR(20) NOT NULL DEFAULT 'active',
+    created_at          TIMESTAMPTZ,
+    updated_at          TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_merchant_settlement_acct_user_id ON public.merchant_settlement_accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_merchant_settlement_acct_account ON public.merchant_settlement_accounts(account_number, bank_code);
+
+-- ─── merchant_branches (from tms-config) ────────────────────────────────────
+-- Merchant sub-units. TIDs, terminals, and operators can be scoped to a branch.
+CREATE TABLE IF NOT EXISTS public.merchant_branches (
+    id                  BIGSERIAL PRIMARY KEY,
+    user_id             BIGINT NOT NULL,
+    name                VARCHAR(255) NOT NULL,
+    code                VARCHAR(20) NOT NULL,
+    address             TEXT,
+    state_code          VARCHAR(10),
+    lga_code            VARCHAR(20),
+    phone_number        VARCHAR(20),
+    email               VARCHAR(255),
+    status              VARCHAR(20) NOT NULL DEFAULT 'active',
+    is_primary          BOOLEAN NOT NULL DEFAULT false,
+    created_at          TIMESTAMPTZ,
+    updated_at          TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_merchant_branch_user_id ON public.merchant_branches(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_merchant_branch_code ON public.merchant_branches(user_id, code);
+
+-- ─── tids: add branch_id and settlement_account_id columns ──────────────────
+ALTER TABLE public.tids ADD COLUMN IF NOT EXISTS branch_id bigint;
+ALTER TABLE public.tids ADD COLUMN IF NOT EXISTS settlement_account_id bigint;
+
+CREATE INDEX IF NOT EXISTS idx_tids_branch_id ON public.tids(branch_id);
+CREATE INDEX IF NOT EXISTS idx_tids_settlement_account_id ON public.tids(settlement_account_id);
+
+-- ─── terminals: add branch_id column ────────────────────────────────────────
+ALTER TABLE public.terminals ADD COLUMN IF NOT EXISTS branch_id bigint;
+
+CREATE INDEX IF NOT EXISTS idx_terminals_branch_id ON public.terminals(branch_id);
+
+-- ─── operators: add branch_id column ────────────────────────────────────────
+ALTER TABLE public.operators ADD COLUMN IF NOT EXISTS branch_id bigint;
+
+CREATE INDEX IF NOT EXISTS idx_operators_branch_id ON public.operators(branch_id);
+
+
+-- =============================================================================
+-- Direct Settlement Tables (for tms-settlement service, 2026-10)
+-- =============================================================================
+
+-- ─── direct_settlements (history for direct bank transfers) ─────────────────
+-- This is separate from the main settlements table which tracks the resolution
+-- workflow. Direct settlements bypass the wallet and go straight to bank.
+CREATE TABLE IF NOT EXISTS public.direct_settlements (
+    id                              BIGSERIAL PRIMARY KEY,
+    user_id                         BIGINT NOT NULL,
+    transaction_reference           VARCHAR(50) NOT NULL UNIQUE,
+    settlement_reference            VARCHAR(50),
+    amount                          NUMERIC(18,2) NOT NULL,
+    settlement_type                 VARCHAR(30) NOT NULL,
+    terminal_id                     VARCHAR(20),
+    bank_code                       VARCHAR(20),
+    destination_account_number      VARCHAR(30),
+    destination_bank_code           VARCHAR(20),
+    destination_account_name        VARCHAR(255),
+    destination_source              VARCHAR(50),
+    status                          VARCHAR(20) NOT NULL,
+    error_message                   VARCHAR(500),
+    created_at                      TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_direct_settle_txn_ref ON public.direct_settlements(transaction_reference);
+CREATE INDEX IF NOT EXISTS idx_direct_settle_ref ON public.direct_settlements(settlement_reference);
+CREATE INDEX IF NOT EXISTS idx_direct_settle_user ON public.direct_settlements(user_id);
+CREATE INDEX IF NOT EXISTS idx_direct_settle_bank ON public.direct_settlements(bank_code);
+CREATE INDEX IF NOT EXISTS idx_direct_settle_status ON public.direct_settlements(status);
+CREATE INDEX IF NOT EXISTS idx_direct_settle_created ON public.direct_settlements(created_at);
+
+-- ─── pending_settlements (queue for hourly batch processing) ────────────────
+CREATE TABLE IF NOT EXISTS public.pending_settlements (
+    id                              BIGSERIAL PRIMARY KEY,
+    user_id                         BIGINT NOT NULL,
+    transaction_reference           VARCHAR(50) NOT NULL UNIQUE,
+    amount                          NUMERIC(18,2) NOT NULL,
+    settlement_type                 VARCHAR(30) NOT NULL,
+    terminal_id                     VARCHAR(20),
+    bank_code                       VARCHAR(20),
+    status                          VARCHAR(20) NOT NULL DEFAULT 'pending',
+    settlement_reference            VARCHAR(50),
+    destination_account_number      VARCHAR(30),
+    destination_bank_code           VARCHAR(20),
+    destination_account_name        VARCHAR(255),
+    error_message                   VARCHAR(500),
+    retry_count                     INTEGER NOT NULL DEFAULT 0,
+    created_at                      TIMESTAMPTZ,
+    processed_at                    TIMESTAMPTZ,
+    updated_at                      TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_settlement_ref ON public.pending_settlements(transaction_reference);
+CREATE INDEX IF NOT EXISTS idx_pending_settlement_status ON public.pending_settlements(status);
+CREATE INDEX IF NOT EXISTS idx_pending_settlement_bank ON public.pending_settlements(bank_code, status);
+CREATE INDEX IF NOT EXISTS idx_pending_settlement_user ON public.pending_settlements(user_id);
+
+
+-- ─── merchant_settlement_accounts (multi-branch settlement destinations) ────
+CREATE TABLE IF NOT EXISTS public.merchant_settlement_accounts (
+    id                              BIGSERIAL PRIMARY KEY,
+    user_id                         BIGINT NOT NULL,
+    account_number                  VARCHAR(30) NOT NULL,
+    bank_code                       VARCHAR(20) NOT NULL,
+    account_name                    VARCHAR(255),
+    label                           VARCHAR(100),
+    is_default                      BOOLEAN NOT NULL DEFAULT FALSE,
+    status                          VARCHAR(20) NOT NULL DEFAULT 'active',
+    created_at                      TIMESTAMPTZ,
+    updated_at                      TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_merchant_settlement_acct_user_id ON public.merchant_settlement_accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_merchant_settlement_acct_account ON public.merchant_settlement_accounts(account_number, bank_code);
+
+-- ─── merchant_branches (merchant sub-locations) ─────────────────────────────
+CREATE TABLE IF NOT EXISTS public.merchant_branches (
+    id                              BIGSERIAL PRIMARY KEY,
+    user_id                         BIGINT NOT NULL,
+    name                            VARCHAR(255) NOT NULL,
+    code                            VARCHAR(20) NOT NULL,
+    address                         TEXT,
+    state_code                      VARCHAR(10),
+    lga_code                        VARCHAR(20),
+    phone_number                    VARCHAR(20),
+    email                           VARCHAR(255),
+    status                          VARCHAR(20) NOT NULL DEFAULT 'active',
+    is_primary                      BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at                      TIMESTAMPTZ,
+    updated_at                      TIMESTAMPTZ,
+    UNIQUE(user_id, code)
+);
+CREATE INDEX IF NOT EXISTS idx_merchant_branch_user_id ON public.merchant_branches(user_id);
