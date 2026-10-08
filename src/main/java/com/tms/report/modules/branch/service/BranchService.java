@@ -394,6 +394,17 @@ public class BranchService {
             return null;
         if (o instanceof Timestamp)
             return ((Timestamp) o).toInstant();
-        return Instant.parse(o.toString());
+        if (o instanceof java.time.LocalDateTime ldt)
+            return ldt.atZone(java.time.ZoneId.systemDefault()).toInstant();
+        if (o instanceof java.time.OffsetDateTime odt)
+            return odt.toInstant();
+        // Fallback: try parsing as ISO instant, or as local datetime
+        String s = o.toString();
+        try {
+            return Instant.parse(s);
+        } catch (Exception e) {
+            // Try parsing as LocalDateTime and convert
+            return java.time.LocalDateTime.parse(s).atZone(java.time.ZoneId.systemDefault()).toInstant();
+        }
     }
 }
