@@ -220,7 +220,8 @@ CREATE INDEX IF NOT EXISTS idx_device_activities_created_at ON merchant.device_a
 -- =============================================================================
 -- MERCHANT_BRANCHES — multi-branch merchant structure (2026-10)
 -- Merchants can have multiple branches (store locations). TIDs, terminals, and
--- operators can be scoped to a branch. Settlement is at merchant level.
+-- operators can be scoped to a branch. Each branch can have its own settlement
+-- account for per-branch settlement.
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS public.merchant_branches (
     id              BIGSERIAL PRIMARY KEY,
@@ -234,9 +235,20 @@ CREATE TABLE IF NOT EXISTS public.merchant_branches (
     email           VARCHAR(255),
     status          VARCHAR(20) NOT NULL DEFAULT 'active',
     is_primary      BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Settlement account details (optional, if null falls back to merchant default)
+    settlement_account_number VARCHAR(20),
+    settlement_account_name   VARCHAR(255),
+    settlement_bank_code      VARCHAR(10),
+    settlement_bank_name      VARCHAR(100),
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(user_id, code)
 );
 
 CREATE INDEX IF NOT EXISTS idx_merchant_branches_user_id ON public.merchant_branches(user_id);
+
+-- Add settlement columns to existing table if they don't exist
+ALTER TABLE public.merchant_branches ADD COLUMN IF NOT EXISTS settlement_account_number VARCHAR(20);
+ALTER TABLE public.merchant_branches ADD COLUMN IF NOT EXISTS settlement_account_name VARCHAR(255);
+ALTER TABLE public.merchant_branches ADD COLUMN IF NOT EXISTS settlement_bank_code VARCHAR(10);
+ALTER TABLE public.merchant_branches ADD COLUMN IF NOT EXISTS settlement_bank_name VARCHAR(100);

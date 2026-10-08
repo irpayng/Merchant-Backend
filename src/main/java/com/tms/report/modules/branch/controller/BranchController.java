@@ -5,6 +5,7 @@ import com.tms.report.core.dto.PagedResponse;
 import com.tms.report.core.security.MerchantScope;
 import com.tms.report.modules.branch.dto.BranchCreateRequest;
 import com.tms.report.modules.branch.dto.BranchResponse;
+import com.tms.report.modules.branch.dto.BranchSettlementRequest;
 import com.tms.report.modules.branch.dto.BranchUpdateRequest;
 import com.tms.report.modules.branch.service.BranchService;
 import jakarta.validation.Valid;
@@ -18,7 +19,7 @@ import org.springframework.web.bind.annotation.*;
  *
  * <p>
  * Merchants can manage their branches (physical locations). Each branch can
- * have its own terminals, TIDs, and operators assigned.
+ * have its own terminals, TIDs, operators, and settlement account assigned.
  * </p>
  */
 @RestController
@@ -133,5 +134,39 @@ public class BranchController {
             return ApiResponse.error(404, "Branch not found");
         }
         return ApiResponse.success(stats);
+    }
+
+    /**
+     * Update branch settlement account.
+     */
+    @PutMapping("/{id}/settlement-account")
+    public ApiResponse<BranchResponse> updateSettlementAccount(@PathVariable Long id,
+            @Valid @RequestBody BranchSettlementRequest request) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return ApiResponse.error(401, "Unauthorized");
+        }
+        BranchResponse branch = branchService.updateSettlementAccount(id, merchantId, request.getAccountNumber(),
+                request.getAccountName(), request.getBankCode(), request.getBankName());
+        if (branch == null) {
+            return ApiResponse.error(404, "Branch not found");
+        }
+        return ApiResponse.success(branch, "Settlement account updated successfully");
+    }
+
+    /**
+     * Clear branch settlement account (use merchant default).
+     */
+    @DeleteMapping("/{id}/settlement-account")
+    public ApiResponse<BranchResponse> clearSettlementAccount(@PathVariable Long id) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return ApiResponse.error(401, "Unauthorized");
+        }
+        BranchResponse branch = branchService.clearSettlementAccount(id, merchantId);
+        if (branch == null) {
+            return ApiResponse.error(404, "Branch not found");
+        }
+        return ApiResponse.success(branch, "Settlement account cleared successfully");
     }
 }

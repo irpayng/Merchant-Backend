@@ -46,6 +46,19 @@ public class BranchResponse {
     @JsonProperty("total_volume")
     private Long totalVolume;
 
+    // Settlement account fields
+    @JsonProperty("settlement_account_number")
+    private String settlementAccountNumber;
+
+    @JsonProperty("settlement_account_name")
+    private String settlementAccountName;
+
+    @JsonProperty("settlement_bank_code")
+    private String settlementBankCode;
+
+    @JsonProperty("settlement_bank_name")
+    private String settlementBankName;
+
     @JsonProperty("created_at")
     private Instant createdAt;
 
