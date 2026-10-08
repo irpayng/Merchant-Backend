@@ -58,7 +58,7 @@ public class BranchService {
         }
 
         // Count query
-        String countSql = "SELECT COUNT(*) FROM config.merchant_branches b " + where;
+        String countSql = "SELECT COUNT(*) FROM merchant_branches b " + where;
         Query countQ = entityManager.createNativeQuery(countSql);
         qp.forEach(countQ::setParameter);
         long total = ((Number) countQ.getSingleResult()).longValue();
@@ -70,17 +70,17 @@ public class BranchService {
                        b.created_at, b.updated_at,
                        COALESCE(tc.terminal_count, 0) as terminals,
                        COALESCE(tv.total_volume, 0) as total_volume
-                FROM config.merchant_branches b
+                FROM merchant_branches b
                 LEFT JOIN (
                     SELECT branch_id, COUNT(*) as terminal_count
-                    FROM config.tids
+                    FROM tids
                     WHERE branch_id IS NOT NULL
                     GROUP BY branch_id
                 ) tc ON tc.branch_id = b.id
                 LEFT JOIN (
                     SELECT t.branch_id, SUM(tx.amount) as total_volume
-                    FROM config.tids t
-                    JOIN transaction.transactions tx ON tx.terminal_id = t.terminal_id
+                    FROM tids t
+                    JOIN transactions tx ON tx.terminal_id = t.terminal_id
                     WHERE t.branch_id IS NOT NULL AND tx.status_id = 1
                     GROUP BY t.branch_id
                 ) tv ON tv.branch_id = b.id
@@ -129,16 +129,16 @@ public class BranchService {
                        b.created_at, b.updated_at,
                        COALESCE(tc.terminal_count, 0) as terminals,
                        COALESCE(tv.total_volume, 0) as total_volume
-                FROM config.merchant_branches b
+                FROM merchant_branches b
                 LEFT JOIN (
                     SELECT branch_id, COUNT(*) as terminal_count
-                    FROM config.tids WHERE branch_id = :branchId
+                    FROM tids WHERE branch_id = :branchId
                     GROUP BY branch_id
                 ) tc ON tc.branch_id = b.id
                 LEFT JOIN (
                     SELECT t.branch_id, SUM(tx.amount) as total_volume
-                    FROM config.tids t
-                    JOIN transaction.transactions tx ON tx.terminal_id = t.terminal_id
+                    FROM tids t
+                    JOIN transactions tx ON tx.terminal_id = t.terminal_id
                     WHERE t.branch_id = :branchId AND tx.status_id = 1
                     GROUP BY t.branch_id
                 ) tv ON tv.branch_id = b.id
@@ -174,12 +174,12 @@ public class BranchService {
         // If setting as primary, clear existing primary
         if (Boolean.TRUE.equals(request.getIsPrimary())) {
             entityManager.createNativeQuery(
-                    "UPDATE config.merchant_branches SET is_primary = false WHERE user_id = :merchantId AND is_primary = true")
+                    "UPDATE merchant_branches SET is_primary = false WHERE user_id = :merchantId AND is_primary = true")
                     .setParameter("merchantId", merchantId).executeUpdate();
         }
 
         String sql = """
-                INSERT INTO config.merchant_branches
+                INSERT INTO merchant_branches
                 (user_id, name, code, address, state_code, lga_code, phone_number, email, status, is_primary, created_at, updated_at)
                 VALUES (:userId, :name, :code, :address, :stateCode, :lgaCode, :phone, :email, 'active', :isPrimary, NOW(), NOW())
                 RETURNING id
@@ -203,15 +203,14 @@ public class BranchService {
     public BranchResponse updateBranch(Long branchId, Long merchantId, BranchUpdateRequest request) {
         // Verify branch exists and belongs to merchant
         Long count = ((Number) entityManager
-                .createNativeQuery(
-                        "SELECT COUNT(*) FROM config.merchant_branches WHERE id = :id AND user_id = :merchantId")
+                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
                 .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
 
         if (count == 0) {
             return null;
         }
 
-        StringBuilder sql = new StringBuilder("UPDATE config.merchant_branches SET updated_at = NOW()");
+        StringBuilder sql = new StringBuilder("UPDATE merchant_branches SET updated_at = NOW()");
         Map<String, Object> params = new HashMap<>();
         params.put("id", branchId);
         params.put("merchantId", merchantId);
@@ -266,8 +265,7 @@ public class BranchService {
     public BranchResponse setPrimary(Long branchId, Long merchantId) {
         // Verify branch exists
         Long count = ((Number) entityManager
-                .createNativeQuery(
-                        "SELECT COUNT(*) FROM config.merchant_branches WHERE id = :id AND user_id = :merchantId")
+                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
                 .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
 
         if (count == 0) {
@@ -276,13 +274,12 @@ public class BranchService {
 
         // Clear existing primary
         entityManager.createNativeQuery(
-                "UPDATE config.merchant_branches SET is_primary = false WHERE user_id = :merchantId AND is_primary = true")
+                "UPDATE merchant_branches SET is_primary = false WHERE user_id = :merchantId AND is_primary = true")
                 .setParameter("merchantId", merchantId).executeUpdate();
 
         // Set new primary
         entityManager
-                .createNativeQuery(
-                        "UPDATE config.merchant_branches SET is_primary = true, updated_at = NOW() WHERE id = :id")
+                .createNativeQuery("UPDATE merchant_branches SET is_primary = true, updated_at = NOW() WHERE id = :id")
                 .setParameter("id", branchId).executeUpdate();
 
         log.info("Set branch {} as primary for merchant {}", branchId, merchantId);
@@ -296,7 +293,7 @@ public class BranchService {
     public boolean deleteBranch(Long branchId, Long merchantId) {
         // Check if branch has TIDs assigned
         Long tidCount = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM config.tids WHERE branch_id = :branchId")
+                .createNativeQuery("SELECT COUNT(*) FROM tids WHERE branch_id = :branchId")
                 .setParameter("branchId", branchId).getSingleResult()).longValue();
 
         if (tidCount > 0) {
@@ -305,7 +302,7 @@ public class BranchService {
         }
 
         int deleted = entityManager
-                .createNativeQuery("DELETE FROM config.merchant_branches WHERE id = :id AND user_id = :merchantId")
+                .createNativeQuery("DELETE FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
                 .setParameter("id", branchId).setParameter("merchantId", merchantId).executeUpdate();
 
         if (deleted > 0) {
@@ -321,8 +318,7 @@ public class BranchService {
     public Map<String, Object> getBranchStats(Long branchId, Long merchantId) {
         // Verify branch exists
         Long count = ((Number) entityManager
-                .createNativeQuery(
-                        "SELECT COUNT(*) FROM config.merchant_branches WHERE id = :id AND user_id = :merchantId")
+                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
                 .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
 
         if (count == 0) {
@@ -333,7 +329,7 @@ public class BranchService {
 
         // Terminal count
         Long terminals = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM config.tids WHERE branch_id = :branchId")
+                .createNativeQuery("SELECT COUNT(*) FROM tids WHERE branch_id = :branchId")
                 .setParameter("branchId", branchId).getSingleResult()).longValue();
         stats.put("terminals", terminals);
 
@@ -341,8 +337,8 @@ public class BranchService {
         try {
             Object[] txStats = (Object[]) entityManager.createNativeQuery("""
                     SELECT COUNT(*), COALESCE(SUM(tx.amount), 0)
-                    FROM transaction.transactions tx
-                    JOIN config.tids t ON t.terminal_id = tx.terminal_id
+                    FROM transactions tx
+                    JOIN tids t ON t.terminal_id = tx.terminal_id
                     WHERE t.branch_id = :branchId
                       AND tx.created_at >= NOW() - INTERVAL '30 days'
                       AND tx.status_id = 1
@@ -362,7 +358,7 @@ public class BranchService {
 
     private String generateBranchCode(Long merchantId) {
         Long count = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) + 1 FROM config.merchant_branches WHERE user_id = :merchantId")
+                .createNativeQuery("SELECT COUNT(*) + 1 FROM merchant_branches WHERE user_id = :merchantId")
                 .setParameter("merchantId", merchantId).getSingleResult()).longValue();
         return "BR" + String.format("%03d", count);
     }
