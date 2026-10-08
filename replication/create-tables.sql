@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 CREATE TABLE IF NOT EXISTS public.terminals (
     id                      BIGSERIAL PRIMARY KEY,
     user_id                 BIGINT,
+    branch_id               BIGINT,
     serial                  VARCHAR(255) NOT NULL,
     os                      VARCHAR(255),
     model                   VARCHAR(255) NOT NULL,
@@ -115,6 +116,10 @@ CREATE TABLE IF NOT EXISTS public.terminals (
     created_at              TIMESTAMPTZ,
     updated_at              TIMESTAMPTZ
 );
+
+-- Add branch_id column if it doesn't exist (for existing tables)
+ALTER TABLE public.terminals ADD COLUMN IF NOT EXISTS branch_id BIGINT;
+CREATE INDEX IF NOT EXISTS idx_terminals_branch_id ON public.terminals(branch_id);
 
 -- ─── terminal_metrics ───────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.terminal_metrics (

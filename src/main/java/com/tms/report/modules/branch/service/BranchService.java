@@ -1,12 +1,15 @@
 package com.tms.report.modules.branch.service;
 
+import com.tms.report.core.dto.PagedResponse;
 import com.tms.report.modules.branch.dto.BranchCreateRequest;
 import com.tms.report.modules.branch.dto.BranchResponse;
 import com.tms.report.modules.branch.dto.BranchUpdateRequest;
+import com.tms.report.modules.terminal.model.Terminal;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -421,6 +424,348 @@ public class BranchService {
 
         log.info("Cleared settlement account for branch {} of merchant {}", branchId, merchantId);
         return getBranch(branchId, merchantId);
+    }
+
+    // ────────────────────────────────────────────────────────────── Terminal
+    // Assignment
+
+    /**
+     * List terminals assigned to a branch.
+     */
+    @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> listBranchTerminals(Long branchId, Long merchantId, Map<String, String> params) {
+        // Verify branch exists and belongs to merchant
+        Long branchCount = ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
+                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
+
+        if (branchCount == 0) {
+            return PagedResponse.empty("/branches/" + branchId + "/terminals");
+        }
+
+        int page = Integer.parseInt(params.getOrDefault("page", "1")) - 1;
+        int limit = Integer.parseInt(params.getOrDefault("limit", "15"));
+
+        StringBuilder where = new StringBuilder("WHERE t.branch_id = :branchId AND t.user_id = :merchantId");
+        Map<String, Object> qp = new HashMap<>();
+        qp.put("branchId", branchId);
+        qp.put("merchantId", merchantId);
+
+        String search = params.get("search");
+        if (search != null && !search.isBlank()) {
+            where.append(" AND (LOWER(t.serial) LIKE :search OR LOWER(t.model) LIKE :search)");
+            qp.put("search", "%" + search.toLowerCase() + "%");
+        }
+
+        // Count query
+        String countSql = "SELECT COUNT(*) FROM terminals t " + where;
+        Query countQ = entityManager.createNativeQuery(countSql);
+        qp.forEach(countQ::setParameter);
+        long total = ((Number) countQ.getSingleResult()).longValue();
+
+        // Data query with latest metrics
+        String dataSql = """
+                SELECT t.id, t.serial, t.make, t.model, t.os, t.active, t.locked,
+                       t.created_at, t.updated_at,
+                       m.battery_pct, m.network_type, m.printer_status, m.created_at as last_seen,
+                       COALESCE(loc.location, t.serial) as location
+                FROM terminals t
+                LEFT JOIN LATERAL (
+                    SELECT battery_pct, network_type, printer_status, created_at
+                    FROM terminal_metrics
+                    WHERE serial = t.serial
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                ) m ON true
+                LEFT JOIN (
+                    SELECT terminal_address as location, terminal_id
+                    FROM tids
+                ) loc ON loc.terminal_id = t.serial
+                """ + where + " ORDER BY t.created_at DESC";
+
+        Query dataQ = entityManager.createNativeQuery(dataSql);
+        qp.forEach(dataQ::setParameter);
+        dataQ.setFirstResult(page * limit);
+        dataQ.setMaxResults(limit);
+
+        List<Object[]> rows = dataQ.getResultList();
+        List<Map<String, Object>> out = new ArrayList<>();
+
+        for (Object[] r : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", num(r[0]));
+            m.put("terminal_id", str(r[1]));
+            m.put("serial", str(r[1]));
+            m.put("make", str(r[2]));
+            m.put("model", str(r[3]));
+            m.put("os", str(r[4]));
+            m.put("model_os", str(r[3]) + ", " + str(r[4]));
+            m.put("active", r[5]);
+            m.put("locked", r[6]);
+            m.put("status", Boolean.TRUE.equals(r[6]) ? "Locked" : "Online");
+            m.put("created_at", timestamp(r[7]));
+            m.put("updated_at", timestamp(r[8]));
+            m.put("battery_pct", r[9]);
+            m.put("network_type", str(r[10]));
+            m.put("printer_status", r[11]);
+            m.put("last_seen", timestamp(r[12]));
+            m.put("location", str(r[13]));
+            out.add(m);
+        }
+
+        Page<Map<String, Object>> pageResult = new PageImpl<>(out, PageRequest.of(page, limit), total);
+        return PagedResponse.from(pageResult, "/branches/" + branchId + "/terminals");
+    }
+
+    /**
+     * Get terminal stats for a branch (for the stats cards).
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getBranchTerminalStats(Long branchId, Long merchantId) {
+        // Verify branch exists
+        Long branchCount = ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
+                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
+
+        if (branchCount == 0) {
+            return null;
+        }
+
+        Map<String, Object> stats = new LinkedHashMap<>();
+        LocalDateTime staleCutoff = LocalDateTime.now().minusHours(24);
+
+        try {
+            // Reporting (has metrics within 24h)
+            Long reporting = ((Number) entityManager.createNativeQuery("""
+                    SELECT COUNT(DISTINCT t.id) FROM terminals t
+                    JOIN terminal_metrics m ON m.serial = t.serial
+                    WHERE t.branch_id = :branchId AND t.user_id = :merchantId
+                      AND m.created_at >= :staleCutoff
+                    """).setParameter("branchId", branchId).setParameter("merchantId", merchantId)
+                    .setParameter("staleCutoff", staleCutoff).getSingleResult()).longValue();
+            stats.put("reporting", reporting);
+
+            // Low battery
+            Long lowBattery = ((Number) entityManager
+                    .createNativeQuery(
+                            """
+                                    SELECT COUNT(DISTINCT t.id) FROM terminals t
+                                    JOIN LATERAL (
+                                        SELECT battery_pct FROM terminal_metrics WHERE serial = t.serial ORDER BY created_at DESC LIMIT 1
+                                    ) m ON true
+                                    WHERE t.branch_id = :branchId AND t.user_id = :merchantId AND m.battery_pct < 20
+                                    """)
+                    .setParameter("branchId", branchId).setParameter("merchantId", merchantId).getSingleResult())
+                    .longValue();
+            stats.put("low_battery", lowBattery);
+
+            // Printer not ready
+            Long printerNotReady = ((Number) entityManager
+                    .createNativeQuery(
+                            """
+                                    SELECT COUNT(DISTINCT t.id) FROM terminals t
+                                    JOIN LATERAL (
+                                        SELECT printer_status FROM terminal_metrics WHERE serial = t.serial ORDER BY created_at DESC LIMIT 1
+                                    ) m ON true
+                                    WHERE t.branch_id = :branchId AND t.user_id = :merchantId AND m.printer_status != 0
+                                    """)
+                    .setParameter("branchId", branchId).setParameter("merchantId", merchantId).getSingleResult())
+                    .longValue();
+            stats.put("printer_not_ready", printerNotReady);
+
+            // Stale (no metrics in 24h)
+            Long stale = ((Number) entityManager.createNativeQuery("""
+                    SELECT COUNT(*) FROM terminals t
+                    WHERE t.branch_id = :branchId AND t.user_id = :merchantId
+                      AND NOT EXISTS (
+                          SELECT 1 FROM terminal_metrics m WHERE m.serial = t.serial AND m.created_at >= :staleCutoff
+                      )
+                    """).setParameter("branchId", branchId).setParameter("merchantId", merchantId)
+                    .setParameter("staleCutoff", staleCutoff).getSingleResult()).longValue();
+            stats.put("stale_24h", stale);
+
+        } catch (Exception e) {
+            stats.put("reporting", 0L);
+            stats.put("low_battery", 0L);
+            stats.put("printer_not_ready", 0L);
+            stats.put("stale_24h", 0L);
+        }
+
+        return stats;
+    }
+
+    /**
+     * Assign a terminal to a branch.
+     */
+    @Transactional
+    public Terminal assignTerminalToBranch(Long branchId, Long terminalId, Long merchantId) {
+        // Verify branch exists and belongs to merchant
+        Long branchCount = ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
+                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
+
+        if (branchCount == 0) {
+            return null;
+        }
+
+        // Verify terminal exists and belongs to merchant
+        Long terminalCount = ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM terminals WHERE id = :id AND user_id = :merchantId")
+                .setParameter("id", terminalId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
+
+        if (terminalCount == 0) {
+            return null;
+        }
+
+        // Update terminal with branch assignment
+        entityManager
+                .createNativeQuery(
+                        "UPDATE terminals SET branch_id = :branchId, updated_at = NOW() WHERE id = :terminalId")
+                .setParameter("branchId", branchId).setParameter("terminalId", terminalId).executeUpdate();
+
+        log.info("Assigned terminal {} to branch {} for merchant {}", terminalId, branchId, merchantId);
+
+        // Return the updated terminal
+        return entityManager.find(Terminal.class, terminalId);
+    }
+
+    /**
+     * Unassign a terminal from a branch.
+     */
+    @Transactional
+    public Terminal unassignTerminalFromBranch(Long branchId, Long terminalId, Long merchantId) {
+        // Verify terminal is assigned to this branch and merchant
+        Long count = ((Number) entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM terminals WHERE id = :terminalId AND branch_id = :branchId AND user_id = :merchantId")
+                .setParameter("terminalId", terminalId).setParameter("branchId", branchId)
+                .setParameter("merchantId", merchantId).getSingleResult()).longValue();
+
+        if (count == 0) {
+            return null;
+        }
+
+        // Remove branch assignment
+        entityManager
+                .createNativeQuery("UPDATE terminals SET branch_id = NULL, updated_at = NOW() WHERE id = :terminalId")
+                .setParameter("terminalId", terminalId).executeUpdate();
+
+        log.info("Unassigned terminal {} from branch {} for merchant {}", terminalId, branchId, merchantId);
+
+        return entityManager.find(Terminal.class, terminalId);
+    }
+
+    /**
+     * Get terminals not assigned to any branch (available for assignment).
+     */
+    @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    public List<Terminal> getAvailableTerminals(Long merchantId) {
+        String sql = """
+                SELECT t.* FROM terminals t
+                WHERE t.user_id = :merchantId AND t.branch_id IS NULL
+                ORDER BY t.serial
+                """;
+        return entityManager.createNativeQuery(sql, Terminal.class).setParameter("merchantId", merchantId)
+                .getResultList();
+    }
+
+    // ────────────────────────────────────────────────────────────── Branch
+    // Transactions
+
+    /**
+     * List transactions for terminals assigned to a branch.
+     */
+    @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> listBranchTransactions(Long branchId, Long merchantId, Map<String, String> params) {
+        // Verify branch exists and belongs to merchant
+        Long branchCount = ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
+                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
+
+        if (branchCount == 0) {
+            return PagedResponse.empty("/branches/" + branchId + "/transactions");
+        }
+
+        int page = Integer.parseInt(params.getOrDefault("page", "1")) - 1;
+        int limit = Integer.parseInt(params.getOrDefault("limit", "15"));
+
+        StringBuilder where = new StringBuilder("""
+                WHERE tx.user_id = :merchantId
+                  AND EXISTS (
+                      SELECT 1 FROM terminals t
+                      WHERE t.serial = tx.terminal_id AND t.branch_id = :branchId
+                  )
+                """);
+        Map<String, Object> qp = new HashMap<>();
+        qp.put("branchId", branchId);
+        qp.put("merchantId", merchantId);
+
+        String search = params.get("search");
+        if (search != null && !search.isBlank()) {
+            where.append(" AND (tx.reference LIKE :search)");
+            qp.put("search", "%" + search + "%");
+        }
+
+        String status = params.get("status");
+        if (status != null && !status.isBlank()) {
+            where.append(" AND tx.status_code = :status");
+            qp.put("status", status.toLowerCase());
+        }
+
+        String paymentMethod = params.get("payment_method");
+        if (paymentMethod != null && !paymentMethod.isBlank()) {
+            where.append(" AND tx.payment_method = :paymentMethod");
+            qp.put("paymentMethod", paymentMethod);
+        }
+
+        // Count query
+        String countSql = "SELECT COUNT(*) FROM transactions tx " + where;
+        Query countQ = entityManager.createNativeQuery(countSql);
+        qp.forEach(countQ::setParameter);
+        long total = ((Number) countQ.getSingleResult()).longValue();
+
+        // Data query
+        String dataSql = """
+                SELECT tx.id, tx.reference, tx.amount, tx.status_code, tx.status_message,
+                       tx.payment_method, tx.channel, tx.terminal_id,
+                       tx.created_at, tx.updated_at,
+                       p.name as product_name,
+                       prov.name as provider_name
+                FROM transactions tx
+                LEFT JOIN products p ON p.id = tx.product_id
+                LEFT JOIN providers prov ON prov.id = tx.provider_id
+                """ + where + " ORDER BY tx.created_at DESC";
+
+        Query dataQ = entityManager.createNativeQuery(dataSql);
+        qp.forEach(dataQ::setParameter);
+        dataQ.setFirstResult(page * limit);
+        dataQ.setMaxResults(limit);
+
+        List<Object[]> rows = dataQ.getResultList();
+        List<Map<String, Object>> out = new ArrayList<>();
+
+        for (Object[] r : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", num(r[0]));
+            m.put("reference", str(r[1]));
+            m.put("amount", r[2]);
+            m.put("status_code", str(r[3]));
+            m.put("status", formatStatus(str(r[3])));
+            m.put("status_message", str(r[4]));
+            m.put("payment_method", str(r[5]));
+            m.put("channel", str(r[6]));
+            m.put("terminal_id", str(r[7]));
+            m.put("created_at", timestamp(r[8]));
+            m.put("updated_at", timestamp(r[9]));
+            m.put("product", str(r[10]));
+            m.put("provider", str(r[11]));
+            out.add(m);
+        }
+
+        Page<Map<String, Object>> pageResult = new PageImpl<>(out, PageRequest.of(page, limit), total);
+        return PagedResponse.from(pageResult, "/branches/" + branchId + "/transactions");
     }
 
     // ────────────────────────────────────────────────────────────── Helpers

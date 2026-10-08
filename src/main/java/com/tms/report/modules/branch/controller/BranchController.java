@@ -8,7 +8,9 @@ import com.tms.report.modules.branch.dto.BranchResponse;
 import com.tms.report.modules.branch.dto.BranchSettlementRequest;
 import com.tms.report.modules.branch.dto.BranchUpdateRequest;
 import com.tms.report.modules.branch.service.BranchService;
+import com.tms.report.modules.terminal.model.Terminal;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -168,5 +170,96 @@ public class BranchController {
             return ApiResponse.error(404, "Branch not found");
         }
         return ApiResponse.success(branch, "Settlement account cleared successfully");
+    }
+
+    // ────────────────────────────────────────────────────────────── Terminal
+    // Assignment
+
+    /**
+     * List terminals assigned to a branch.
+     */
+    @GetMapping("/{id}/terminals")
+    public Map<String, Object> listTerminals(@PathVariable Long id, @RequestParam Map<String, String> params) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return PagedResponse.empty("/branches/" + id + "/terminals");
+        }
+        return branchService.listBranchTerminals(id, merchantId, params);
+    }
+
+    /**
+     * Get terminal stats for a branch.
+     */
+    @GetMapping("/{id}/terminals/stats")
+    public ApiResponse<Map<String, Object>> terminalStats(@PathVariable Long id) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return ApiResponse.error(401, "Unauthorized");
+        }
+        Map<String, Object> stats = branchService.getBranchTerminalStats(id, merchantId);
+        if (stats == null) {
+            return ApiResponse.error(404, "Branch not found");
+        }
+        return ApiResponse.success(stats);
+    }
+
+    /**
+     * Assign a terminal to a branch.
+     */
+    @PostMapping("/{id}/terminals/{terminalId}")
+    public ApiResponse<Terminal> assignTerminal(@PathVariable Long id, @PathVariable Long terminalId) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return ApiResponse.error(401, "Unauthorized");
+        }
+        Terminal terminal = branchService.assignTerminalToBranch(id, terminalId, merchantId);
+        if (terminal == null) {
+            return ApiResponse.error(404, "Branch or terminal not found");
+        }
+        return ApiResponse.success(terminal, "Terminal assigned to branch");
+    }
+
+    /**
+     * Unassign a terminal from a branch.
+     */
+    @DeleteMapping("/{id}/terminals/{terminalId}")
+    public ApiResponse<Terminal> unassignTerminal(@PathVariable Long id, @PathVariable Long terminalId) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return ApiResponse.error(401, "Unauthorized");
+        }
+        Terminal terminal = branchService.unassignTerminalFromBranch(id, terminalId, merchantId);
+        if (terminal == null) {
+            return ApiResponse.error(404, "Branch or terminal not found");
+        }
+        return ApiResponse.success(terminal, "Terminal unassigned from branch");
+    }
+
+    /**
+     * List terminals available for assignment (not yet assigned to any branch).
+     */
+    @GetMapping("/{id}/terminals/available")
+    public ApiResponse<List<Terminal>> availableTerminals(@PathVariable Long id) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return ApiResponse.error(401, "Unauthorized");
+        }
+        List<Terminal> terminals = branchService.getAvailableTerminals(merchantId);
+        return ApiResponse.success(terminals);
+    }
+
+    // ────────────────────────────────────────────────────────────── Branch
+    // Transactions
+
+    /**
+     * List transactions for terminals assigned to a branch.
+     */
+    @GetMapping("/{id}/transactions")
+    public Map<String, Object> listTransactions(@PathVariable Long id, @RequestParam Map<String, String> params) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return PagedResponse.empty("/branches/" + id + "/transactions");
+        }
+        return branchService.listBranchTransactions(id, merchantId, params);
     }
 }
