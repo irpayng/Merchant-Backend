@@ -81,7 +81,7 @@ public class BranchService {
                     SELECT t.branch_id, SUM(tx.amount) as total_volume
                     FROM tids t
                     JOIN transactions tx ON tx.terminal_id = t.terminal_id
-                    WHERE t.branch_id IS NOT NULL AND tx.status_id = 1
+                    WHERE t.branch_id IS NOT NULL AND tx.status_code = 'successful'
                     GROUP BY t.branch_id
                 ) tv ON tv.branch_id = b.id
                 """ + where + " ORDER BY b.is_primary DESC, b.name ASC";
@@ -139,7 +139,7 @@ public class BranchService {
                     SELECT t.branch_id, SUM(tx.amount) as total_volume
                     FROM tids t
                     JOIN transactions tx ON tx.terminal_id = t.terminal_id
-                    WHERE t.branch_id = :branchId AND tx.status_id = 1
+                    WHERE t.branch_id = :branchId AND tx.status_code = 'successful'
                     GROUP BY t.branch_id
                 ) tv ON tv.branch_id = b.id
                 WHERE b.id = :branchId AND b.user_id = :merchantId
@@ -341,7 +341,7 @@ public class BranchService {
                     JOIN tids t ON t.terminal_id = tx.terminal_id
                     WHERE t.branch_id = :branchId
                       AND tx.created_at >= NOW() - INTERVAL '30 days'
-                      AND tx.status_id = 1
+                      AND tx.status_code = 'successful'
                     """).setParameter("branchId", branchId).getSingleResult();
 
             stats.put("transactions_30d", num(txStats[0]));
