@@ -35,7 +35,7 @@ public class SettlementHistoryController {
             @RequestParam(required = false, defaultValue = "100") int limit) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
-            return ApiResponse.error("Merchant not found");
+            return ApiResponse.error(404, "Merchant not found");
         }
 
         Map<String, Object> result = grpcClient.getSettlementHistory(reference, String.valueOf(merchantId), startDate,
@@ -51,7 +51,7 @@ public class SettlementHistoryController {
     public ApiResponse<Map<String, Object>> getHistoryByReference(@PathVariable String reference) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
-            return ApiResponse.error("Merchant not found");
+            return ApiResponse.error(404, "Merchant not found");
         }
 
         Map<String, Object> result = grpcClient.getSettlementHistory(reference, String.valueOf(merchantId), null, null,
@@ -69,7 +69,7 @@ public class SettlementHistoryController {
             @RequestParam(required = false, defaultValue = "100") int limit) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
-            return ApiResponse.error("Merchant not found");
+            return ApiResponse.error(404, "Merchant not found");
         }
 
         Map<String, Object> result = grpcClient.getSettlementsByResolutionStatus(String.valueOf(merchantId),
@@ -86,7 +86,7 @@ public class SettlementHistoryController {
             @RequestParam(required = false) String endDate) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
-            return ApiResponse.error("Merchant not found");
+            return ApiResponse.error(404, "Merchant not found");
         }
 
         String merchantIdStr = String.valueOf(merchantId);

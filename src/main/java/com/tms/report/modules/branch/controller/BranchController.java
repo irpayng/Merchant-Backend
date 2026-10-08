@@ -49,11 +49,11 @@ public class BranchController {
     public ApiResponse<BranchResponse> get(@PathVariable Long id) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
-            return ApiResponse.error("Unauthorized");
+            return ApiResponse.error(401, "Unauthorized");
         }
         BranchResponse branch = branchService.getBranch(id, merchantId);
         if (branch == null) {
-            return ApiResponse.error("Branch not found");
+            return ApiResponse.error(404, "Branch not found");
         }
         return ApiResponse.success(branch);
     }
@@ -65,7 +65,7 @@ public class BranchController {
     public ApiResponse<BranchResponse> create(@Valid @RequestBody BranchCreateRequest request) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
-            return ApiResponse.error("Unauthorized");
+            return ApiResponse.error(401, "Unauthorized");
         }
         BranchResponse branch = branchService.createBranch(merchantId, request);
         return ApiResponse.success(branch, "Branch created successfully");
@@ -78,11 +78,11 @@ public class BranchController {
     public ApiResponse<BranchResponse> update(@PathVariable Long id, @Valid @RequestBody BranchUpdateRequest request) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
-            return ApiResponse.error("Unauthorized");
+            return ApiResponse.error(401, "Unauthorized");
         }
         BranchResponse branch = branchService.updateBranch(id, merchantId, request);
         if (branch == null) {
-            return ApiResponse.error("Branch not found");
+            return ApiResponse.error(404, "Branch not found");
         }
         return ApiResponse.success(branch, "Branch updated successfully");
     }
@@ -94,11 +94,11 @@ public class BranchController {
     public ApiResponse<BranchResponse> setPrimary(@PathVariable Long id) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
-            return ApiResponse.error("Unauthorized");
+            return ApiResponse.error(401, "Unauthorized");
         }
         BranchResponse branch = branchService.setPrimary(id, merchantId);
         if (branch == null) {
-            return ApiResponse.error("Branch not found");
+            return ApiResponse.error(404, "Branch not found");
         }
         return ApiResponse.success(branch, "Branch set as primary");
     }
@@ -110,11 +110,11 @@ public class BranchController {
     public ApiResponse<Void> delete(@PathVariable Long id) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
-            return ApiResponse.error("Unauthorized");
+            return ApiResponse.error(401, "Unauthorized");
         }
         boolean deleted = branchService.deleteBranch(id, merchantId);
         if (!deleted) {
-            return ApiResponse.error("Branch not found or cannot be deleted");
+            return ApiResponse.error(404, "Branch not found or cannot be deleted");
         }
         return ApiResponse.success(null, "Branch deleted successfully");
     }
@@ -126,11 +126,11 @@ public class BranchController {
     public ApiResponse<Map<String, Object>> stats(@PathVariable Long id) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
-            return ApiResponse.error("Unauthorized");
+            return ApiResponse.error(401, "Unauthorized");
         }
         Map<String, Object> stats = branchService.getBranchStats(id, merchantId);
         if (stats == null) {
-            return ApiResponse.error("Branch not found");
+            return ApiResponse.error(404, "Branch not found");
         }
         return ApiResponse.success(stats);
     }
