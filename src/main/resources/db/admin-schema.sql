@@ -215,3 +215,28 @@ CREATE INDEX IF NOT EXISTS idx_device_activities_merchant_id ON merchant.device_
 CREATE INDEX IF NOT EXISTS idx_device_activities_device_serial ON merchant.device_activities(device_serial);
 CREATE INDEX IF NOT EXISTS idx_device_activities_operator_id ON merchant.device_activities(operator_id);
 CREATE INDEX IF NOT EXISTS idx_device_activities_created_at ON merchant.device_activities(created_at);
+
+
+-- =============================================================================
+-- MERCHANT_BRANCHES — multi-branch merchant structure (2026-10)
+-- Merchants can have multiple branches (store locations). TIDs, terminals, and
+-- operators can be scoped to a branch. Settlement is at merchant level.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS public.merchant_branches (
+    id              BIGSERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL,
+    name            VARCHAR(255) NOT NULL,
+    code            VARCHAR(20) NOT NULL,
+    address         TEXT,
+    state_code      VARCHAR(10),
+    lga_code        VARCHAR(20),
+    phone_number    VARCHAR(20),
+    email           VARCHAR(255),
+    status          VARCHAR(20) NOT NULL DEFAULT 'active',
+    is_primary      BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_merchant_branches_user_id ON public.merchant_branches(user_id);
