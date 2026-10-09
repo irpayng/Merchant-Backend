@@ -40,7 +40,6 @@ public class SettlementAccountController {
 
         String sql = """
                 SELECT sa.id, sa.account_number, sa.account_name, sa.bank_code,
-                       (SELECT name FROM banks WHERE code = sa.bank_code LIMIT 1) as bank_name,
                        sa.label, sa.is_default, sa.status
                 FROM merchant_settlement_accounts sa
                 WHERE sa.user_id = :merchantId AND sa.status = 'active'
@@ -54,8 +53,8 @@ public class SettlementAccountController {
         List<SettlementAccountResponse> accounts = new ArrayList<>();
         for (Object[] row : rows) {
             accounts.add(SettlementAccountResponse.builder().id(longVal(row[0])).accountNumber(str(row[1]))
-                    .accountName(str(row[2])).bankCode(str(row[3])).bankName(str(row[4])).label(str(row[5]))
-                    .isDefault(boolVal(row[6])).status(str(row[7])).build());
+                    .accountName(str(row[2])).bankCode(str(row[3])).bankName(null).label(str(row[4]))
+                    .isDefault(boolVal(row[5])).status(str(row[6])).build());
         }
 
         return ApiResponse.success(accounts);

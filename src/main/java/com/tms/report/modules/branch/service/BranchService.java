@@ -133,8 +133,7 @@ public class BranchService {
                        COALESCE(tc.terminal_count, 0) as terminals,
                        COALESCE(tv.total_volume, 0) as total_volume,
                        b.settlement_account_id,
-                       sa.account_number, sa.account_name, sa.bank_code,
-                       (SELECT name FROM banks WHERE code = sa.bank_code LIMIT 1) as bank_name
+                       sa.account_number, sa.account_name, sa.bank_code
                 FROM merchant_branches b
                 LEFT JOIN merchant_settlement_accounts sa ON sa.id = b.settlement_account_id
                 LEFT JOIN (
@@ -163,7 +162,7 @@ public class BranchService {
                     .terminals(num(r[12]) != null ? num(r[12]).intValue() : 0)
                     .totalVolume(num(r[13]) != null ? num(r[13]) : 0L).settlementAccountId(num(r[14]))
                     .settlementAccountNumber(str(r[15])).settlementAccountName(str(r[16]))
-                    .settlementBankCode(str(r[17])).settlementBankName(str(r[18])).build();
+                    .settlementBankCode(str(r[17])).settlementBankName(null).build();
         } catch (jakarta.persistence.NoResultException e) {
             return null;
         }
