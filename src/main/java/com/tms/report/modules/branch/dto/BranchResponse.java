@@ -46,7 +46,12 @@ public class BranchResponse {
     @JsonProperty("total_volume")
     private Long totalVolume;
 
-    // Settlement account fields
+    // Settlement account reference (from merchant's account pool)
+    @JsonProperty("settlement_account_id")
+    private Long settlementAccountId;
+
+    // Denormalized account details for display (fetched from
+    // merchant_settlement_accounts)
     @JsonProperty("settlement_account_number")
     private String settlementAccountNumber;
 

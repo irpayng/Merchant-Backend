@@ -139,21 +139,21 @@ public class BranchController {
     }
 
     /**
-     * Update branch settlement account.
+     * Assign a settlement account to a branch. The account must be from the
+     * merchant's settlement account pool.
      */
     @PutMapping("/{id}/settlement-account")
-    public ApiResponse<BranchResponse> updateSettlementAccount(@PathVariable Long id,
+    public ApiResponse<BranchResponse> assignSettlementAccount(@PathVariable Long id,
             @Valid @RequestBody BranchSettlementRequest request) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
             return ApiResponse.error(401, "Unauthorized");
         }
-        BranchResponse branch = branchService.updateSettlementAccount(id, merchantId, request.getAccountNumber(),
-                request.getAccountName(), request.getBankCode(), request.getBankName());
+        BranchResponse branch = branchService.assignSettlementAccount(id, merchantId, request.getSettlementAccountId());
         if (branch == null) {
-            return ApiResponse.error(404, "Branch not found");
+            return ApiResponse.error(404, "Branch not found or settlement account not valid");
         }
-        return ApiResponse.success(branch, "Settlement account updated successfully");
+        return ApiResponse.success(branch, "Settlement account assigned successfully");
     }
 
     /**

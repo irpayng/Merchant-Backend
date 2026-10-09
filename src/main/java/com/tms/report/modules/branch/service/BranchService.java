@@ -132,9 +132,11 @@ public class BranchService {
                        b.created_at, b.updated_at,
                        COALESCE(tc.terminal_count, 0) as terminals,
                        COALESCE(tv.total_volume, 0) as total_volume,
-                       b.settlement_account_number, b.settlement_account_name,
-                       b.settlement_bank_code, b.settlement_bank_name
+                       b.settlement_account_id,
+                       sa.account_number, sa.account_name, sa.bank_code,
+                       (SELECT name FROM banks WHERE code = sa.bank_code LIMIT 1) as bank_name
                 FROM merchant_branches b
+                LEFT JOIN merchant_settlement_accounts sa ON sa.id = b.settlement_account_id
                 LEFT JOIN (
                     SELECT branch_id, COUNT(*) as terminal_count
                     FROM tids WHERE branch_id = :branchId
@@ -159,9 +161,9 @@ public class BranchService {
                     .phoneNumber(str(r[6])).email(str(r[7])).status(formatStatus(str(r[8])))
                     .isPrimary(Boolean.TRUE.equals(r[9])).createdAt(toInstant(r[10])).updatedAt(toInstant(r[11]))
                     .terminals(num(r[12]) != null ? num(r[12]).intValue() : 0)
-                    .totalVolume(num(r[13]) != null ? num(r[13]) : 0L).settlementAccountNumber(str(r[14]))
-                    .settlementAccountName(str(r[15])).settlementBankCode(str(r[16])).settlementBankName(str(r[17]))
-                    .build();
+                    .totalVolume(num(r[13]) != null ? num(r[13]) : 0L).settlementAccountId(num(r[14]))
+                    .settlementAccountNumber(str(r[15])).settlementAccountName(str(r[16]))
+                    .settlementBankCode(str(r[17])).settlementBankName(str(r[18])).build();
         } catch (jakarta.persistence.NoResultException e) {
             return null;
         }
@@ -362,36 +364,43 @@ public class BranchService {
     }
 
     /**
-     * Update branch settlement account.
+     * Assign a settlement account to a branch. The account must exist in the
+     * merchant's settlement account pool.
      */
     @Transactional
-    public BranchResponse updateSettlementAccount(Long branchId, Long merchantId, String accountNumber,
-            String accountName, String bankCode, String bankName) {
+    public BranchResponse assignSettlementAccount(Long branchId, Long merchantId, Long settlementAccountId) {
         // Verify branch exists and belongs to merchant
-        Long count = ((Number) entityManager
+        Long branchCount = ((Number) entityManager
                 .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
                 .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
 
-        if (count == 0) {
+        if (branchCount == 0) {
+            return null;
+        }
+
+        // Verify settlement account exists and belongs to merchant
+        Long accountCount = ((Number) entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM merchant_settlement_accounts WHERE id = :accountId AND user_id = :merchantId AND status = 'active'")
+                .setParameter("accountId", settlementAccountId).setParameter("merchantId", merchantId)
+                .getSingleResult()).longValue();
+
+        if (accountCount == 0) {
+            log.warn("Settlement account {} not found or not active for merchant {}", settlementAccountId, merchantId);
             return null;
         }
 
         String sql = """
                 UPDATE merchant_branches SET
-                    settlement_account_number = :accountNumber,
-                    settlement_account_name = :accountName,
-                    settlement_bank_code = :bankCode,
-                    settlement_bank_name = :bankName,
+                    settlement_account_id = :accountId,
                     updated_at = NOW()
                 WHERE id = :id AND user_id = :merchantId
                 """;
 
-        entityManager.createNativeQuery(sql).setParameter("accountNumber", accountNumber)
-                .setParameter("accountName", accountName).setParameter("bankCode", bankCode)
-                .setParameter("bankName", bankName).setParameter("id", branchId).setParameter("merchantId", merchantId)
-                .executeUpdate();
+        entityManager.createNativeQuery(sql).setParameter("accountId", settlementAccountId).setParameter("id", branchId)
+                .setParameter("merchantId", merchantId).executeUpdate();
 
-        log.info("Updated settlement account for branch {} of merchant {}", branchId, merchantId);
+        log.info("Assigned settlement account {} to branch {} for merchant {}", settlementAccountId, branchId,
+                merchantId);
         return getBranch(branchId, merchantId);
     }
 
@@ -411,10 +420,7 @@ public class BranchService {
 
         String sql = """
                 UPDATE merchant_branches SET
-                    settlement_account_number = NULL,
-                    settlement_account_name = NULL,
-                    settlement_bank_code = NULL,
-                    settlement_bank_name = NULL,
+                    settlement_account_id = NULL,
                     updated_at = NOW()
                 WHERE id = :id AND user_id = :merchantId
                 """;
