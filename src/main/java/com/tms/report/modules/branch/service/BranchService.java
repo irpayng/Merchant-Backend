@@ -134,10 +134,8 @@ public class BranchService {
                        b.created_at, b.updated_at,
                        COALESCE(tc.terminal_count, 0) as terminals,
                        COALESCE(tv.total_volume, 0) as total_volume,
-                       b.settlement_account_id,
-                       sa.account_number, sa.account_name, sa.bank_code
+                       b.settlement_account_id
                 FROM merchant_branches b
-                LEFT JOIN merchant_settlement_accounts sa ON sa.id = b.settlement_account_id
                 LEFT JOIN (
                     SELECT branch_id, COUNT(*) as terminal_count
                     FROM tids WHERE branch_id = :branchId
@@ -157,14 +155,35 @@ public class BranchService {
             Object[] r = (Object[]) entityManager.createNativeQuery(sql).setParameter("branchId", branchId)
                     .setParameter("merchantId", merchantId).getSingleResult();
 
+            Long settlementAccountId = num(r[14]);
+
+            // Fetch settlement account details via gRPC if account is assigned
+            String accountNumber = null;
+            String accountName = null;
+            String bankCode = null;
+            String bankName = null;
+
+            if (settlementAccountId != null) {
+                List<Map<String, Object>> accounts = grpcClient.listMerchantSettlementAccounts(merchantId);
+                for (Map<String, Object> acct : accounts) {
+                    if (settlementAccountId.equals(((Number) acct.get("id")).longValue())) {
+                        accountNumber = (String) acct.get("account_number");
+                        accountName = (String) acct.get("account_name");
+                        bankCode = (String) acct.get("bank_code");
+                        // bank_name not returned by gRPC, leave as null
+                        break;
+                    }
+                }
+            }
+
             return BranchResponse.builder().id(num(r[0])).branchId(String.valueOf(num(r[0]))).name(str(r[1]))
                     .code(str(r[2])).address(str(r[3])).location(str(r[3])).stateCode(str(r[4])).lgaCode(str(r[5]))
                     .phoneNumber(str(r[6])).email(str(r[7])).status(formatStatus(str(r[8])))
                     .isPrimary(Boolean.TRUE.equals(r[9])).createdAt(toInstant(r[10])).updatedAt(toInstant(r[11]))
                     .terminals(num(r[12]) != null ? num(r[12]).intValue() : 0)
-                    .totalVolume(num(r[13]) != null ? num(r[13]) : 0L).settlementAccountId(num(r[14]))
-                    .settlementAccountNumber(str(r[15])).settlementAccountName(str(r[16]))
-                    .settlementBankCode(str(r[17])).settlementBankName(null).build();
+                    .totalVolume(num(r[13]) != null ? num(r[13]) : 0L).settlementAccountId(settlementAccountId)
+                    .settlementAccountNumber(accountNumber).settlementAccountName(accountName)
+                    .settlementBankCode(bankCode).settlementBankName(bankName).build();
         } catch (jakarta.persistence.NoResultException e) {
             return null;
         }
