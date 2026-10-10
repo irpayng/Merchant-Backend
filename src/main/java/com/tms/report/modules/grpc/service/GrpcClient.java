@@ -998,6 +998,51 @@ public class GrpcClient {
         }
     }
 
+    /**
+     * Get settlements (actual transactions) for a merchant. This returns the
+     * settled transactions, not the audit history. Use this for Settlement History
+     * UI.
+     */
+    public Map<String, Object> getSettlements(String reference, String merchantId, String startDate, String endDate,
+            int limit) {
+        String ref = Ulid.generate();
+        logRequest("GetSettlements", ref);
+        try {
+            var resp = settlementStub.getSettlements(com.tms.report.grpc.settlement.GetSettlementsRequest.newBuilder()
+                    .setReference(reference != null ? reference : "")
+                    .setMerchantId(merchantId != null ? merchantId : "")
+                    .setStartDate(startDate != null ? startDate : "").setEndDate(endDate != null ? endDate : "")
+                    .setLimit(limit > 0 ? limit : 100).build());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("reference", ref);
+            result.put("settlements", resp.getSettlementsList().stream().map(s -> {
+                Map<String, Object> sm = new HashMap<>();
+                sm.put("reference", s.getReference());
+                sm.put("terminal_id", s.getTerminalId());
+                sm.put("merchant_id", s.getMerchantId());
+                sm.put("amount", s.getAmount());
+                sm.put("acquirer_fee", s.getAcquirerFee());
+                sm.put("status", s.getStatus());
+                sm.put("transaction_time", s.getTransactionTime());
+                sm.put("card_scheme", s.getCardScheme());
+                sm.put("bank", s.getBank());
+                sm.put("resolution_status", s.getResolutionStatus());
+                sm.put("settlement_type", s.getSettlementType());
+                sm.put("scheduled_resolution_date", s.getScheduledResolutionDate());
+                sm.put("resolved_at", s.getResolvedAt());
+                sm.put("paid_at", s.getPaidAt());
+                sm.put("net_amount", s.getNetAmount());
+                sm.put("payout_reference", s.getPayoutReference());
+                return sm;
+            }).toList());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetSettlements", ref, e);
+        }
+    }
+
     // ── Notification commands → notification-service ──
 
     public Map<String, Object> sendNotification(Map<String, Object> data) {

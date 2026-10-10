@@ -18,6 +18,8 @@ service SettlementService {
   rpc ResolveSettlementsByAgreement (ResolveByAgreementRequest) returns (BulkResolutionResponse);
   rpc GetSettlementHistory (GetSettlementHistoryRequest) returns (SettlementHistoryResponse);
   rpc GetSettlementsByResolutionStatus (GetByResolutionStatusRequest) returns (SettlementsResponse);
+  // Get settlements (actual transactions) for a merchant - use this for Settlement History UI
+  rpc GetSettlements (GetSettlementsRequest) returns (SettlementsResponse);
 }
 
 message CreateSettlementRequest {
@@ -167,4 +169,13 @@ message GetByResolutionStatusRequest {
   string start_date = 3;
   string end_date = 4;
   int32 limit = 5;
+}
+
+// Get settlements (actual transactions) for a merchant - for Settlement History UI
+message GetSettlementsRequest {
+  string reference = 1;                 // Settlement reference (optional)
+  string merchant_id = 2;               // Get settlements for merchant (required if no reference)
+  string start_date = 3;                // Date range filter
+  string end_date = 4;
+  int32 limit = 5;                      // Max records to return (default 100)
 }

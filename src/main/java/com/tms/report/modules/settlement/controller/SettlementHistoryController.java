@@ -27,10 +27,12 @@ public class SettlementHistoryController {
     private final GrpcClient grpcClient;
 
     /**
-     * Get settlement history for the current merchant.
+     * Get settlements (actual transactions) for the current merchant. Returns the
+     * settled transactions with details like RRN, terminal ID, PAN, amount,
+     * acquirer fee, status, and transaction time.
      */
     @GetMapping
-    public ApiResponse<Map<String, Object>> getHistory(@RequestParam(required = false) String reference,
+    public ApiResponse<Map<String, Object>> getSettlements(@RequestParam(required = false) String reference,
             @RequestParam(required = false) String startDate, @RequestParam(required = false) String endDate,
             @RequestParam(required = false, defaultValue = "100") int limit) {
         Long merchantId = merchantScope.merchantId();
@@ -38,24 +40,23 @@ public class SettlementHistoryController {
             return ApiResponse.error(404, "Merchant not found");
         }
 
-        Map<String, Object> result = grpcClient.getSettlementHistory(reference, String.valueOf(merchantId), startDate,
+        Map<String, Object> result = grpcClient.getSettlements(reference, String.valueOf(merchantId), startDate,
                 endDate, limit);
 
         return ApiResponse.success(result);
     }
 
     /**
-     * Get settlement history for a specific settlement reference.
+     * Get settlement details for a specific settlement reference.
      */
     @GetMapping("/{reference}")
-    public ApiResponse<Map<String, Object>> getHistoryByReference(@PathVariable String reference) {
+    public ApiResponse<Map<String, Object>> getSettlementByReference(@PathVariable String reference) {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
             return ApiResponse.error(404, "Merchant not found");
         }
 
-        Map<String, Object> result = grpcClient.getSettlementHistory(reference, String.valueOf(merchantId), null, null,
-                100);
+        Map<String, Object> result = grpcClient.getSettlements(reference, String.valueOf(merchantId), null, null, 100);
 
         return ApiResponse.success(result);
     }
