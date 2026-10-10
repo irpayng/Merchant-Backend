@@ -20,6 +20,7 @@ import com.tms.report.grpc.config.GetAllProviderBalancesRequest;
 import com.tms.report.grpc.config.GetConfigValueRequest;
 import com.tms.report.grpc.config.GetProviderBalanceRequest;
 import com.tms.report.grpc.config.ImportDataPlansRequest;
+import com.tms.report.grpc.config.ListMerchantSettlementAccountsRequest;
 import com.tms.report.grpc.config.MapTerminalRequest;
 import com.tms.report.grpc.config.ReactivateInstantSettlementRequest;
 import com.tms.report.grpc.config.RefreshProviderBalanceRequest;
@@ -1721,6 +1722,34 @@ public class GrpcClient {
             return m;
         } catch (StatusRuntimeException e) {
             throw grpcError("CheckInstantSettlement", ref, e);
+        }
+    }
+
+    /**
+     * List active settlement accounts for a merchant. Used by the branch/TID
+     * settlement assignment UI.
+     */
+    public java.util.List<Map<String, Object>> listMerchantSettlementAccounts(long userId) {
+        String ref = Ulid.generate();
+        logRequest("ListMerchantSettlementAccounts", ref);
+        try {
+            var resp = configStub.listMerchantSettlementAccounts(
+                    ListMerchantSettlementAccountsRequest.newBuilder().setUserId(userId).setActiveOnly(true).build());
+            java.util.List<Map<String, Object>> result = new java.util.ArrayList<>();
+            for (var acct : resp.getAccountsList()) {
+                Map<String, Object> m = new java.util.LinkedHashMap<>();
+                m.put("id", acct.getId());
+                m.put("account_number", acct.getAccountNumber());
+                m.put("account_name", acct.getAccountName());
+                m.put("bank_code", acct.getBankCode());
+                m.put("label", acct.getLabel());
+                m.put("is_default", acct.getIsDefault());
+                m.put("status", acct.getStatus());
+                result.add(m);
+            }
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("ListMerchantSettlementAccounts", ref, e);
         }
     }
 

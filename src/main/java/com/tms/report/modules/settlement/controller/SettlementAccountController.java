@@ -2,13 +2,13 @@ package com.tms.report.modules.settlement.controller;
 
 import com.tms.report.core.dto.ApiResponse;
 import com.tms.report.core.security.MerchantScope;
+import com.tms.report.modules.grpc.service.GrpcClient;
 import com.tms.report.modules.settlement.dto.SettlementAccountResponse;
-import jakarta.persistence.EntityManager;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,6 +16,12 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Settlement account pool endpoint for merchant dashboard. Returns the
  * merchant's active settlement accounts for branch/TID assignment.
+ *
+ * <p>
+ * Settlement accounts are stored in tms-config (the central config service),
+ * accessed via gRPC. The super-merchant portal creates these accounts; the
+ * merchant dashboard reads them for branch assignment.
+ * </p>
  */
 @RestController
 @RequestMapping("/settlement-accounts")
@@ -24,40 +30,29 @@ import org.springframework.web.bind.annotation.RestController;
 public class SettlementAccountController {
 
     private final MerchantScope merchantScope;
-    private final EntityManager entityManager;
+    private final GrpcClient grpcClient;
 
     /**
      * List all active settlement accounts for the current merchant. Used by branch
      * and TID settlement assignment UI to populate the account dropdown.
      */
     @GetMapping
-    @Transactional(readOnly = true)
     public ApiResponse<List<SettlementAccountResponse>> list() {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
             return ApiResponse.success(List.of());
         }
 
-        String sql = """
-                SELECT sa.id, sa.account_number, sa.account_name, sa.bank_code,
-                       sa.label, sa.is_default, sa.status
-                FROM merchant_settlement_accounts sa
-                WHERE sa.user_id = :merchantId AND sa.status = 'active'
-                ORDER BY sa.is_default DESC, sa.label ASC, sa.account_name ASC
-                """;
+        List<Map<String, Object>> accounts = grpcClient.listMerchantSettlementAccounts(merchantId);
 
-        @SuppressWarnings("unchecked")
-        List<Object[]> rows = entityManager.createNativeQuery(sql).setParameter("merchantId", merchantId)
-                .getResultList();
+        List<SettlementAccountResponse> response = accounts.stream()
+                .map(acct -> SettlementAccountResponse.builder().id(longVal(acct.get("id")))
+                        .accountNumber(str(acct.get("account_number"))).accountName(str(acct.get("account_name")))
+                        .bankCode(str(acct.get("bank_code"))).bankName(null).label(str(acct.get("label")))
+                        .isDefault(boolVal(acct.get("is_default"))).status(str(acct.get("status"))).build())
+                .collect(Collectors.toList());
 
-        List<SettlementAccountResponse> accounts = new ArrayList<>();
-        for (Object[] row : rows) {
-            accounts.add(SettlementAccountResponse.builder().id(longVal(row[0])).accountNumber(str(row[1]))
-                    .accountName(str(row[2])).bankCode(str(row[3])).bankName(null).label(str(row[4]))
-                    .isDefault(boolVal(row[5])).status(str(row[6])).build());
-        }
-
-        return ApiResponse.success(accounts);
+        return ApiResponse.success(response);
     }
 
     private static String str(Object o) {
