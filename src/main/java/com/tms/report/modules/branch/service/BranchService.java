@@ -4,6 +4,7 @@ import com.tms.report.core.dto.PagedResponse;
 import com.tms.report.modules.branch.dto.BranchCreateRequest;
 import com.tms.report.modules.branch.dto.BranchResponse;
 import com.tms.report.modules.branch.dto.BranchUpdateRequest;
+import com.tms.report.modules.grpc.service.GrpcClient;
 import com.tms.report.modules.terminal.model.Terminal;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
@@ -23,9 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
  * Service for merchant branch management.
  *
  * <p>
- * Branches are stored in the config schema (merchant_branches table) and
- * queried directly via native SQL since this is a Spring Boot app without the
- * Quarkus entity.
+ * Branches are stored in the config database (merchant_branches table). Branch
+ * queries execute via native SQL against the shared config schema, while
+ * settlement account validation uses gRPC to tms-config.
  * </p>
  */
 @Service
@@ -34,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class BranchService {
 
     private final EntityManager entityManager;
+    private final GrpcClient grpcClient;
 
     /**
      * List branches for a merchant with pagination and filtering.
@@ -364,7 +366,7 @@ public class BranchService {
 
     /**
      * Assign a settlement account to a branch. The account must exist in the
-     * merchant's settlement account pool.
+     * merchant's settlement account pool (validated via gRPC to tms-config).
      */
     @Transactional
     public BranchResponse assignSettlementAccount(Long branchId, Long merchantId, Long settlementAccountId) {
@@ -374,16 +376,19 @@ public class BranchService {
                 .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
 
         if (branchCount == 0) {
+            log.warn("Branch {} not found for merchant {}", branchId, merchantId);
             return null;
         }
 
-        // Verify settlement account exists and belongs to merchant
-        Long accountCount = ((Number) entityManager.createNativeQuery(
-                "SELECT COUNT(*) FROM merchant_settlement_accounts WHERE id = :accountId AND user_id = :merchantId AND status = 'active'")
-                .setParameter("accountId", settlementAccountId).setParameter("merchantId", merchantId)
-                .getSingleResult()).longValue();
+        // Verify settlement account exists and belongs to merchant via gRPC
+        // The settlement accounts are stored in tms-config, not in the merchant
+        // database
+        List<Map<String, Object>> accounts = grpcClient.listMerchantSettlementAccounts(merchantId);
+        boolean accountValid = accounts.stream()
+                .anyMatch(acct -> settlementAccountId.equals(((Number) acct.get("id")).longValue())
+                        && "active".equals(acct.get("status")));
 
-        if (accountCount == 0) {
+        if (!accountValid) {
             log.warn("Settlement account {} not found or not active for merchant {}", settlementAccountId, merchantId);
             return null;
         }
