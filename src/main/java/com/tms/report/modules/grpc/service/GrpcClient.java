@@ -705,6 +705,40 @@ public class GrpcClient {
         }
     }
 
+    // ── TID branch assignment → config-service ──
+
+    /**
+     * Assign a TID to a branch. Updates tids.branch_id in the authoritative
+     * config-service database, which then replicates to the merchant database.
+     */
+    public Map<String, Object> assignTidToBranch(Long tidId, Long branchId) {
+        String ref = Ulid.generate();
+        logRequest("AssignTidToBranch", ref);
+        try {
+            var resp = configStub.assignTidToBranch(com.tms.report.grpc.config.AssignTidToBranchRequest.newBuilder()
+                    .setTidId(tidId).setBranchId(branchId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("AssignTidToBranch", ref, e);
+        }
+    }
+
+    /**
+     * Unassign a TID from its branch (sets branch_id to NULL). Updates the
+     * authoritative tids.branch_id in config-service.
+     */
+    public Map<String, Object> unassignTidFromBranch(Long tidId) {
+        String ref = Ulid.generate();
+        logRequest("UnassignTidFromBranch", ref);
+        try {
+            var resp = configStub.unassignTidFromBranch(
+                    com.tms.report.grpc.config.UnassignTidFromBranchRequest.newBuilder().setTidId(tidId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("UnassignTidFromBranch", ref, e);
+        }
+    }
+
     // ── Configuration commands → config-service ──
 
     public Map<String, Object> updateConfiguration(String configurationId, String value) {

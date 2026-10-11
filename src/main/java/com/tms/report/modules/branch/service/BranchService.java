@@ -862,9 +862,13 @@ public class BranchService {
             return getTidById(tidId);
         }
 
-        // Update TID with branch assignment
-        entityManager.createNativeQuery("UPDATE tids SET branch_id = :branchId, updated_at = NOW() WHERE id = :tidId")
-                .setParameter("branchId", branchId).setParameter("tidId", tidId).executeUpdate();
+        // Update TID with branch assignment via gRPC (writes to config-service,
+        // which then replicates to this database)
+        var assignResult = grpcClient.assignTidToBranch(tidId, branchId);
+        if (!Boolean.TRUE.equals(assignResult.get("success"))) {
+            String msg = assignResult.get("message") != null ? assignResult.get("message").toString() : "Unknown error";
+            throw new AppException("Failed to assign TID to branch: " + msg, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
 
         log.info("Assigned TID {} to branch {} for merchant {}", tidId, branchId, merchantId);
 
@@ -886,9 +890,15 @@ public class BranchService {
             return null;
         }
 
-        // Remove branch assignment
-        entityManager.createNativeQuery("UPDATE tids SET branch_id = NULL, updated_at = NOW() WHERE id = :tidId")
-                .setParameter("tidId", tidId).executeUpdate();
+        // Remove branch assignment via gRPC (writes to config-service, which then
+        // replicates to this database)
+        var unassignResult = grpcClient.unassignTidFromBranch(tidId);
+        if (!Boolean.TRUE.equals(unassignResult.get("success"))) {
+            String msg = unassignResult.get("message") != null
+                    ? unassignResult.get("message").toString()
+                    : "Unknown error";
+            throw new AppException("Failed to unassign TID from branch: " + msg, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
 
         log.info("Unassigned TID {} from branch {} for merchant {}", tidId, branchId, merchantId);
 

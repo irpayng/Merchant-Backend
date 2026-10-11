@@ -56,6 +56,10 @@ service ConfigService {
   // Updates terminals.branch_id in the authoritative config_service DB.
   rpc AssignTerminalToBranch (AssignTerminalToBranchRequest) returns (ConfigCommandResponse);
   rpc UnassignTerminalFromBranch (UnassignTerminalFromBranchRequest) returns (ConfigCommandResponse);
+  // TID branch assignment RPCs (multi-branch merchant structure).
+  // Updates tids.branch_id in the authoritative config_service DB.
+  rpc AssignTidToBranch (AssignTidToBranchRequest) returns (ConfigCommandResponse);
+  rpc UnassignTidFromBranch (UnassignTidFromBranchRequest) returns (ConfigCommandResponse);
 }
 
 message ValidateTransactionRequest {
@@ -416,3 +420,15 @@ message AssignTerminalToBranchRequest {
 message UnassignTerminalFromBranchRequest {
   int64 terminal_id = 1;
 }
+
+// ── TID branch assignment messages ──
+
+message AssignTidToBranchRequest {
+  int64 tid_id = 1;
+  int64 branch_id = 2;
+}
+
+message UnassignTidFromBranchRequest {
+  int64 tid_id = 1;
+}
+
