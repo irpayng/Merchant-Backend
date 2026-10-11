@@ -248,6 +248,21 @@ public class BranchController {
         return ApiResponse.success(terminals);
     }
 
+    /**
+     * List all unassigned terminals for the merchant (for branch creation form).
+     * Unlike /{id}/terminals/available, this doesn't require a branch ID and can be
+     * used when creating a new branch.
+     */
+    @GetMapping("/terminals/unassigned")
+    public ApiResponse<List<Terminal>> unassignedTerminals() {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return ApiResponse.error(401, "Unauthorized");
+        }
+        List<Terminal> terminals = branchService.getAvailableTerminals(merchantId);
+        return ApiResponse.success(terminals);
+    }
+
     // ────────────────────────────────────────────────────────────── Branch
     // Transactions
 
