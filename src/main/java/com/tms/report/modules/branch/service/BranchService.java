@@ -736,6 +736,227 @@ public class BranchService {
                 .getResultList();
     }
 
+    // ────────────────────────────────────────────────────────────── TID
+    // Assignment
+
+    /**
+     * List TIDs assigned to a branch.
+     */
+    @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> listBranchTids(Long branchId, Long merchantId, Map<String, String> params) {
+        // Verify branch exists and belongs to merchant
+        Long branchCount = ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
+                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
+
+        if (branchCount == 0) {
+            return PagedResponse.empty("/branches/" + branchId + "/tids");
+        }
+
+        int page = Integer.parseInt(params.getOrDefault("page", "1")) - 1;
+        int limit = Integer.parseInt(params.getOrDefault("limit", "15"));
+
+        StringBuilder where = new StringBuilder("WHERE t.branch_id = :branchId AND t.user_id = :merchantId");
+        Map<String, Object> qp = new HashMap<>();
+        qp.put("branchId", branchId);
+        qp.put("merchantId", merchantId);
+
+        String search = params.get("search");
+        if (search != null && !search.isBlank()) {
+            where.append(
+                    " AND (LOWER(t.terminal_id) LIKE :search OR LOWER(t.merchant_id) LIKE :search OR LOWER(t.merchant_name) LIKE :search)");
+            qp.put("search", "%" + search.toLowerCase() + "%");
+        }
+
+        // Count query
+        String countSql = "SELECT COUNT(*) FROM tids t " + where;
+        Query countQ = entityManager.createNativeQuery(countSql);
+        qp.forEach(countQ::setParameter);
+        long total = ((Number) countQ.getSingleResult()).longValue();
+
+        // Data query
+        String dataSql = """
+                SELECT t.id, t.terminal_id, t.merchant_id, t.merchant_name,
+                       t.bank_acc_no, t.merchant_category_code, t.state_code,
+                       t.merchant_physical_addr, t.email, t.mobile_phone,
+                       t.created_at, t.updated_at
+                FROM tids t
+                """ + where + " ORDER BY t.terminal_id ASC";
+
+        Query dataQ = entityManager.createNativeQuery(dataSql);
+        qp.forEach(dataQ::setParameter);
+        dataQ.setFirstResult(page * limit);
+        dataQ.setMaxResults(limit);
+
+        List<Object[]> rows = dataQ.getResultList();
+        List<Map<String, Object>> out = new ArrayList<>();
+
+        for (Object[] r : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", num(r[0]));
+            m.put("terminal_id", str(r[1]));
+            m.put("merchant_id", str(r[2]));
+            m.put("merchant_name", str(r[3]));
+            m.put("bank_acc_no", str(r[4]));
+            m.put("merchant_category_code", str(r[5]));
+            m.put("state_code", str(r[6]));
+            m.put("merchant_physical_addr", str(r[7]));
+            m.put("email", str(r[8]));
+            m.put("mobile_phone", str(r[9]));
+            m.put("created_at", timestamp(r[10]));
+            m.put("updated_at", timestamp(r[11]));
+            out.add(m);
+        }
+
+        Page<Map<String, Object>> pageResult = new PageImpl<>(out, PageRequest.of(page, limit), total);
+        return PagedResponse.from(pageResult, "/branches/" + branchId + "/tids");
+    }
+
+    /**
+     * Assign a TID to a branch. Returns null if TID is already assigned to a
+     * different branch (must unassign first).
+     */
+    @Transactional
+    public Map<String, Object> assignTidToBranch(Long branchId, Long tidId, Long merchantId) {
+        // Verify branch exists and belongs to merchant
+        Long branchCount = ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
+                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
+
+        if (branchCount == 0) {
+            return null;
+        }
+
+        // Verify TID exists, belongs to merchant, and check current branch assignment
+        Object[] tidData = (Object[]) entityManager
+                .createNativeQuery("SELECT id, branch_id FROM tids WHERE id = :id AND user_id = :merchantId")
+                .setParameter("id", tidId).setParameter("merchantId", merchantId).getResultStream().findFirst()
+                .orElse(null);
+
+        if (tidData == null) {
+            return null;
+        }
+
+        Long currentBranchId = tidData[1] != null ? ((Number) tidData[1]).longValue() : null;
+
+        // If TID is already assigned to a different branch, reject the assignment
+        if (currentBranchId != null && !currentBranchId.equals(branchId)) {
+            log.warn("Cannot assign TID {} to branch {} - already assigned to branch {}", tidId, branchId,
+                    currentBranchId);
+            throw new AppException("TID is already assigned to another branch. Unassign it first.",
+                    HttpStatus.CONFLICT);
+        }
+
+        // If already assigned to this branch, just return it (idempotent)
+        if (currentBranchId != null && currentBranchId.equals(branchId)) {
+            return getTidById(tidId);
+        }
+
+        // Update TID with branch assignment
+        entityManager.createNativeQuery("UPDATE tids SET branch_id = :branchId, updated_at = NOW() WHERE id = :tidId")
+                .setParameter("branchId", branchId).setParameter("tidId", tidId).executeUpdate();
+
+        log.info("Assigned TID {} to branch {} for merchant {}", tidId, branchId, merchantId);
+
+        return getTidById(tidId);
+    }
+
+    /**
+     * Unassign a TID from a branch.
+     */
+    @Transactional
+    public Map<String, Object> unassignTidFromBranch(Long branchId, Long tidId, Long merchantId) {
+        // Verify TID is assigned to this branch and merchant
+        Long count = ((Number) entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM tids WHERE id = :tidId AND branch_id = :branchId AND user_id = :merchantId")
+                .setParameter("tidId", tidId).setParameter("branchId", branchId).setParameter("merchantId", merchantId)
+                .getSingleResult()).longValue();
+
+        if (count == 0) {
+            return null;
+        }
+
+        // Remove branch assignment
+        entityManager.createNativeQuery("UPDATE tids SET branch_id = NULL, updated_at = NOW() WHERE id = :tidId")
+                .setParameter("tidId", tidId).executeUpdate();
+
+        log.info("Unassigned TID {} from branch {} for merchant {}", tidId, branchId, merchantId);
+
+        return getTidById(tidId);
+    }
+
+    /**
+     * Get TIDs not assigned to any branch (available for assignment).
+     */
+    @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> getAvailableTids(Long merchantId) {
+        String sql = """
+                SELECT t.id, t.terminal_id, t.merchant_id, t.merchant_name,
+                       t.bank_acc_no, t.merchant_category_code, t.state_code,
+                       t.merchant_physical_addr, t.email, t.mobile_phone,
+                       t.created_at, t.updated_at
+                FROM tids t
+                WHERE t.user_id = :merchantId AND t.branch_id IS NULL AND t.internal = false
+                ORDER BY t.terminal_id
+                """;
+        List<Object[]> rows = entityManager.createNativeQuery(sql).setParameter("merchantId", merchantId)
+                .getResultList();
+
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Object[] r : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", num(r[0]));
+            m.put("terminal_id", str(r[1]));
+            m.put("merchant_id", str(r[2]));
+            m.put("merchant_name", str(r[3]));
+            m.put("bank_acc_no", str(r[4]));
+            m.put("merchant_category_code", str(r[5]));
+            m.put("state_code", str(r[6]));
+            m.put("merchant_physical_addr", str(r[7]));
+            m.put("email", str(r[8]));
+            m.put("mobile_phone", str(r[9]));
+            m.put("created_at", timestamp(r[10]));
+            m.put("updated_at", timestamp(r[11]));
+            out.add(m);
+        }
+        return out;
+    }
+
+    /**
+     * Get a single TID by ID (helper method).
+     */
+    @Transactional(readOnly = true)
+    private Map<String, Object> getTidById(Long tidId) {
+        try {
+            Object[] r = (Object[]) entityManager.createNativeQuery("""
+                    SELECT t.id, t.terminal_id, t.merchant_id, t.merchant_name,
+                           t.bank_acc_no, t.merchant_category_code, t.state_code,
+                           t.merchant_physical_addr, t.email, t.mobile_phone,
+                           t.created_at, t.updated_at
+                    FROM tids t WHERE t.id = :tidId
+                    """).setParameter("tidId", tidId).getSingleResult();
+
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", num(r[0]));
+            m.put("terminal_id", str(r[1]));
+            m.put("merchant_id", str(r[2]));
+            m.put("merchant_name", str(r[3]));
+            m.put("bank_acc_no", str(r[4]));
+            m.put("merchant_category_code", str(r[5]));
+            m.put("state_code", str(r[6]));
+            m.put("merchant_physical_addr", str(r[7]));
+            m.put("email", str(r[8]));
+            m.put("mobile_phone", str(r[9]));
+            m.put("created_at", timestamp(r[10]));
+            m.put("updated_at", timestamp(r[11]));
+            return m;
+        } catch (jakarta.persistence.NoResultException e) {
+            return null;
+        }
+    }
+
     // ────────────────────────────────────────────────────────────── Branch
     // Transactions
 

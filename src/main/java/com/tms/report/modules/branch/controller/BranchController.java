@@ -263,6 +263,80 @@ public class BranchController {
         return ApiResponse.success(terminals);
     }
 
+    // ────────────────────────────────────────────────────────────── TID Assignment
+
+    /**
+     * List TIDs assigned to a branch.
+     */
+    @GetMapping("/{id}/tids")
+    public Map<String, Object> listTids(@PathVariable Long id, @RequestParam Map<String, String> params) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return PagedResponse.empty("/branches/" + id + "/tids");
+        }
+        return branchService.listBranchTids(id, merchantId, params);
+    }
+
+    /**
+     * Assign a TID to a branch.
+     */
+    @PostMapping("/{id}/tids/{tidId}")
+    public ApiResponse<Map<String, Object>> assignTid(@PathVariable Long id, @PathVariable Long tidId) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return ApiResponse.error(401, "Unauthorized");
+        }
+        Map<String, Object> tid = branchService.assignTidToBranch(id, tidId, merchantId);
+        if (tid == null) {
+            return ApiResponse.error(404, "Branch or TID not found");
+        }
+        return ApiResponse.success(tid, "TID assigned to branch");
+    }
+
+    /**
+     * Unassign a TID from a branch.
+     */
+    @DeleteMapping("/{id}/tids/{tidId}")
+    public ApiResponse<Map<String, Object>> unassignTid(@PathVariable Long id, @PathVariable Long tidId) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return ApiResponse.error(401, "Unauthorized");
+        }
+        Map<String, Object> tid = branchService.unassignTidFromBranch(id, tidId, merchantId);
+        if (tid == null) {
+            return ApiResponse.error(404, "Branch or TID not found");
+        }
+        return ApiResponse.success(tid, "TID unassigned from branch");
+    }
+
+    /**
+     * List TIDs available for assignment (not yet assigned to any branch).
+     */
+    @GetMapping("/{id}/tids/available")
+    public ApiResponse<List<Map<String, Object>>> availableTids(@PathVariable Long id) {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return ApiResponse.error(401, "Unauthorized");
+        }
+        List<Map<String, Object>> tids = branchService.getAvailableTids(merchantId);
+        return ApiResponse.success(tids);
+    }
+
+    /**
+     * List all unassigned TIDs for the merchant (for branch creation form). Unlike
+     * /{id}/tids/available, this doesn't require a branch ID and can be used when
+     * creating a new branch.
+     */
+    @GetMapping("/tids/unassigned")
+    public ApiResponse<List<Map<String, Object>>> unassignedTids() {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return ApiResponse.error(401, "Unauthorized");
+        }
+        List<Map<String, Object>> tids = branchService.getAvailableTids(merchantId);
+        return ApiResponse.success(tids);
+    }
+
     // ────────────────────────────────────────────────────────────── Branch
     // Transactions
 
