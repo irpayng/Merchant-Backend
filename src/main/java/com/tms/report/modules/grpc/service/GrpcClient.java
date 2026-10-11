@@ -671,6 +671,40 @@ public class GrpcClient {
         }
     }
 
+    /**
+     * Assign a terminal to a merchant branch. Updates the authoritative
+     * terminals.branch_id in config-service, which then replicates to
+     * tms_report_java.
+     */
+    public Map<String, Object> assignTerminalToBranch(Long terminalId, Long branchId) {
+        String ref = Ulid.generate();
+        logRequest("AssignTerminalToBranch", ref);
+        try {
+            var resp = configStub.assignTerminalToBranch(com.tms.report.grpc.config.AssignTerminalToBranchRequest
+                    .newBuilder().setTerminalId(terminalId).setBranchId(branchId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("AssignTerminalToBranch", ref, e);
+        }
+    }
+
+    /**
+     * Unassign a terminal from its branch (sets branch_id to NULL). Updates the
+     * authoritative terminals.branch_id in config-service.
+     */
+    public Map<String, Object> unassignTerminalFromBranch(Long terminalId) {
+        String ref = Ulid.generate();
+        logRequest("UnassignTerminalFromBranch", ref);
+        try {
+            var resp = configStub
+                    .unassignTerminalFromBranch(com.tms.report.grpc.config.UnassignTerminalFromBranchRequest
+                            .newBuilder().setTerminalId(terminalId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("UnassignTerminalFromBranch", ref, e);
+        }
+    }
+
     // ── Configuration commands → config-service ──
 
     public Map<String, Object> updateConfiguration(String configurationId, String value) {

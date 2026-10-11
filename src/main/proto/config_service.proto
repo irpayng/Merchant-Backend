@@ -52,6 +52,10 @@ service ConfigService {
   // assigning a terminal to a branch. If the terminal already has a TID mapping,
   // this is a no-op. If not, creates one linking the terminal to a branch TID.
   rpc EnsureTidMappingForBranch (EnsureTidMappingForBranchRequest) returns (ConfigCommandResponse);
+  // Terminal branch assignment RPCs (multi-branch merchant structure).
+  // Updates terminals.branch_id in the authoritative config_service DB.
+  rpc AssignTerminalToBranch (AssignTerminalToBranchRequest) returns (ConfigCommandResponse);
+  rpc UnassignTerminalFromBranch (UnassignTerminalFromBranchRequest) returns (ConfigCommandResponse);
 }
 
 message ValidateTransactionRequest {
@@ -400,4 +404,15 @@ message ListMerchantSettlementAccountsResponse {
 message EnsureTidMappingForBranchRequest {
   int64 terminal_id = 1;
   int64 branch_id = 2;
+}
+
+// ── Terminal branch assignment messages ──
+
+message AssignTerminalToBranchRequest {
+  int64 terminal_id = 1;
+  int64 branch_id = 2;
+}
+
+message UnassignTerminalFromBranchRequest {
+  int64 terminal_id = 1;
 }

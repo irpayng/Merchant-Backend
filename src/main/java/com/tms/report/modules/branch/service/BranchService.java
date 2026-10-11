@@ -667,11 +667,15 @@ public class BranchService {
             return entityManager.find(Terminal.class, terminalId);
         }
 
-        // Update terminal with branch assignment
-        entityManager
-                .createNativeQuery(
-                        "UPDATE terminals SET branch_id = :branchId, updated_at = NOW() WHERE id = :terminalId")
-                .setParameter("branchId", branchId).setParameter("terminalId", terminalId).executeUpdate();
+        // Update terminal with branch assignment via gRPC to config-service
+        // (config-service owns the terminals table; local SQL would be overwritten by
+        // replication)
+        var assignResult = grpcClient.assignTerminalToBranch(terminalId, branchId);
+        if (!Boolean.TRUE.equals(assignResult.get("success"))) {
+            String msg = (String) assignResult.get("message");
+            log.error("Failed to assign terminal {} to branch {} via gRPC: {}", terminalId, branchId, msg);
+            throw new AppException("Failed to assign terminal to branch: " + msg, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
 
         log.info("Assigned terminal {} to branch {} for merchant {}", terminalId, branchId, merchantId);
 
@@ -711,10 +715,15 @@ public class BranchService {
             return null;
         }
 
-        // Remove branch assignment
-        entityManager
-                .createNativeQuery("UPDATE terminals SET branch_id = NULL, updated_at = NOW() WHERE id = :terminalId")
-                .setParameter("terminalId", terminalId).executeUpdate();
+        // Remove branch assignment via gRPC to config-service
+        // (config-service owns the terminals table; local SQL would be overwritten by
+        // replication)
+        var unassignResult = grpcClient.unassignTerminalFromBranch(terminalId);
+        if (!Boolean.TRUE.equals(unassignResult.get("success"))) {
+            String msg = (String) unassignResult.get("message");
+            log.error("Failed to unassign terminal {} from branch {} via gRPC: {}", terminalId, branchId, msg);
+            throw new AppException("Failed to unassign terminal from branch: " + msg, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
 
         log.info("Unassigned terminal {} from branch {} for merchant {}", terminalId, branchId, merchantId);
 
