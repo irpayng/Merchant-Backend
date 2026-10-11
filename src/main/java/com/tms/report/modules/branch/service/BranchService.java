@@ -627,8 +627,9 @@ public class BranchService {
     }
 
     /**
-     * Assign a terminal to a branch. Returns null if the terminal is already
-     * assigned to a different branch (must unassign first).
+     * Assign a terminal to a branch. Multiple branches can share the same terminal,
+     * and terminal branch assignment is editable (can reassign to a different
+     * branch).
      */
     @Transactional
     public Terminal assignTerminalToBranch(Long branchId, Long terminalId, Long merchantId) {
@@ -641,8 +642,7 @@ public class BranchService {
             return null;
         }
 
-        // Verify terminal exists, belongs to merchant, and is not assigned to another
-        // branch
+        // Verify terminal exists and belongs to merchant
         Object[] terminalData = (Object[]) entityManager
                 .createNativeQuery("SELECT id, branch_id FROM terminals WHERE id = :id AND user_id = :merchantId")
                 .setParameter("id", terminalId).setParameter("merchantId", merchantId).getResultStream().findFirst()
@@ -654,14 +654,6 @@ public class BranchService {
 
         Long currentBranchId = terminalData[1] != null ? ((Number) terminalData[1]).longValue() : null;
 
-        // If terminal is already assigned to a different branch, reject the assignment
-        if (currentBranchId != null && !currentBranchId.equals(branchId)) {
-            log.warn("Cannot assign terminal {} to branch {} - already assigned to branch {}", terminalId, branchId,
-                    currentBranchId);
-            throw new AppException("Terminal is already assigned to another branch. Unassign it first.",
-                    HttpStatus.CONFLICT);
-        }
-
         // If already assigned to this branch, just return it (idempotent)
         if (currentBranchId != null && currentBranchId.equals(branchId)) {
             return entityManager.find(Terminal.class, terminalId);
@@ -669,7 +661,7 @@ public class BranchService {
 
         // Update terminal with branch assignment via gRPC to config-service
         // (config-service owns the terminals table; local SQL would be overwritten by
-        // replication)
+        // replication). This handles both new assignments and reassignments.
         var assignResult = grpcClient.assignTerminalToBranch(terminalId, branchId);
         if (!Boolean.TRUE.equals(assignResult.get("success"))) {
             String msg = (String) assignResult.get("message");
@@ -677,7 +669,12 @@ public class BranchService {
             throw new AppException("Failed to assign terminal to branch: " + msg, HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
-        log.info("Assigned terminal {} to branch {} for merchant {}", terminalId, branchId, merchantId);
+        if (currentBranchId != null) {
+            log.info("Reassigned terminal {} from branch {} to branch {} for merchant {}", terminalId, currentBranchId,
+                    branchId, merchantId);
+        } else {
+            log.info("Assigned terminal {} to branch {} for merchant {}", terminalId, branchId, merchantId);
+        }
 
         // Ensure terminal has a TID mapping for this branch (fail-soft)
         try {
@@ -823,8 +820,8 @@ public class BranchService {
     }
 
     /**
-     * Assign a TID to a branch. Returns null if TID is already assigned to a
-     * different branch (must unassign first).
+     * Assign a TID to a branch. Multiple branches can share the same TID, and TID
+     * branch assignment is editable (can reassign to a different branch).
      */
     @Transactional
     public Map<String, Object> assignTidToBranch(Long branchId, Long tidId, Long merchantId) {
@@ -837,7 +834,7 @@ public class BranchService {
             return null;
         }
 
-        // Verify TID exists, belongs to merchant, and check current branch assignment
+        // Verify TID exists and belongs to merchant
         Object[] tidData = (Object[]) entityManager
                 .createNativeQuery("SELECT id, branch_id FROM tids WHERE id = :id AND user_id = :merchantId")
                 .setParameter("id", tidId).setParameter("merchantId", merchantId).getResultStream().findFirst()
@@ -849,28 +846,26 @@ public class BranchService {
 
         Long currentBranchId = tidData[1] != null ? ((Number) tidData[1]).longValue() : null;
 
-        // If TID is already assigned to a different branch, reject the assignment
-        if (currentBranchId != null && !currentBranchId.equals(branchId)) {
-            log.warn("Cannot assign TID {} to branch {} - already assigned to branch {}", tidId, branchId,
-                    currentBranchId);
-            throw new AppException("TID is already assigned to another branch. Unassign it first.",
-                    HttpStatus.CONFLICT);
-        }
-
         // If already assigned to this branch, just return it (idempotent)
         if (currentBranchId != null && currentBranchId.equals(branchId)) {
             return getTidById(tidId);
         }
 
         // Update TID with branch assignment via gRPC (writes to config-service,
-        // which then replicates to this database)
+        // which then replicates to this database). This handles both new assignments
+        // and reassignments from one branch to another.
         var assignResult = grpcClient.assignTidToBranch(tidId, branchId);
         if (!Boolean.TRUE.equals(assignResult.get("success"))) {
             String msg = assignResult.get("message") != null ? assignResult.get("message").toString() : "Unknown error";
             throw new AppException("Failed to assign TID to branch: " + msg, HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
-        log.info("Assigned TID {} to branch {} for merchant {}", tidId, branchId, merchantId);
+        if (currentBranchId != null) {
+            log.info("Reassigned TID {} from branch {} to branch {} for merchant {}", tidId, currentBranchId, branchId,
+                    merchantId);
+        } else {
+            log.info("Assigned TID {} to branch {} for merchant {}", tidId, branchId, merchantId);
+        }
 
         return getTidById(tidId);
     }
