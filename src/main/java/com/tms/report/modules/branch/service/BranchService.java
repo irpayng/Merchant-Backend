@@ -495,12 +495,13 @@ public class BranchService {
         qp.forEach(countQ::setParameter);
         long total = ((Number) countQ.getSingleResult()).longValue();
 
-        // Data query with latest metrics
+        // Data query with latest metrics and TID from the same branch
         String dataSql = """
                 SELECT t.id, t.serial, t.make, t.model, t.os, t.active, t.locked,
                        t.created_at, t.updated_at,
                        m.battery_pct, m.network_type, m.printer_status, m.created_at as last_seen,
-                       COALESCE(loc.location, t.serial) as location
+                       COALESCE(tid.merchant_physical_addr, t.serial) as location,
+                       tid.terminal_id as tid_value
                 FROM terminals t
                 LEFT JOIN LATERAL (
                     SELECT battery_pct, network_type, printer_status, created_at
@@ -509,10 +510,13 @@ public class BranchService {
                     ORDER BY created_at DESC
                     LIMIT 1
                 ) m ON true
-                LEFT JOIN (
-                    SELECT terminal_address as location, terminal_id
+                LEFT JOIN LATERAL (
+                    SELECT terminal_id, merchant_physical_addr
                     FROM tids
-                ) loc ON loc.terminal_id = t.serial
+                    WHERE branch_id = t.branch_id
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                ) tid ON true
                 """ + where + " ORDER BY t.created_at DESC";
 
         Query dataQ = entityManager.createNativeQuery(dataSql);
@@ -526,7 +530,8 @@ public class BranchService {
         for (Object[] r : rows) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", num(r[0]));
-            m.put("terminal_id", str(r[1]));
+            m.put("terminal_id", str(r[14]) != null ? str(r[14]) : str(r[1])); // TID from tids table, fallback to
+                                                                               // serial
             m.put("serial", str(r[1]));
             m.put("make", str(r[2]));
             m.put("model", str(r[3]));
