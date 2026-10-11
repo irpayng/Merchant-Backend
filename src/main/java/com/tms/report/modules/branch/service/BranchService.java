@@ -500,7 +500,7 @@ public class BranchService {
                 SELECT t.id, t.serial, t.make, t.model, t.os, t.active, t.locked,
                        t.created_at, t.updated_at,
                        m.battery_pct, m.network_type, m.printer_status, m.created_at as last_seen,
-                       COALESCE(tid.merchant_physical_addr, t.serial) as location,
+                       COALESCE(tid.merchant_physical_addr, '') as location,
                        tid.terminal_id as tid_value
                 FROM terminals t
                 LEFT JOIN LATERAL (
@@ -539,7 +539,7 @@ public class BranchService {
             m.put("model_os", str(r[3]) + ", " + str(r[4]));
             m.put("active", r[5]);
             m.put("locked", r[6]);
-            m.put("status", Boolean.TRUE.equals(r[6]) ? "Locked" : "Online");
+            m.put("status", Boolean.TRUE.equals(r[6]) ? "Locked" : "Active");
             m.put("created_at", timestamp(r[7]));
             m.put("updated_at", timestamp(r[8]));
             m.put("battery_pct", r[9]);
