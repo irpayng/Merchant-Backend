@@ -1,6 +1,7 @@
 package com.tms.report.modules.branch.service;
 
 import com.tms.report.core.dto.PagedResponse;
+import com.tms.report.core.exception.AppException;
 import com.tms.report.modules.branch.dto.BranchCreateRequest;
 import com.tms.report.modules.branch.dto.BranchResponse;
 import com.tms.report.modules.branch.dto.BranchUpdateRequest;
@@ -17,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -625,7 +627,8 @@ public class BranchService {
     }
 
     /**
-     * Assign a terminal to a branch.
+     * Assign a terminal to a branch. Returns null if the terminal is already
+     * assigned to a different branch (must unassign first).
      */
     @Transactional
     public Terminal assignTerminalToBranch(Long branchId, Long terminalId, Long merchantId) {
@@ -638,13 +641,30 @@ public class BranchService {
             return null;
         }
 
-        // Verify terminal exists and belongs to merchant
-        Long terminalCount = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM terminals WHERE id = :id AND user_id = :merchantId")
-                .setParameter("id", terminalId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
+        // Verify terminal exists, belongs to merchant, and is not assigned to another
+        // branch
+        Object[] terminalData = (Object[]) entityManager
+                .createNativeQuery("SELECT id, branch_id FROM terminals WHERE id = :id AND user_id = :merchantId")
+                .setParameter("id", terminalId).setParameter("merchantId", merchantId).getResultStream().findFirst()
+                .orElse(null);
 
-        if (terminalCount == 0) {
+        if (terminalData == null) {
             return null;
+        }
+
+        Long currentBranchId = terminalData[1] != null ? ((Number) terminalData[1]).longValue() : null;
+
+        // If terminal is already assigned to a different branch, reject the assignment
+        if (currentBranchId != null && !currentBranchId.equals(branchId)) {
+            log.warn("Cannot assign terminal {} to branch {} - already assigned to branch {}", terminalId, branchId,
+                    currentBranchId);
+            throw new AppException("Terminal is already assigned to another branch. Unassign it first.",
+                    HttpStatus.CONFLICT);
+        }
+
+        // If already assigned to this branch, just return it (idempotent)
+        if (currentBranchId != null && currentBranchId.equals(branchId)) {
+            return entityManager.find(Terminal.class, terminalId);
         }
 
         // Update terminal with branch assignment
