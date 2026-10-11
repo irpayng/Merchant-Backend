@@ -655,6 +655,23 @@ public class BranchService {
 
         log.info("Assigned terminal {} to branch {} for merchant {}", terminalId, branchId, merchantId);
 
+        // Ensure terminal has a TID mapping for this branch (fail-soft)
+        try {
+            var result = grpcClient.ensureTidMappingForBranch(terminalId, branchId);
+            if (!Boolean.TRUE.equals(result.get("success"))) {
+                String msg = (String) result.get("message");
+                if (msg != null && msg.contains("No TID found")) {
+                    log.warn("Branch {} has no TIDs - terminal {} assigned without TID mapping", branchId, terminalId);
+                } else {
+                    log.warn("Failed to ensure TID mapping for terminal {} to branch {}: {}", terminalId, branchId,
+                            msg);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("gRPC call failed for TID mapping (terminal {} to branch {}): {}", terminalId, branchId,
+                    e.getMessage());
+        }
+
         // Return the updated terminal
         return entityManager.find(Terminal.class, terminalId);
     }

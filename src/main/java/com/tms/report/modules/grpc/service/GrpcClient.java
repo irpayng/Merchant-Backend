@@ -654,6 +654,23 @@ public class GrpcClient {
         }
     }
 
+    /**
+     * Ensure a terminal has a TID mapping for its assigned branch. Called after
+     * assigning a terminal to a branch. If the terminal already has a TID mapping,
+     * this is a no-op. If not, creates one linking the terminal to a branch TID.
+     */
+    public Map<String, Object> ensureTidMappingForBranch(long terminalId, long branchId) {
+        String ref = Ulid.generate();
+        logRequest("EnsureTidMappingForBranch", ref);
+        try {
+            var resp = configStub.ensureTidMappingForBranch(com.tms.report.grpc.config.EnsureTidMappingForBranchRequest
+                    .newBuilder().setTerminalId(terminalId).setBranchId(branchId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("EnsureTidMappingForBranch", ref, e);
+        }
+    }
+
     // ── Configuration commands → config-service ──
 
     public Map<String, Object> updateConfiguration(String configurationId, String value) {

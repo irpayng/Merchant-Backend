@@ -48,6 +48,10 @@ service ConfigService {
   rpc CheckInstantSettlement (CheckInstantSettlementRequest) returns (CheckInstantSettlementResponse);
   // Merchant Settlement Account RPCs (multi-branch structure)
   rpc ListMerchantSettlementAccounts (ListMerchantSettlementAccountsRequest) returns (ListMerchantSettlementAccountsResponse);
+  // Ensure a terminal has a TID mapping for its assigned branch. Called after
+  // assigning a terminal to a branch. If the terminal already has a TID mapping,
+  // this is a no-op. If not, creates one linking the terminal to a branch TID.
+  rpc EnsureTidMappingForBranch (EnsureTidMappingForBranchRequest) returns (ConfigCommandResponse);
 }
 
 message ValidateTransactionRequest {
@@ -389,4 +393,11 @@ message MerchantSettlementAccount {
 
 message ListMerchantSettlementAccountsResponse {
   repeated MerchantSettlementAccount accounts = 1;
+}
+
+// ── Ensure TID mapping for branch-assigned terminal ──
+
+message EnsureTidMappingForBranchRequest {
+  int64 terminal_id = 1;
+  int64 branch_id = 2;
 }
