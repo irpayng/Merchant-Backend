@@ -906,7 +906,10 @@ public class BranchService {
     }
 
     /**
-     * Get TIDs not assigned to any branch (available for assignment).
+     * Get TIDs available for assignment to a branch. Returns ALL non-internal TIDs
+     * for the merchant, including those already assigned to other branches (since
+     * TID assignment is editable — they can be reassigned from one branch to
+     * another).
      */
     @Transactional(readOnly = true)
     @SuppressWarnings("unchecked")
@@ -915,9 +918,9 @@ public class BranchService {
                 SELECT t.id, t.terminal_id, t.merchant_id, t.merchant_name,
                        t.bank_acc_no, t.merchant_category_code, t.state_code,
                        t.merchant_physical_addr, t.email, t.mobile_phone,
-                       t.created_at, t.updated_at
+                       t.created_at, t.updated_at, t.branch_id
                 FROM tids t
-                WHERE t.user_id = :merchantId AND t.branch_id IS NULL AND t.internal = false
+                WHERE t.user_id = :merchantId AND t.internal = false
                 ORDER BY t.terminal_id
                 """;
         List<Object[]> rows = entityManager.createNativeQuery(sql).setParameter("merchantId", merchantId)
@@ -938,6 +941,7 @@ public class BranchService {
             m.put("mobile_phone", str(r[9]));
             m.put("created_at", timestamp(r[10]));
             m.put("updated_at", timestamp(r[11]));
+            m.put("branch_id", r[12] != null ? num(r[12]) : null);
             out.add(m);
         }
         return out;
