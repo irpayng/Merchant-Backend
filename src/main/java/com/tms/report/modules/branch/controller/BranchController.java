@@ -310,7 +310,8 @@ public class BranchController {
     }
 
     /**
-     * List TIDs available for assignment (not yet assigned to any branch).
+     * List TIDs available for assignment to this branch. Returns all merchant TIDs
+     * with info about which branches they're already assigned to.
      */
     @GetMapping("/{id}/tids/available")
     public ApiResponse<List<Map<String, Object>>> availableTids(@PathVariable Long id) {
@@ -318,7 +319,7 @@ public class BranchController {
         if (merchantId == null) {
             return ApiResponse.error(401, "Unauthorized");
         }
-        List<Map<String, Object>> tids = branchService.getAvailableTids(merchantId);
+        List<Map<String, Object>> tids = branchService.getAvailableTids(merchantId, id);
         return ApiResponse.success(tids);
     }
 

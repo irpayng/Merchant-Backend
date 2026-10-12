@@ -724,15 +724,16 @@ public class GrpcClient {
     }
 
     /**
-     * Unassign a TID from its branch (sets branch_id to NULL). Updates the
-     * authoritative tids.branch_id in config-service.
+     * Unassign a TID from a specific branch. Removes the entry from the branch_tids
+     * join table in config-service. The TID may still be assigned to other
+     * branches.
      */
-    public Map<String, Object> unassignTidFromBranch(Long tidId) {
+    public Map<String, Object> unassignTidFromBranch(Long tidId, Long branchId) {
         String ref = Ulid.generate();
         logRequest("UnassignTidFromBranch", ref);
         try {
-            var resp = configStub.unassignTidFromBranch(
-                    com.tms.report.grpc.config.UnassignTidFromBranchRequest.newBuilder().setTidId(tidId).build());
+            var resp = configStub.unassignTidFromBranch(com.tms.report.grpc.config.UnassignTidFromBranchRequest
+                    .newBuilder().setTidId(tidId).setBranchId(branchId).build());
             return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
         } catch (StatusRuntimeException e) {
             throw grpcError("UnassignTidFromBranch", ref, e);

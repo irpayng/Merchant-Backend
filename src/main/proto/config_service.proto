@@ -430,5 +430,6 @@ message AssignTidToBranchRequest {
 
 message UnassignTidFromBranchRequest {
   int64 tid_id = 1;
+  int64 branch_id = 2;
 }
 

@@ -768,7 +768,9 @@ public class BranchService {
         int page = Integer.parseInt(params.getOrDefault("page", "1")) - 1;
         int limit = Integer.parseInt(params.getOrDefault("limit", "15"));
 
-        StringBuilder where = new StringBuilder("WHERE t.branch_id = :branchId AND t.user_id = :merchantId");
+        // Use join table for many-to-many relationship
+        StringBuilder where = new StringBuilder(
+                "WHERE bt.branch_id = :branchId AND t.user_id = :merchantId AND t.internal = false");
         Map<String, Object> qp = new HashMap<>();
         qp.put("branchId", branchId);
         qp.put("merchantId", merchantId);
@@ -780,19 +782,20 @@ public class BranchService {
             qp.put("search", "%" + search.toLowerCase() + "%");
         }
 
-        // Count query
-        String countSql = "SELECT COUNT(*) FROM tids t " + where;
+        // Count query using join table
+        String countSql = "SELECT COUNT(*) FROM branch_tids bt JOIN tids t ON t.id = bt.tid_id " + where;
         Query countQ = entityManager.createNativeQuery(countSql);
         qp.forEach(countQ::setParameter);
         long total = ((Number) countQ.getSingleResult()).longValue();
 
-        // Data query
+        // Data query using join table
         String dataSql = """
                 SELECT t.id, t.terminal_id, t.merchant_id, t.merchant_name,
                        t.bank_acc_no, t.merchant_category_code, t.state_code,
                        t.merchant_physical_addr, t.email, t.mobile_phone,
                        t.created_at, t.updated_at
-                FROM tids t
+                FROM branch_tids bt
+                JOIN tids t ON t.id = bt.tid_id
                 """ + where + " ORDER BY t.terminal_id ASC";
 
         Query dataQ = entityManager.createNativeQuery(dataSql);
@@ -825,8 +828,8 @@ public class BranchService {
     }
 
     /**
-     * Assign a TID to a branch. Multiple branches can share the same TID, and TID
-     * branch assignment is editable (can reassign to a different branch).
+     * Assign a TID to a branch. One TID can be assigned to multiple branches
+     * simultaneously via the branch_tids join table.
      */
     @Transactional
     public Map<String, Object> assignTidToBranch(Long branchId, Long tidId, Long merchantId) {
@@ -840,59 +843,65 @@ public class BranchService {
         }
 
         // Verify TID exists and belongs to merchant
-        Object[] tidData = (Object[]) entityManager
-                .createNativeQuery("SELECT id, branch_id FROM tids WHERE id = :id AND user_id = :merchantId")
-                .setParameter("id", tidId).setParameter("merchantId", merchantId).getResultStream().findFirst()
-                .orElse(null);
+        Long tidExists = ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM tids WHERE id = :id AND user_id = :merchantId")
+                .setParameter("id", tidId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
 
-        if (tidData == null) {
+        if (tidExists == 0) {
             return null;
         }
 
-        Long currentBranchId = tidData[1] != null ? ((Number) tidData[1]).longValue() : null;
+        // Check if already assigned to this branch (via join table)
+        Long alreadyAssigned = ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM branch_tids WHERE tid_id = :tidId AND branch_id = :branchId")
+                .setParameter("tidId", tidId).setParameter("branchId", branchId).getSingleResult()).longValue();
 
         // If already assigned to this branch, just return it (idempotent)
-        if (currentBranchId != null && currentBranchId.equals(branchId)) {
+        if (alreadyAssigned > 0) {
             return getTidById(tidId);
         }
 
-        // Update TID with branch assignment via gRPC (writes to config-service,
-        // which then replicates to this database). This handles both new assignments
-        // and reassignments from one branch to another.
+        // Create assignment via gRPC (writes to config-service branch_tids table,
+        // which then replicates to this database). One TID can now be assigned to
+        // multiple branches.
         var assignResult = grpcClient.assignTidToBranch(tidId, branchId);
         if (!Boolean.TRUE.equals(assignResult.get("success"))) {
             String msg = assignResult.get("message") != null ? assignResult.get("message").toString() : "Unknown error";
             throw new AppException("Failed to assign TID to branch: " + msg, HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
-        if (currentBranchId != null) {
-            log.info("Reassigned TID {} from branch {} to branch {} for merchant {}", tidId, currentBranchId, branchId,
-                    merchantId);
-        } else {
-            log.info("Assigned TID {} to branch {} for merchant {}", tidId, branchId, merchantId);
-        }
+        log.info("Assigned TID {} to branch {} for merchant {}", tidId, branchId, merchantId);
 
         return getTidById(tidId);
     }
 
     /**
-     * Unassign a TID from a branch.
+     * Unassign a TID from a branch. Removes the assignment from the branch_tids
+     * join table. The TID may still be assigned to other branches.
      */
     @Transactional
     public Map<String, Object> unassignTidFromBranch(Long branchId, Long tidId, Long merchantId) {
-        // Verify TID is assigned to this branch and merchant
-        Long count = ((Number) entityManager.createNativeQuery(
-                "SELECT COUNT(*) FROM tids WHERE id = :tidId AND branch_id = :branchId AND user_id = :merchantId")
-                .setParameter("tidId", tidId).setParameter("branchId", branchId).setParameter("merchantId", merchantId)
-                .getSingleResult()).longValue();
+        // Verify TID exists and belongs to this merchant
+        Long tidExists = ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM tids WHERE id = :tidId AND user_id = :merchantId")
+                .setParameter("tidId", tidId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
 
-        if (count == 0) {
+        if (tidExists == 0) {
+            return null;
+        }
+
+        // Verify TID is assigned to this branch (via join table)
+        Long assigned = ((Number) entityManager
+                .createNativeQuery("SELECT COUNT(*) FROM branch_tids WHERE tid_id = :tidId AND branch_id = :branchId")
+                .setParameter("tidId", tidId).setParameter("branchId", branchId).getSingleResult()).longValue();
+
+        if (assigned == 0) {
             return null;
         }
 
         // Remove branch assignment via gRPC (writes to config-service, which then
         // replicates to this database)
-        var unassignResult = grpcClient.unassignTidFromBranch(tidId);
+        var unassignResult = grpcClient.unassignTidFromBranch(tidId, branchId);
         if (!Boolean.TRUE.equals(unassignResult.get("success"))) {
             String msg = unassignResult.get("message") != null
                     ? unassignResult.get("message").toString()
@@ -907,24 +916,43 @@ public class BranchService {
 
     /**
      * Get TIDs available for assignment to a branch. Returns ALL non-internal TIDs
-     * for the merchant, including those already assigned to other branches (since
-     * TID assignment is editable — they can be reassigned from one branch to
-     * another).
+     * for the merchant. Since one TID can be assigned to multiple branches via the
+     * branch_tids join table, this returns all TIDs with a count of how many
+     * branches each is currently assigned to, and whether it's assigned to the
+     * current branch (if branchId is provided).
      */
     @Transactional(readOnly = true)
     @SuppressWarnings("unchecked")
     public List<Map<String, Object>> getAvailableTids(Long merchantId) {
+        return getAvailableTids(merchantId, null);
+    }
+
+    /**
+     * Get TIDs available for assignment to a branch with context about the current
+     * branch.
+     *
+     * @param merchantId
+     *            The merchant ID
+     * @param branchId
+     *            Optional branch ID - if provided, includes whether each TID is
+     *            assigned to this specific branch
+     */
+    @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> getAvailableTids(Long merchantId, Long branchId) {
         String sql = """
                 SELECT t.id, t.terminal_id, t.merchant_id, t.merchant_name,
                        t.bank_acc_no, t.merchant_category_code, t.state_code,
                        t.merchant_physical_addr, t.email, t.mobile_phone,
-                       t.created_at, t.updated_at, t.branch_id
+                       t.created_at, t.updated_at,
+                       (SELECT COUNT(*) FROM branch_tids bt WHERE bt.tid_id = t.id) as assigned_branches,
+                       (SELECT COUNT(*) > 0 FROM branch_tids bt WHERE bt.tid_id = t.id AND bt.branch_id = :branchId) as assigned_to_this_branch
                 FROM tids t
                 WHERE t.user_id = :merchantId AND t.internal = false
                 ORDER BY t.terminal_id
                 """;
         List<Object[]> rows = entityManager.createNativeQuery(sql).setParameter("merchantId", merchantId)
-                .getResultList();
+                .setParameter("branchId", branchId != null ? branchId : -1L).getResultList();
 
         List<Map<String, Object>> out = new ArrayList<>();
         for (Object[] r : rows) {
@@ -941,7 +969,8 @@ public class BranchService {
             m.put("mobile_phone", str(r[9]));
             m.put("created_at", timestamp(r[10]));
             m.put("updated_at", timestamp(r[11]));
-            m.put("branch_id", r[12] != null ? num(r[12]) : null);
+            m.put("assigned_branches", num(r[12]));
+            m.put("assigned_to_this_branch", Boolean.TRUE.equals(r[13]));
             out.add(m);
         }
         return out;
