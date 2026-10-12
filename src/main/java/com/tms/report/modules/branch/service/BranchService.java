@@ -861,14 +861,20 @@ public class BranchService {
             return getTidById(tidId);
         }
 
-        // Create assignment via gRPC (writes to config-service branch_tids table,
-        // which then replicates to this database). One TID can now be assigned to
-        // multiple branches.
+        // Create assignment via gRPC (writes to config-service branch_tids table)
         var assignResult = grpcClient.assignTidToBranch(tidId, branchId);
         if (!Boolean.TRUE.equals(assignResult.get("success"))) {
             String msg = assignResult.get("message") != null ? assignResult.get("message").toString() : "Unknown error";
             throw new AppException("Failed to assign TID to branch: " + msg, HttpStatus.INTERNAL_SERVER_ERROR);
         }
+
+        // Also write locally since replication isn't set up for branch_tids yet.
+        // Use INSERT ... ON CONFLICT for idempotency.
+        entityManager.createNativeQuery("""
+                INSERT INTO branch_tids (branch_id, tid_id, created_at)
+                VALUES (:branchId, :tidId, NOW())
+                ON CONFLICT (branch_id, tid_id) DO NOTHING
+                """).setParameter("branchId", branchId).setParameter("tidId", tidId).executeUpdate();
 
         log.info("Assigned TID {} to branch {} for merchant {}", tidId, branchId, merchantId);
 
@@ -899,8 +905,7 @@ public class BranchService {
             return null;
         }
 
-        // Remove branch assignment via gRPC (writes to config-service, which then
-        // replicates to this database)
+        // Remove branch assignment via gRPC (writes to config-service)
         var unassignResult = grpcClient.unassignTidFromBranch(tidId, branchId);
         if (!Boolean.TRUE.equals(unassignResult.get("success"))) {
             String msg = unassignResult.get("message") != null
@@ -908,6 +913,10 @@ public class BranchService {
                     : "Unknown error";
             throw new AppException("Failed to unassign TID from branch: " + msg, HttpStatus.INTERNAL_SERVER_ERROR);
         }
+
+        // Also delete locally since replication isn't set up for branch_tids yet
+        entityManager.createNativeQuery("DELETE FROM branch_tids WHERE branch_id = :branchId AND tid_id = :tidId")
+                .setParameter("branchId", branchId).setParameter("tidId", tidId).executeUpdate();
 
         log.info("Unassigned TID {} from branch {} for merchant {}", tidId, branchId, merchantId);
 
