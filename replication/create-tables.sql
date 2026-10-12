@@ -676,8 +676,21 @@ CREATE TABLE IF NOT EXISTS public.merchant_branches (
     email                           VARCHAR(255),
     status                          VARCHAR(20) NOT NULL DEFAULT 'active',
     is_primary                      BOOLEAN NOT NULL DEFAULT FALSE,
+    settlement_account_id           BIGINT,
     created_at                      TIMESTAMPTZ,
     updated_at                      TIMESTAMPTZ,
     UNIQUE(user_id, code)
 );
 CREATE INDEX IF NOT EXISTS idx_merchant_branch_user_id ON public.merchant_branches(user_id);
+
+-- ─── branch_tids (many-to-many TID-branch assignment join table) ────────────
+-- One TID can be assigned to multiple branches simultaneously
+CREATE TABLE IF NOT EXISTS public.branch_tids (
+    id                              BIGSERIAL PRIMARY KEY,
+    branch_id                       BIGINT NOT NULL,
+    tid_id                          BIGINT NOT NULL,
+    created_at                      TIMESTAMPTZ,
+    UNIQUE(branch_id, tid_id)
+);
+CREATE INDEX IF NOT EXISTS idx_branch_tids_branch_id ON public.branch_tids(branch_id);
+CREATE INDEX IF NOT EXISTS idx_branch_tids_tid_id ON public.branch_tids(tid_id);
