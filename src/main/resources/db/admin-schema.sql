@@ -244,6 +244,21 @@ CREATE TABLE IF NOT EXISTS public.merchant_branches (
 
 CREATE INDEX IF NOT EXISTS idx_merchant_branches_user_id ON public.merchant_branches(user_id);
 
+-- =============================================================================
+-- BRANCH_TIDS — many-to-many TID-branch assignment join table (2026-10)
+-- One TID can be assigned to multiple branches simultaneously.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS public.branch_tids (
+    id              BIGSERIAL PRIMARY KEY,
+    branch_id       BIGINT NOT NULL,
+    tid_id          BIGINT NOT NULL,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(branch_id, tid_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_branch_tids_branch_id ON public.branch_tids(branch_id);
+CREATE INDEX IF NOT EXISTS idx_branch_tids_tid_id ON public.branch_tids(tid_id);
+
 -- Migration: replace inline settlement fields with FK reference
 -- Drop old inline columns if they exist
 ALTER TABLE public.merchant_branches DROP COLUMN IF EXISTS settlement_account_number;
