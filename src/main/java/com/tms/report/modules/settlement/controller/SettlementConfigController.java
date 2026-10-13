@@ -2,6 +2,7 @@ package com.tms.report.modules.settlement.controller;
 
 import com.tms.report.core.dto.ApiResponse;
 import com.tms.report.core.security.MerchantScope;
+import com.tms.report.modules.grpc.service.GrpcClient;
 import com.tms.report.modules.settlement.dto.ApprovalRequestResponse;
 import com.tms.report.modules.settlement.dto.SettlementAccountDto;
 import com.tms.report.modules.settlement.dto.SettlementAccountRequestDto;
@@ -41,6 +42,7 @@ public class SettlementConfigController {
     private final MerchantScope merchantScope;
     private final EntityManager entityManager;
     private final SettlementApprovalService settlementApprovalService;
+    private final GrpcClient grpcClient;
 
     /**
      * Get the settlement configuration for the current merchant. Reads from
@@ -158,35 +160,48 @@ public class SettlementConfigController {
     // ── Settlement Accounts Pool ───────────────────────────────────────────────
 
     /**
-     * Get all settlement accounts for the current merchant. Reads from
-     * public.merchant_settlement_accounts (replicated from tms-config).
+     * Get all settlement accounts for the current merchant. Reads directly from
+     * tms-config via gRPC for real-time data.
      */
     @GetMapping("/accounts")
-    @Transactional(readOnly = true)
     public ApiResponse<List<SettlementAccountDto>> getAccounts() {
         Long merchantId = merchantScope.merchantId();
         if (merchantId == null) {
             return ApiResponse.success(List.of());
         }
 
-        @SuppressWarnings("unchecked")
-        List<Object[]> rows = entityManager
-                .createNativeQuery("SELECT id, account_number, bank_code, account_name, label, "
-                        + "is_default, status, created_at "
-                        + "FROM public.merchant_settlement_accounts WHERE user_id = :userId AND status = 'active' "
-                        + "ORDER BY is_default DESC, created_at ASC")
-                .setParameter("userId", merchantId).getResultList();
+        List<Map<String, Object>> grpcAccounts = grpcClient.listMerchantSettlementAccounts(merchantId);
 
         List<SettlementAccountDto> accounts = new ArrayList<>();
-        for (Object[] row : rows) {
-            String code = str(row[2]);
-            accounts.add(SettlementAccountDto.builder().id(((Number) row[0]).longValue()).accountNumber(str(row[1]))
-                    .bankCode(code).bankName(bankName(code)).accountName(str(row[3])).label(str(row[4]))
-                    .isDefault(row[5] != null && (Boolean) row[5]).status(str(row[6])).createdAt(toInstant(row[7]))
+        for (Map<String, Object> acct : grpcAccounts) {
+            String code = str(acct.get("bank_code"));
+            accounts.add(SettlementAccountDto.builder().id(longVal(acct.get("id")))
+                    .accountNumber(str(acct.get("account_number"))).bankCode(code).bankName(bankName(code))
+                    .accountName(str(acct.get("account_name"))).label(str(acct.get("label")))
+                    .isDefault(boolVal(acct.get("is_default"))).status(str(acct.get("status"))).createdAt(null) // gRPC
+                                                                                                                // doesn't
+                                                                                                                // return
+                                                                                                                // created_at
                     .build());
         }
 
         return ApiResponse.success(accounts);
+    }
+
+    private static Long longVal(Object o) {
+        if (o == null)
+            return null;
+        if (o instanceof Number)
+            return ((Number) o).longValue();
+        return Long.parseLong(o.toString());
+    }
+
+    private static boolean boolVal(Object o) {
+        if (o == null)
+            return false;
+        if (o instanceof Boolean)
+            return (Boolean) o;
+        return Boolean.parseBoolean(o.toString());
     }
 
     /**
