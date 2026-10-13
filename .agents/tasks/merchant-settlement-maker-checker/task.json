@@ -1,7 +1,7 @@
 {
   "task_id": "task-merchant-settlement-maker-checker",
   "task_description": "Implement maker-checker workflow where merchants can request settlement account changes via Merchant-Backend, and their super-merchant (bank) admins approve via the existing super-merchant approval system.",
-  "status": "pending",
+  "status": "completed",
   "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003"],
   "blocked_reason": null
 }
