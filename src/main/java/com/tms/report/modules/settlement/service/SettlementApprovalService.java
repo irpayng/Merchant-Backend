@@ -204,8 +204,10 @@ public class SettlementApprovalService {
 
         // Build payload JSON
         Map<String, Object> payload = new LinkedHashMap<>();
-        if (request.getBankCode() != null) {
-            payload.put("bank_code", request.getBankCode());
+        // Include bank_code from the request - required for account creation
+        String requestBankCode = request.getBankCode();
+        if (requestBankCode != null && !requestBankCode.isBlank()) {
+            payload.put("bank_code", requestBankCode);
         }
         payload.put("bank_name", request.getBankName());
         payload.put("account_number", request.getAccountNumber());
