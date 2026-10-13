@@ -11,6 +11,9 @@ import jakarta.persistence.EntityManager;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -179,10 +182,24 @@ public class SettlementConfigController {
             String code = str(row[2]);
             accounts.add(SettlementAccountDto.builder().id(((Number) row[0]).longValue()).accountNumber(str(row[1]))
                     .bankCode(code).bankName(bankName(code)).accountName(str(row[3])).label(str(row[4]))
-                    .isDefault(row[5] != null && (Boolean) row[5]).status(str(row[6]))
-                    .createdAt(row[7] != null ? ((Timestamp) row[7]).toInstant() : null).build());
+                    .isDefault(row[5] != null && (Boolean) row[5]).status(str(row[6])).createdAt(toInstant(row[7]))
+                    .build());
         }
 
         return ApiResponse.success(accounts);
+    }
+
+    /**
+     * Convert a date/time value from native query to Instant. Handles both
+     * java.sql.Timestamp and java.time.LocalDateTime depending on JDBC driver.
+     */
+    private static Instant toInstant(Object value) {
+        if (value == null)
+            return null;
+        if (value instanceof Timestamp ts)
+            return ts.toInstant();
+        if (value instanceof LocalDateTime ldt)
+            return ldt.toInstant(ZoneOffset.UTC);
+        return null;
     }
 }
