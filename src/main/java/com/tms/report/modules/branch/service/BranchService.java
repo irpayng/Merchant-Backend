@@ -75,6 +75,8 @@ public class BranchService {
         // - Volume: from transactions linked via terminals (transactions.terminal_id =
         // terminals.serial)
         // Note: transactions.terminal_id contains POS serial numbers, NOT TID strings
+        // Using LATERAL joins for efficiency - computes only for the filtered
+        // merchant's branches
         String dataSql = """
                 SELECT b.id, b.name, b.code, b.address, b.state_code, b.lga_code,
                        b.phone_number, b.email, b.status, b.is_primary,
@@ -82,19 +84,17 @@ public class BranchService {
                        COALESCE(tc.terminal_count, 0) as terminals,
                        COALESCE(tv.total_volume, 0) as total_volume
                 FROM merchant_branches b
-                LEFT JOIN (
-                    SELECT branch_id, COUNT(*) as terminal_count
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*) as terminal_count
                     FROM terminals
-                    WHERE branch_id IS NOT NULL
-                    GROUP BY branch_id
-                ) tc ON tc.branch_id = b.id
-                LEFT JOIN (
-                    SELECT t.branch_id, SUM(tx.amount) as total_volume
+                    WHERE branch_id = b.id
+                ) tc ON true
+                LEFT JOIN LATERAL (
+                    SELECT SUM(tx.amount) as total_volume
                     FROM terminals t
                     JOIN transactions tx ON tx.terminal_id = t.serial
-                    WHERE t.branch_id IS NOT NULL AND tx.status_code = 'successful'
-                    GROUP BY t.branch_id
-                ) tv ON tv.branch_id = b.id
+                    WHERE t.branch_id = b.id AND tx.status_code = 'successful'
+                ) tv ON true
                 """ + where + " ORDER BY b.is_primary DESC, b.name ASC";
 
         Query dataQ = entityManager.createNativeQuery(dataSql);
@@ -142,18 +142,16 @@ public class BranchService {
                        COALESCE(tv.total_volume, 0) as total_volume,
                        b.settlement_account_id
                 FROM merchant_branches b
-                LEFT JOIN (
-                    SELECT branch_id, COUNT(*) as terminal_count
-                    FROM terminals WHERE branch_id = :branchId
-                    GROUP BY branch_id
-                ) tc ON tc.branch_id = b.id
-                LEFT JOIN (
-                    SELECT t.branch_id, SUM(tx.amount) as total_volume
+                LEFT JOIN LATERAL (
+                    SELECT COUNT(*) as terminal_count
+                    FROM terminals WHERE branch_id = b.id
+                ) tc ON true
+                LEFT JOIN LATERAL (
+                    SELECT SUM(tx.amount) as total_volume
                     FROM terminals t
                     JOIN transactions tx ON tx.terminal_id = t.serial
-                    WHERE t.branch_id = :branchId AND tx.status_code = 'successful'
-                    GROUP BY t.branch_id
-                ) tv ON tv.branch_id = b.id
+                    WHERE t.branch_id = b.id AND tx.status_code = 'successful'
+                ) tv ON true
                 WHERE b.id = :branchId AND b.user_id = :merchantId
                 """;
 
