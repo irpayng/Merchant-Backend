@@ -70,7 +70,7 @@ public class BranchService {
         qp.forEach(countQ::setParameter);
         long total = ((Number) countQ.getSingleResult()).longValue();
 
-        // Data query with terminal count and volume
+        // Data query with terminal count and volume (using branch_tids join table)
         String dataSql = """
                 SELECT b.id, b.name, b.code, b.address, b.state_code, b.lga_code,
                        b.phone_number, b.email, b.status, b.is_primary,
@@ -79,17 +79,17 @@ public class BranchService {
                        COALESCE(tv.total_volume, 0) as total_volume
                 FROM merchant_branches b
                 LEFT JOIN (
-                    SELECT branch_id, COUNT(*) as terminal_count
-                    FROM tids
-                    WHERE branch_id IS NOT NULL
-                    GROUP BY branch_id
+                    SELECT bt.branch_id, COUNT(*) as terminal_count
+                    FROM branch_tids bt
+                    GROUP BY bt.branch_id
                 ) tc ON tc.branch_id = b.id
                 LEFT JOIN (
-                    SELECT t.branch_id, SUM(tx.amount) as total_volume
-                    FROM tids t
+                    SELECT bt.branch_id, SUM(tx.amount) as total_volume
+                    FROM branch_tids bt
+                    JOIN tids t ON t.id = bt.tid_id
                     JOIN transactions tx ON tx.terminal_id = t.terminal_id
-                    WHERE t.branch_id IS NOT NULL AND tx.status_code = 'successful'
-                    GROUP BY t.branch_id
+                    WHERE tx.status_code = 'successful'
+                    GROUP BY bt.branch_id
                 ) tv ON tv.branch_id = b.id
                 """ + where + " ORDER BY b.is_primary DESC, b.name ASC";
 
@@ -139,16 +139,17 @@ public class BranchService {
                        b.settlement_account_id
                 FROM merchant_branches b
                 LEFT JOIN (
-                    SELECT branch_id, COUNT(*) as terminal_count
-                    FROM tids WHERE branch_id = :branchId
-                    GROUP BY branch_id
+                    SELECT bt.branch_id, COUNT(*) as terminal_count
+                    FROM branch_tids bt WHERE bt.branch_id = :branchId
+                    GROUP BY bt.branch_id
                 ) tc ON tc.branch_id = b.id
                 LEFT JOIN (
-                    SELECT t.branch_id, SUM(tx.amount) as total_volume
-                    FROM tids t
+                    SELECT bt.branch_id, SUM(tx.amount) as total_volume
+                    FROM branch_tids bt
+                    JOIN tids t ON t.id = bt.tid_id
                     JOIN transactions tx ON tx.terminal_id = t.terminal_id
-                    WHERE t.branch_id = :branchId AND tx.status_code = 'successful'
-                    GROUP BY t.branch_id
+                    WHERE bt.branch_id = :branchId AND tx.status_code = 'successful'
+                    GROUP BY bt.branch_id
                 ) tv ON tv.branch_id = b.id
                 WHERE b.id = :branchId AND b.user_id = :merchantId
                 """;
@@ -322,9 +323,9 @@ public class BranchService {
      */
     @Transactional
     public boolean deleteBranch(Long branchId, Long merchantId) {
-        // Check if branch has TIDs assigned
+        // Check if branch has TIDs assigned (using branch_tids join table)
         Long tidCount = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM tids WHERE branch_id = :branchId")
+                .createNativeQuery("SELECT COUNT(*) FROM branch_tids WHERE branch_id = :branchId")
                 .setParameter("branchId", branchId).getSingleResult()).longValue();
 
         if (tidCount > 0) {
@@ -358,19 +359,20 @@ public class BranchService {
 
         Map<String, Object> stats = new LinkedHashMap<>();
 
-        // Terminal count
+        // Terminal count (using branch_tids join table)
         Long terminals = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM tids WHERE branch_id = :branchId")
+                .createNativeQuery("SELECT COUNT(*) FROM branch_tids WHERE branch_id = :branchId")
                 .setParameter("branchId", branchId).getSingleResult()).longValue();
         stats.put("terminals", terminals);
 
-        // Transaction stats (30 days)
+        // Transaction stats (30 days) - using branch_tids join table
         try {
             Object[] txStats = (Object[]) entityManager.createNativeQuery("""
                     SELECT COUNT(*), COALESCE(SUM(tx.amount), 0)
                     FROM transactions tx
                     JOIN tids t ON t.terminal_id = tx.terminal_id
-                    WHERE t.branch_id = :branchId
+                    JOIN branch_tids bt ON bt.tid_id = t.id
+                    WHERE bt.branch_id = :branchId
                       AND tx.created_at >= NOW() - INTERVAL '30 days'
                       AND tx.status_code = 'successful'
                     """).setParameter("branchId", branchId).getSingleResult();
