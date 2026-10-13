@@ -2,9 +2,14 @@ package com.tms.report.modules.settlement.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tms.report.modules.settlement.dto.ApprovalRequestResponse;
 import com.tms.report.modules.settlement.dto.SettlementAccountRequestDto;
 import jakarta.persistence.EntityManager;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -94,6 +99,77 @@ public class SettlementApprovalService {
                 .getSingleResult()).longValue();
 
         return count > 0;
+    }
+
+    /**
+     * Check if a pending approval exists for a merchant and specific section.
+     *
+     * @param merchantId
+     *            the merchant's user ID
+     * @param section
+     *            the section to check (e.g., 'account', 'schedule', 'fees')
+     * @return true if a pending request exists for the given section
+     */
+    public boolean hasPendingRequest(Long merchantId, String section) {
+        String sql = """
+                SELECT COUNT(*) FROM supermerchant.pending_approvals
+                WHERE user_id = :merchantId AND section = :section AND status = 'pending'
+                """;
+
+        Long count = ((Number) entityManager.createNativeQuery(sql).setParameter("merchantId", merchantId)
+                .setParameter("section", section).getSingleResult()).longValue();
+
+        return count > 0;
+    }
+
+    /**
+     * Get all approval requests for a merchant, ordered by creation date
+     * descending.
+     *
+     * @param merchantId
+     *            the merchant's user ID
+     * @return list of approval requests
+     */
+    @SuppressWarnings("unchecked")
+    public List<ApprovalRequestResponse> getApprovalRequests(Long merchantId) {
+        String sql = """
+                SELECT id, user_id, section, status, description, payload,
+                       reject_reason, created_at, approved_at, rejected_at, executed_at
+                FROM supermerchant.pending_approvals
+                WHERE user_id = :merchantId AND action_type = 'settlement_config'
+                ORDER BY created_at DESC
+                """;
+
+        List<Object[]> rows = entityManager.createNativeQuery(sql).setParameter("merchantId", merchantId)
+                .getResultList();
+
+        List<ApprovalRequestResponse> results = new ArrayList<>();
+        for (Object[] row : rows) {
+            results.add(ApprovalRequestResponse.builder().id(longVal(row[0])).userId(longVal(row[1]))
+                    .section(strVal(row[2])).status(strVal(row[3])).description(strVal(row[4])).payload(strVal(row[5]))
+                    .rejectReason(strVal(row[6])).createdAt(timestampToLocalDateTime(row[7]))
+                    .approvedAt(timestampToLocalDateTime(row[8])).rejectedAt(timestampToLocalDateTime(row[9]))
+                    .executedAt(timestampToLocalDateTime(row[10])).build());
+        }
+        return results;
+    }
+
+    private static Long longVal(Object o) {
+        return o != null ? ((Number) o).longValue() : null;
+    }
+
+    private static String strVal(Object o) {
+        return o != null ? o.toString() : null;
+    }
+
+    private static LocalDateTime timestampToLocalDateTime(Object o) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Timestamp ts) {
+            return ts.toLocalDateTime();
+        }
+        return null;
     }
 
     /**

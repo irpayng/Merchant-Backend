@@ -2,6 +2,7 @@ package com.tms.report.modules.settlement.controller;
 
 import com.tms.report.core.dto.ApiResponse;
 import com.tms.report.core.security.MerchantScope;
+import com.tms.report.modules.settlement.dto.ApprovalRequestResponse;
 import com.tms.report.modules.settlement.dto.SettlementAccountRequestDto;
 import com.tms.report.modules.settlement.dto.SettlementConfigResponse;
 import com.tms.report.modules.settlement.service.SettlementApprovalService;
@@ -9,6 +10,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -63,6 +65,22 @@ public class SettlementConfigController {
             // No config exists — return empty response
             return ApiResponse.success(SettlementConfigResponse.builder().hasConfig(false).build());
         }
+    }
+
+    /**
+     * Get all settlement config approval requests for the current merchant. Returns
+     * pending and historical requests ordered by creation date descending.
+     */
+    @GetMapping("/requests")
+    @Transactional(readOnly = true)
+    public ApiResponse<List<ApprovalRequestResponse>> getRequests() {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return ApiResponse.error(401, "Not authenticated");
+        }
+
+        List<ApprovalRequestResponse> requests = settlementApprovalService.getApprovalRequests(merchantId);
+        return ApiResponse.success(requests);
     }
 
     /**
