@@ -17,6 +17,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class SettlementAccountRequestDto {
 
+    @JsonProperty("bank_code")
+    private String bankCode;
+
     @NotBlank(message = "Bank name is required")
     @JsonProperty("bank_name")
     private String bankName;
@@ -29,8 +32,4 @@ public class SettlementAccountRequestDto {
     @NotBlank(message = "Account name is required")
     @JsonProperty("account_name")
     private String accountName;
-
-    @NotBlank(message = "Account type is required")
-    @JsonProperty("account_type")
-    private String accountType;
 }

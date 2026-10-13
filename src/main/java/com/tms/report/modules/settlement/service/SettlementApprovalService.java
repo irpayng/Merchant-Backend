@@ -204,10 +204,12 @@ public class SettlementApprovalService {
 
         // Build payload JSON
         Map<String, Object> payload = new LinkedHashMap<>();
+        if (request.getBankCode() != null) {
+            payload.put("bank_code", request.getBankCode());
+        }
         payload.put("bank_name", request.getBankName());
         payload.put("account_number", request.getAccountNumber());
         payload.put("account_name", request.getAccountName());
-        payload.put("account_type", request.getAccountType());
 
         String payloadJson;
         try {
