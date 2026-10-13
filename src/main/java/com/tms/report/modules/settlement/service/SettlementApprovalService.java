@@ -228,7 +228,7 @@ public class SettlementApprovalService {
                 (action_type, user_id, bank_code, section, payload, description, status,
                  merchant_initiated, merchant_name, merchant_email,
                  required_approvals, received_approvals, version, created_at, updated_at)
-                VALUES ('settlement_config', :userId, :bankCode, 'account', :payload::jsonb, :description, 'pending',
+                VALUES ('settlement_config', :userId, :bankCode, 'account', CAST(:payload AS jsonb), :description, 'pending',
                         true, :merchantName, :merchantEmail,
                         1, 0, 0, NOW(), NOW())
                 RETURNING id
