@@ -72,8 +72,9 @@ public class BranchService {
 
         // Data query with POS terminal count and transaction volume
         // - Terminal count: from terminals table (POS devices) linked via branch_id
-        // - Volume: from transactions linked via branch_tids -> tids -> transactions
-        // (transactions.terminal_id contains the TID string from tids.terminal_id)
+        // - Volume: from transactions linked via terminals (transactions.terminal_id =
+        // terminals.serial)
+        // Note: transactions.terminal_id contains POS serial numbers, NOT TID strings
         String dataSql = """
                 SELECT b.id, b.name, b.code, b.address, b.state_code, b.lga_code,
                        b.phone_number, b.email, b.status, b.is_primary,
@@ -88,12 +89,11 @@ public class BranchService {
                     GROUP BY branch_id
                 ) tc ON tc.branch_id = b.id
                 LEFT JOIN (
-                    SELECT bt.branch_id, SUM(tx.amount) as total_volume
-                    FROM branch_tids bt
-                    JOIN tids t ON t.id = bt.tid_id
-                    JOIN transactions tx ON tx.terminal_id = t.terminal_id
-                    WHERE tx.status_code = 'successful'
-                    GROUP BY bt.branch_id
+                    SELECT t.branch_id, SUM(tx.amount) as total_volume
+                    FROM terminals t
+                    JOIN transactions tx ON tx.terminal_id = t.serial
+                    WHERE t.branch_id IS NOT NULL AND tx.status_code = 'successful'
+                    GROUP BY t.branch_id
                 ) tv ON tv.branch_id = b.id
                 """ + where + " ORDER BY b.is_primary DESC, b.name ASC";
 
@@ -148,12 +148,11 @@ public class BranchService {
                     GROUP BY branch_id
                 ) tc ON tc.branch_id = b.id
                 LEFT JOIN (
-                    SELECT bt.branch_id, SUM(tx.amount) as total_volume
-                    FROM branch_tids bt
-                    JOIN tids t ON t.id = bt.tid_id
-                    JOIN transactions tx ON tx.terminal_id = t.terminal_id
-                    WHERE bt.branch_id = :branchId AND tx.status_code = 'successful'
-                    GROUP BY bt.branch_id
+                    SELECT t.branch_id, SUM(tx.amount) as total_volume
+                    FROM terminals t
+                    JOIN transactions tx ON tx.terminal_id = t.serial
+                    WHERE t.branch_id = :branchId AND tx.status_code = 'successful'
+                    GROUP BY t.branch_id
                 ) tv ON tv.branch_id = b.id
                 WHERE b.id = :branchId AND b.user_id = :merchantId
                 """;
@@ -379,14 +378,14 @@ public class BranchService {
                 .setParameter("branchId", branchId).getSingleResult()).longValue();
         stats.put("terminals", terminals);
 
-        // Transaction stats (30 days) - via branch_tids -> tids -> transactions
+        // Transaction stats (30 days) - via terminals (transactions.terminal_id =
+        // terminals.serial)
         try {
             Object[] txStats = (Object[]) entityManager.createNativeQuery("""
                     SELECT COUNT(*), COALESCE(SUM(tx.amount), 0)
                     FROM transactions tx
-                    JOIN tids t ON t.terminal_id = tx.terminal_id
-                    JOIN branch_tids bt ON bt.tid_id = t.id
-                    WHERE bt.branch_id = :branchId
+                    JOIN terminals t ON t.serial = tx.terminal_id
+                    WHERE t.branch_id = :branchId
                       AND tx.created_at >= NOW() - INTERVAL '30 days'
                       AND tx.status_code = 'successful'
                     """).setParameter("branchId", branchId).getSingleResult();
