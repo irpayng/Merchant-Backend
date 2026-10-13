@@ -3,12 +3,15 @@ package com.tms.report.modules.settlement.controller;
 import com.tms.report.core.dto.ApiResponse;
 import com.tms.report.core.security.MerchantScope;
 import com.tms.report.modules.settlement.dto.ApprovalRequestResponse;
+import com.tms.report.modules.settlement.dto.SettlementAccountDto;
 import com.tms.report.modules.settlement.dto.SettlementAccountRequestDto;
 import com.tms.report.modules.settlement.dto.SettlementConfigResponse;
 import com.tms.report.modules.settlement.service.SettlementApprovalService;
 import jakarta.persistence.EntityManager;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -130,5 +133,56 @@ public class SettlementConfigController {
         if (o instanceof BigDecimal)
             return (BigDecimal) o;
         return new BigDecimal(o.toString());
+    }
+
+    // ── Bank code to name mapping ──────────────────────────────────────────────
+
+    private static final Map<String, String> BANK_NAMES = Map.ofEntries(Map.entry("044", "Access Bank"),
+            Map.entry("023", "Citibank"), Map.entry("050", "Ecobank"), Map.entry("084", "Enterprise Bank"),
+            Map.entry("070", "Fidelity Bank"), Map.entry("011", "First Bank"), Map.entry("214", "FCMB"),
+            Map.entry("058", "GTBank"), Map.entry("030", "Heritage Bank"), Map.entry("301", "Jaiz Bank"),
+            Map.entry("082", "Keystone Bank"), Map.entry("526", "Parallex Bank"), Map.entry("076", "Polaris Bank"),
+            Map.entry("101", "Providus Bank"), Map.entry("221", "Stanbic IBTC"), Map.entry("068", "Standard Chartered"),
+            Map.entry("232", "Sterling Bank"), Map.entry("100", "Suntrust Bank"), Map.entry("032", "Union Bank"),
+            Map.entry("033", "United Bank for Africa"), Map.entry("215", "Unity Bank"), Map.entry("035", "Wema Bank"),
+            Map.entry("057", "Zenith Bank"), Map.entry("103", "Globus Bank"), Map.entry("102", "Titan Trust Bank"),
+            Map.entry("120001", "9PSB"));
+
+    private static String bankName(String code) {
+        return BANK_NAMES.getOrDefault(code, code);
+    }
+
+    // ── Settlement Accounts Pool ───────────────────────────────────────────────
+
+    /**
+     * Get all settlement accounts for the current merchant. Reads from
+     * public.merchant_settlement_accounts (replicated from tms-config).
+     */
+    @GetMapping("/accounts")
+    @Transactional(readOnly = true)
+    public ApiResponse<List<SettlementAccountDto>> getAccounts() {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            return ApiResponse.success(List.of());
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = entityManager
+                .createNativeQuery("SELECT id, account_number, bank_code, account_name, label, "
+                        + "is_default, status, created_at "
+                        + "FROM public.merchant_settlement_accounts WHERE user_id = :userId AND status = 'active' "
+                        + "ORDER BY is_default DESC, created_at ASC")
+                .setParameter("userId", merchantId).getResultList();
+
+        List<SettlementAccountDto> accounts = new ArrayList<>();
+        for (Object[] row : rows) {
+            String code = str(row[2]);
+            accounts.add(SettlementAccountDto.builder().id(((Number) row[0]).longValue()).accountNumber(str(row[1]))
+                    .bankCode(code).bankName(bankName(code)).accountName(str(row[3])).label(str(row[4]))
+                    .isDefault(row[5] != null && (Boolean) row[5]).status(str(row[6]))
+                    .createdAt(row[7] != null ? ((Timestamp) row[7]).toInstant() : null).build());
+        }
+
+        return ApiResponse.success(accounts);
     }
 }
