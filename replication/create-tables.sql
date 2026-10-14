@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     channel                     VARCHAR(50),
     payment_method              VARCHAR(50),
     terminal_id                 VARCHAR(50),
+    branch_id                   BIGINT,
     latitude                    DOUBLE PRECISION,
     longitude                   DOUBLE PRECISION,
     location_state              VARCHAR(100),
@@ -40,6 +41,10 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     created_at                  TIMESTAMPTZ,
     updated_at                  TIMESTAMPTZ
 );
+
+-- Add branch_id column if it doesn't exist (for existing tables)
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS branch_id BIGINT;
+CREATE INDEX IF NOT EXISTS idx_transactions_branch_id ON public.transactions(branch_id);
 
 -- ─── users ──────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.users (
