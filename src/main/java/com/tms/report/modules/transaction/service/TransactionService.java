@@ -257,6 +257,27 @@ public class TransactionService {
             where.append(" AND (t.terminal_id = :terminal_serial OR t.metadata->>'serial' = :terminal_serial)");
             qParams.put("terminal_serial", terminalSerial.trim());
         }
+
+        // Branch filter: prefer the dedicated branch_id column stamped at transaction
+        // time, fall back to terminal's current branch for older transactions.
+        String branchId = params.get("branch_id");
+        if (branchId != null && !branchId.isBlank()) {
+            try {
+                Long bid = Long.parseLong(branchId.trim());
+                where.append("""
+                         AND (
+                             t.branch_id = :branch_id
+                             OR (t.branch_id IS NULL AND EXISTS (
+                                 SELECT 1 FROM terminals ter
+                                 WHERE ter.serial = t.terminal_id AND ter.branch_id = :branch_id
+                             ))
+                         )
+                        """);
+                qParams.put("branch_id", bid);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
         addFilter(where, qParams, params, "location_state", "t.location_state");
         addFilter(where, qParams, params, "location_lga", "t.location_lga");
         QueryFilterHelper.applyDates(where, qParams, params, "t.created_at");

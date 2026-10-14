@@ -376,16 +376,21 @@ public class BranchService {
                 .setParameter("branchId", branchId).getSingleResult()).longValue();
         stats.put("terminals", terminals);
 
-        // Transaction stats (30 days) - via terminals (transactions.terminal_id =
-        // terminals.serial)
+        // Transaction stats (30 days) - prefer branch_id column, fall back to terminal
+        // join
         try {
             Object[] txStats = (Object[]) entityManager.createNativeQuery("""
                     SELECT COUNT(*), COALESCE(SUM(tx.amount), 0)
                     FROM transactions tx
-                    JOIN terminals t ON t.serial = tx.terminal_id
-                    WHERE t.branch_id = :branchId
+                    WHERE (
+                        tx.branch_id = :branchId
+                        OR (tx.branch_id IS NULL AND EXISTS (
+                            SELECT 1 FROM terminals t
+                            WHERE t.serial = tx.terminal_id AND t.branch_id = :branchId
+                        ))
+                    )
                       AND tx.created_at >= NOW() - INTERVAL '30 days'
-                      AND tx.status_code = 'successful'
+                      AND tx.status_code = 'completed'
                     """).setParameter("branchId", branchId).getSingleResult();
 
             stats.put("transactions_30d", num(txStats[0]));
@@ -1052,11 +1057,18 @@ public class BranchService {
         int page = Integer.parseInt(params.getOrDefault("page", "1")) - 1;
         int limit = Integer.parseInt(params.getOrDefault("limit", "15"));
 
+        // Branch filtering: prefer the dedicated branch_id column stamped at
+        // transaction time, which captures the terminal's branch assignment when
+        // the transaction occurred. Fall back to the terminal's current branch
+        // for older transactions that don't have branch_id set.
         StringBuilder where = new StringBuilder("""
                 WHERE tx.user_id = :merchantId
-                  AND EXISTS (
-                      SELECT 1 FROM terminals t
-                      WHERE t.serial = tx.terminal_id AND t.branch_id = :branchId
+                  AND (
+                      tx.branch_id = :branchId
+                      OR (tx.branch_id IS NULL AND EXISTS (
+                          SELECT 1 FROM terminals t
+                          WHERE t.serial = tx.terminal_id AND t.branch_id = :branchId
+                      ))
                   )
                 """);
         Map<String, Object> qp = new HashMap<>();
