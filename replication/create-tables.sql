@@ -629,6 +629,7 @@ CREATE TABLE IF NOT EXISTS public.pending_settlements (
     settlement_type                 VARCHAR(30) NOT NULL,
     terminal_id                     VARCHAR(20),
     bank_code                       VARCHAR(20),
+    branch_id                       BIGINT,  -- Branch at transaction time for branch-level settlement
     status                          VARCHAR(20) NOT NULL DEFAULT 'pending',
     settlement_reference            VARCHAR(50),
     destination_account_number      VARCHAR(30),
