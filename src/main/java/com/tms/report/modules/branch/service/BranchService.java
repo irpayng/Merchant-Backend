@@ -194,7 +194,7 @@ public class BranchService {
     }
 
     /**
-     * Create a new branch.
+     * Create a new branch via gRPC to tms-config (single source of truth).
      */
     @Transactional
     public BranchResponse createBranch(Long merchantId, BranchCreateRequest request) {
@@ -204,127 +204,127 @@ public class BranchService {
             code = generateBranchCode(merchantId);
         }
 
-        // If setting as primary, clear existing primary
+        // Build request data for gRPC
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("user_id", merchantId);
+        data.put("name", request.getName());
+        data.put("code", code);
+        if (request.getAddress() != null) {
+            data.put("address", request.getAddress());
+        } else if (request.getLocation() != null) {
+            data.put("address", request.getLocation());
+        }
+        if (request.getStateCode() != null) {
+            data.put("state_code", request.getStateCode());
+        }
+        if (request.getLgaCode() != null) {
+            data.put("lga_code", request.getLgaCode());
+        }
+        if (request.getPhoneNumber() != null) {
+            data.put("phone_number", request.getPhoneNumber());
+        }
+        if (request.getEmail() != null) {
+            data.put("email", request.getEmail());
+        }
         if (Boolean.TRUE.equals(request.getIsPrimary())) {
-            entityManager.createNativeQuery(
-                    "UPDATE merchant_branches SET is_primary = false WHERE user_id = :merchantId AND is_primary = true")
-                    .setParameter("merchantId", merchantId).executeUpdate();
+            data.put("is_primary", true);
         }
 
-        String sql = """
-                INSERT INTO merchant_branches
-                (user_id, name, code, address, state_code, lga_code, phone_number, email, status, is_primary, created_at, updated_at)
-                VALUES (:userId, :name, :code, :address, :stateCode, :lgaCode, :phone, :email, 'active', :isPrimary, NOW(), NOW())
-                RETURNING id
-                """;
+        // Create branch via gRPC (tms-config handles primary flag and ID generation)
+        var result = grpcClient.createMerchantBranch(data);
+        if (!Boolean.TRUE.equals(result.get("success"))) {
+            String msg = result.get("message") != null ? result.get("message").toString() : "Unknown error";
+            throw new AppException("Failed to create branch: " + msg, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
 
-        Long branchId = ((Number) entityManager.createNativeQuery(sql).setParameter("userId", merchantId)
-                .setParameter("name", request.getName()).setParameter("code", code)
-                .setParameter("address", request.getAddress() != null ? request.getAddress() : request.getLocation())
-                .setParameter("stateCode", request.getStateCode()).setParameter("lgaCode", request.getLgaCode())
-                .setParameter("phone", request.getPhoneNumber()).setParameter("email", request.getEmail())
-                .setParameter("isPrimary", Boolean.TRUE.equals(request.getIsPrimary())).getSingleResult()).longValue();
+        // Extract branch ID from response
+        String dataJson = (String) result.get("data_json");
+        Long branchId = null;
+        if (dataJson != null && !dataJson.isBlank()) {
+            try {
+                var objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                var node = objectMapper.readTree(dataJson);
+                if (node.has("id")) {
+                    branchId = node.get("id").asLong();
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse branch ID from response: {}", e.getMessage());
+            }
+        }
 
-        log.info("Created branch {} for merchant {}", branchId, merchantId);
+        if (branchId == null) {
+            throw new AppException("Branch created but ID not returned", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+        log.info("Created branch {} for merchant {} via gRPC", branchId, merchantId);
         return getBranch(branchId, merchantId);
     }
 
     /**
-     * Update an existing branch.
+     * Update an existing branch via gRPC to tms-config (single source of truth).
      */
     @Transactional
     public BranchResponse updateBranch(Long branchId, Long merchantId, BranchUpdateRequest request) {
-        // Verify branch exists and belongs to merchant
-        Long count = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
-                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
+        // Build request data with only non-null fields
+        Map<String, Object> data = new LinkedHashMap<>();
+        if (request.getName() != null) {
+            data.put("name", request.getName());
+        }
+        if (request.getAddress() != null) {
+            data.put("address", request.getAddress());
+        } else if (request.getLocation() != null) {
+            data.put("address", request.getLocation());
+        }
+        if (request.getStateCode() != null) {
+            data.put("state_code", request.getStateCode());
+        }
+        if (request.getLgaCode() != null) {
+            data.put("lga_code", request.getLgaCode());
+        }
+        if (request.getPhoneNumber() != null) {
+            data.put("phone_number", request.getPhoneNumber());
+        }
+        if (request.getEmail() != null) {
+            data.put("email", request.getEmail());
+        }
+        if (request.getStatus() != null) {
+            data.put("status", request.getStatus().toLowerCase());
+        }
 
-        if (count == 0) {
+        // Update branch via gRPC
+        var result = grpcClient.updateMerchantBranch(branchId, merchantId, data);
+        if (!Boolean.TRUE.equals(result.get("success"))) {
+            // Branch not found or update failed
             return null;
         }
 
-        StringBuilder sql = new StringBuilder("UPDATE merchant_branches SET updated_at = NOW()");
-        Map<String, Object> params = new HashMap<>();
-        params.put("id", branchId);
-        params.put("merchantId", merchantId);
-
-        if (request.getName() != null) {
-            sql.append(", name = :name");
-            params.put("name", request.getName());
-        }
-        if (request.getAddress() != null) {
-            sql.append(", address = :address");
-            params.put("address", request.getAddress());
-        }
-        if (request.getLocation() != null && request.getAddress() == null) {
-            sql.append(", address = :address");
-            params.put("address", request.getLocation());
-        }
-        if (request.getStateCode() != null) {
-            sql.append(", state_code = :stateCode");
-            params.put("stateCode", request.getStateCode());
-        }
-        if (request.getLgaCode() != null) {
-            sql.append(", lga_code = :lgaCode");
-            params.put("lgaCode", request.getLgaCode());
-        }
-        if (request.getPhoneNumber() != null) {
-            sql.append(", phone_number = :phone");
-            params.put("phone", request.getPhoneNumber());
-        }
-        if (request.getEmail() != null) {
-            sql.append(", email = :email");
-            params.put("email", request.getEmail());
-        }
-        if (request.getStatus() != null) {
-            sql.append(", status = :status");
-            params.put("status", request.getStatus().toLowerCase());
-        }
-
-        sql.append(" WHERE id = :id AND user_id = :merchantId");
-
-        Query q = entityManager.createNativeQuery(sql.toString());
-        params.forEach(q::setParameter);
-        q.executeUpdate();
-
-        log.info("Updated branch {} for merchant {}", branchId, merchantId);
+        log.info("Updated branch {} for merchant {} via gRPC", branchId, merchantId);
         return getBranch(branchId, merchantId);
     }
 
     /**
-     * Set a branch as primary.
+     * Set a branch as primary via gRPC to tms-config (single source of truth).
      */
     @Transactional
     public BranchResponse setPrimary(Long branchId, Long merchantId) {
-        // Verify branch exists
-        Long count = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
-                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
-
-        if (count == 0) {
+        // Set primary via gRPC (tms-config handles clearing existing primary)
+        var result = grpcClient.setPrimaryMerchantBranch(branchId, merchantId);
+        if (!Boolean.TRUE.equals(result.get("success"))) {
+            // Branch not found or operation failed
             return null;
         }
 
-        // Clear existing primary
-        entityManager.createNativeQuery(
-                "UPDATE merchant_branches SET is_primary = false WHERE user_id = :merchantId AND is_primary = true")
-                .setParameter("merchantId", merchantId).executeUpdate();
-
-        // Set new primary
-        entityManager
-                .createNativeQuery("UPDATE merchant_branches SET is_primary = true, updated_at = NOW() WHERE id = :id")
-                .setParameter("id", branchId).executeUpdate();
-
-        log.info("Set branch {} as primary for merchant {}", branchId, merchantId);
+        log.info("Set branch {} as primary for merchant {} via gRPC", branchId, merchantId);
         return getBranch(branchId, merchantId);
     }
 
     /**
-     * Delete a branch.
+     * Delete a branch via gRPC to tms-config (single source of truth). Pre-flight
+     * checks (terminal/TID assignments) are done locally.
      */
     @Transactional
     public boolean deleteBranch(Long branchId, Long merchantId) {
-        // Check if branch has POS terminals assigned
+        // Check if branch has POS terminals assigned (local pre-flight check)
         Long terminalCount = ((Number) entityManager
                 .createNativeQuery("SELECT COUNT(*) FROM terminals WHERE branch_id = :branchId")
                 .setParameter("branchId", branchId).getSingleResult()).longValue();
@@ -334,7 +334,7 @@ public class BranchService {
             return false;
         }
 
-        // Also check if branch has TIDs assigned
+        // Also check if branch has TIDs assigned (local pre-flight check)
         Long tidCount = ((Number) entityManager
                 .createNativeQuery("SELECT COUNT(*) FROM branch_tids WHERE branch_id = :branchId")
                 .setParameter("branchId", branchId).getSingleResult()).longValue();
@@ -344,14 +344,14 @@ public class BranchService {
             return false;
         }
 
-        int deleted = entityManager
-                .createNativeQuery("DELETE FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
-                .setParameter("id", branchId).setParameter("merchantId", merchantId).executeUpdate();
+        // Delete branch via gRPC
+        var result = grpcClient.deleteMerchantBranch(branchId, merchantId);
+        boolean success = Boolean.TRUE.equals(result.get("success"));
 
-        if (deleted > 0) {
-            log.info("Deleted branch {} for merchant {}", branchId, merchantId);
+        if (success) {
+            log.info("Deleted branch {} for merchant {} via gRPC", branchId, merchantId);
         }
-        return deleted > 0;
+        return success;
     }
 
     /**
