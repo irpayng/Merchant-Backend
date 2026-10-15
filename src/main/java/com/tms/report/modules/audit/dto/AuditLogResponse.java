@@ -84,12 +84,30 @@ public class AuditLogResponse {
         // Normalize path
         String normalizedPath = path.toLowerCase();
 
-        // Settlement account request
+        // ── Notifications ──
+        if (normalizedPath.contains("/notifications/mark-all-as-read")) {
+            return "Mark all notifications read";
+        }
+        if (normalizedPath.matches(".*/notifications/\\d+/mark-as-read.*")) {
+            return "Mark notification read";
+        }
+
+        // ── Disputes ──
+        if (normalizedPath.matches(".*/disputes/\\d+/mark-read.*")) {
+            return "Mark dispute read";
+        }
+
+        // ── Merchant Settings ──
+        if (normalizedPath.contains("/merchant-settings/receipt-reprint-guard")) {
+            return "Receipt reprint guard toggle";
+        }
+
+        // ── Settlement account request ──
         if (normalizedPath.contains("/settlement-config/request-account")) {
             return "Settlement account request";
         }
 
-        // Terminal lock/unlock
+        // ── Terminal lock/unlock ──
         if (normalizedPath.matches(".*/terminals/\\d+/lock.*")) {
             return "Terminal lock";
         }
@@ -97,38 +115,49 @@ public class AuditLogResponse {
             return "Terminal unlock";
         }
 
-        // Merchant user actions
+        // ── Merchant user actions ──
         if (normalizedPath.contains("/merchant-users/invite")) {
             return "User invitation";
         }
         if (normalizedPath.matches(".*/merchant-users/\\d+/deactivate.*")) {
             return "User deactivation";
         }
+        if (normalizedPath.matches(".*/merchant-users/\\d+/activate.*")) {
+            return "User activation";
+        }
         if (normalizedPath.matches(".*/merchant-users/\\d+$")
                 && ("PUT".equalsIgnoreCase(method) || "PATCH".equalsIgnoreCase(method))) {
             return "User update";
         }
 
-        // Nested resources: /branches/{id}/tids/{tidId},
-        // /branches/{id}/terminals/{terminalId}
+        // ── Nested resources: /branches/{id}/tids/{tidId} ──
         if (normalizedPath.matches(".*/branches/\\d+/tids/\\d+.*")) {
             return "POST".equalsIgnoreCase(method) ? "TID assignment" : "TID removal";
         }
+        // ── Nested resources: /branches/{id}/terminals/{terminalId} ──
         if (normalizedPath.matches(".*/branches/\\d+/terminals/\\d+.*")) {
             return "POST".equalsIgnoreCase(method) ? "Terminal assignment" : "Terminal removal";
         }
 
-        // Branch settlement account
+        // ── Branch settlement account ──
         if (normalizedPath.matches(".*/branches/\\d+/settlement-account.*")) {
             return "DELETE".equalsIgnoreCase(method) ? "Settlement account removal" : "Settlement account assignment";
         }
 
-        // Root terminal operations
+        // ── Branch activation/deactivation ──
+        if (normalizedPath.matches(".*/branches/\\d+/activate.*")) {
+            return "Branch activation";
+        }
+        if (normalizedPath.matches(".*/branches/\\d+/deactivate.*")) {
+            return "Branch deactivation";
+        }
+
+        // ── Root terminal operations ──
         if (normalizedPath.matches(".*/terminals/\\d+$")) {
             return "Terminal configuration update";
         }
 
-        // Root branch operations
+        // ── Root branch operations ──
         if (normalizedPath.matches(".*/branches/\\d+$") || normalizedPath.endsWith("/branches")) {
             return switch (method.toUpperCase()) {
                 case "POST" -> "Branch creation";
@@ -138,8 +167,7 @@ public class AuditLogResponse {
             };
         }
 
-        // Fallback: use the stored action if it's short enough, otherwise derive from
-        // path
+        // Fallback: use the stored action if it's short enough
         if (log.getAction() != null && log.getAction().length() <= 40) {
             return log.getAction();
         }
