@@ -64,15 +64,118 @@ public class AuditLogResponse {
         return AuditLogResponse.builder().id(log.getId()).adminName(log.getUserName())
                 .admin(AdminInfo.builder().id(log.getUserId()).name(log.getUserName()).email(log.getUserEmail())
                         .build())
-                .adminRole(log.getUserRole()).action(log.getAction()).description(buildDescription(log))
+                .adminRole(log.getUserRole()).action(deriveSimpleActionLabel(log)).description(buildDescription(log))
                 .actionableType(extractActionableType(log.getPath())).actionableId(extractActionableId(log.getPath()))
                 .ipAddress(log.getIpAddress()).userAgent(log.getUserAgent()).createdAt(log.getCreatedAt()).build();
     }
 
+    /**
+     * Derive a simple action label from the path and method. Examples: "Terminal
+     * assignment", "TID removal", "Branch update"
+     */
+    private static String deriveSimpleActionLabel(AuditLog log) {
+        String path = log.getPath();
+        String method = log.getMethod();
+
+        if (path == null || method == null) {
+            return log.getAction();
+        }
+
+        // Normalize path
+        String normalizedPath = path.toLowerCase();
+
+        // Settlement account request
+        if (normalizedPath.contains("/settlement-config/request-account")) {
+            return "Settlement account request";
+        }
+
+        // Terminal lock/unlock
+        if (normalizedPath.matches(".*/terminals/\\d+/lock.*")) {
+            return "Terminal lock";
+        }
+        if (normalizedPath.matches(".*/terminals/\\d+/unlock.*")) {
+            return "Terminal unlock";
+        }
+
+        // Merchant user actions
+        if (normalizedPath.contains("/merchant-users/invite")) {
+            return "User invitation";
+        }
+        if (normalizedPath.matches(".*/merchant-users/\\d+/deactivate.*")) {
+            return "User deactivation";
+        }
+        if (normalizedPath.matches(".*/merchant-users/\\d+$")
+                && ("PUT".equalsIgnoreCase(method) || "PATCH".equalsIgnoreCase(method))) {
+            return "User update";
+        }
+
+        // Nested resources: /branches/{id}/tids/{tidId},
+        // /branches/{id}/terminals/{terminalId}
+        if (normalizedPath.matches(".*/branches/\\d+/tids/\\d+.*")) {
+            return "POST".equalsIgnoreCase(method) ? "TID assignment" : "TID removal";
+        }
+        if (normalizedPath.matches(".*/branches/\\d+/terminals/\\d+.*")) {
+            return "POST".equalsIgnoreCase(method) ? "Terminal assignment" : "Terminal removal";
+        }
+
+        // Branch settlement account
+        if (normalizedPath.matches(".*/branches/\\d+/settlement-account.*")) {
+            return "DELETE".equalsIgnoreCase(method) ? "Settlement account removal" : "Settlement account assignment";
+        }
+
+        // Root terminal operations
+        if (normalizedPath.matches(".*/terminals/\\d+$")) {
+            return "Terminal configuration update";
+        }
+
+        // Root branch operations
+        if (normalizedPath.matches(".*/branches/\\d+$") || normalizedPath.endsWith("/branches")) {
+            return switch (method.toUpperCase()) {
+                case "POST" -> "Branch creation";
+                case "PUT", "PATCH" -> "Branch update";
+                case "DELETE" -> "Branch deletion";
+                default -> "Branch operation";
+            };
+        }
+
+        // Fallback: use the stored action if it's short enough, otherwise derive from
+        // path
+        if (log.getAction() != null && log.getAction().length() <= 40) {
+            return log.getAction();
+        }
+
+        // Generic fallback based on method and resource type
+        String resourceType = extractActionableType(path);
+        if (resourceType != null) {
+            return switch (method.toUpperCase()) {
+                case "POST" -> resourceType + " creation";
+                case "PUT", "PATCH" -> resourceType + " update";
+                case "DELETE" -> resourceType + " deletion";
+                default -> resourceType + " operation";
+            };
+        }
+
+        return log.getAction();
+    }
+
+    /**
+     * Build a human-readable description from the action and merchant name. Format:
+     * "{merchant_name} {action_details}"
+     */
     private static String buildDescription(AuditLog log) {
-        // Build a human-readable description from the action and path
-        String action = log.getAction() != null ? log.getAction() : log.getMethod() + " " + log.getPath();
-        return action + " (HTTP " + log.getResponseStatus() + ")";
+        String merchantName = log.getUserName();
+        String action = log.getAction();
+
+        if (action == null) {
+            action = log.getMethod() + " " + log.getPath();
+        }
+
+        // Build description with merchant name prefix
+        if (merchantName != null && !merchantName.isBlank()) {
+            return merchantName + " " + action.toLowerCase();
+        }
+
+        return action;
     }
 
     private static String extractActionableType(String path) {
