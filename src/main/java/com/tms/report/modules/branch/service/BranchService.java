@@ -243,17 +243,14 @@ public class BranchService {
      */
     @Transactional
     public BranchResponse createBranch(Long merchantId, BranchCreateRequest request) {
-        // Generate code if not provided
-        String code = request.getCode();
-        if (code == null || code.isBlank()) {
-            code = generateBranchCode(merchantId);
-        }
-
-        // Build request data for gRPC
+        // Build request data for gRPC - tms-config generates code if not provided
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("user_id", merchantId);
         data.put("name", request.getName());
-        data.put("code", code);
+        // Only send code if explicitly provided by user
+        if (request.getCode() != null && !request.getCode().isBlank()) {
+            data.put("code", request.getCode());
+        }
         if (request.getAddress() != null) {
             data.put("address", request.getAddress());
         } else if (request.getLocation() != null) {
@@ -1187,13 +1184,6 @@ public class BranchService {
     }
 
     // ────────────────────────────────────────────────────────────── Helpers
-
-    private String generateBranchCode(Long merchantId) {
-        Long count = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) + 1 FROM merchant_branches WHERE user_id = :merchantId")
-                .setParameter("merchantId", merchantId).getSingleResult()).longValue();
-        return "BR" + String.format("%03d", count);
-    }
 
     private String formatStatus(String status) {
         if (status == null)
