@@ -1,0 +1,25 @@
+{
+  "id": "FEAT-001",
+  "type": "refactor",
+  "description": "Migrate merchant backend settlement config from legacy supermerchant.settlement_configs table to tms-config gRPC calls. The controller already has GrpcClient injected and listMerchantSettlementAccounts exists. Need to add getMerchantSettlementType method and update the get() controller method to use gRPC for settlement type and default account, while keeping MSC fields from old table for backward compatibility.",
+  "status": "completed",
+  "steps": [
+    "1. Add getMerchantSettlementType method to GrpcClient at /Users/mathew/Merchant-Backend/src/main/java/com/tms/report/modules/grpc/service/GrpcClient.java. Copy the implementation from super-merchant GrpcClient: call configStub.getMerchantSettlementType with GetMerchantSettlementTypeRequest, return Map with 'found' (boolean) and 'settlement_type' (String).",
+    "2. Add the import for GetMerchantSettlementTypeRequest to GrpcClient imports if not already present: com.tms.report.grpc.config.GetMerchantSettlementTypeRequest",
+    "3. Update the get() method in SettlementConfigController at /Users/mathew/Merchant-Backend/src/main/java/com/tms/report/modules/settlement/controller/SettlementConfigController.java to: (a) First try to get settlement type from grpcClient.getMerchantSettlementType(merchantId) - if found=true, use settlement_type from result; (b) Get default account from existing grpcClient.listMerchantSettlementAccounts(merchantId) - find the account with is_default=true and use its account_name, account_number, bank_code (resolve to bank_name via existing bankName helper); (c) For MSC fields (msc_pos_percentage, instant_transfer_fee, monthly_terminal_fee), attempt to read from the old supermerchant.settlement_configs table using a try-catch, defaulting to null on NoResultException - this keeps backward compatibility during transition; (d) Set hasConfig=true if either settlement type was found OR accounts exist.",
+    "4. Remove settlementTime from the response as super-merchant SettlementConfigDto doesn't include it (it's merged into settlementType). The SettlementConfigResponse DTO already has settlementTime but controller should set it to null or remove the field assignment.",
+    "5. Remove the accountType field assignment (super-merchant doesn't use it)."
+  ],
+  "acceptance_criteria": [
+    "getMerchantSettlementType method exists in GrpcClient and compiles without errors",
+    "get() method in SettlementConfigController uses gRPC calls for settlement type and default account",
+    "MSC fields are still populated from legacy table when available (backward compatibility)",
+    "mvn spotless:apply -B && mvn spotless:check -B passes in /Users/mathew/Merchant-Backend"
+  ],
+  "verification": [
+    "Run mvn spotless:apply -B && mvn spotless:check -B in /Users/mathew/Merchant-Backend",
+    "Run mvn compile -B -DskipTests in /Users/mathew/Merchant-Backend to verify compilation"
+  ],
+  "blocked_reason": null,
+  "findings": "Implementation complete. Added getMerchantSettlementType method to GrpcClient following super-merchant pattern. Updated SettlementConfigController.get() to: (1) fetch settlement type from gRPC, (2) fetch default account from settlement accounts pool via gRPC, (3) fetch MSC fields from legacy table for backward compatibility. settlementTime and accountType are no longer populated (remain null) matching super-merchant behavior. DTO fields remain in SettlementConfigResponse for API backward compatibility."
+}

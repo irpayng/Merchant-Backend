@@ -18,6 +18,7 @@ import com.tms.report.grpc.config.DeleteTidRequest;
 import com.tms.report.grpc.config.EnrollInstantSettlementRequest;
 import com.tms.report.grpc.config.GetAllProviderBalancesRequest;
 import com.tms.report.grpc.config.GetConfigValueRequest;
+import com.tms.report.grpc.config.GetMerchantSettlementTypeRequest;
 import com.tms.report.grpc.config.GetProviderBalanceRequest;
 import com.tms.report.grpc.config.ImportDataPlansRequest;
 import com.tms.report.grpc.config.ListMerchantSettlementAccountsRequest;
@@ -1881,6 +1882,25 @@ public class GrpcClient {
             return result;
         } catch (StatusRuntimeException e) {
             throw grpcError("ListMerchantSettlementAccounts", ref, e);
+        }
+    }
+
+    /**
+     * Get a merchant's current settlement type from tms-config. Returns found=true
+     * with settlement_type if a record exists, found=false otherwise.
+     */
+    public Map<String, Object> getMerchantSettlementType(long userId) {
+        String ref = Ulid.generate();
+        logRequest("GetMerchantSettlementType", ref);
+        try {
+            var resp = configStub
+                    .getMerchantSettlementType(GetMerchantSettlementTypeRequest.newBuilder().setUserId(userId).build());
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("found", resp.getFound());
+            m.put("settlement_type", resp.getSettlementType());
+            return m;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetMerchantSettlementType", ref, e);
         }
     }
 

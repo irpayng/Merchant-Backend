@@ -45,8 +45,12 @@ public class SettlementConfigController {
     private final GrpcClient grpcClient;
 
     /**
-     * Get the settlement configuration for the current merchant. Reads from
-     * supermerchant.settlement_configs table.
+     * Get the settlement configuration for the current merchant. Settlement type is
+     * fetched from tms-config's merchant_settlement_types table (the authoritative
+     * source). Account fields are populated from the merchant's DEFAULT settlement
+     * account in the tms-config pool. MSC fields are fetched from the legacy
+     * supermerchant.settlement_configs table for backward compatibility during
+     * transition.
      */
     @GetMapping
     @Transactional(readOnly = true)
@@ -56,23 +60,56 @@ public class SettlementConfigController {
             return ApiResponse.success(SettlementConfigResponse.builder().hasConfig(false).build());
         }
 
+        var builder = SettlementConfigResponse.builder();
+        boolean foundSettlementType = false;
+        boolean foundAccounts = false;
+
+        // Fetch settlement_type from tms-config (authoritative source)
+        try {
+            Map<String, Object> settlementTypeResult = grpcClient.getMerchantSettlementType(merchantId);
+            if (Boolean.TRUE.equals(settlementTypeResult.get("found"))) {
+                builder.settlementType((String) settlementTypeResult.get("settlement_type"));
+                foundSettlementType = true;
+            }
+        } catch (Exception e) {
+            // Log and continue - settlement type from gRPC is optional during transition
+        }
+
+        // Fetch the default settlement account from the pool
+        try {
+            List<Map<String, Object>> accounts = grpcClient.listMerchantSettlementAccounts(merchantId);
+            foundAccounts = !accounts.isEmpty();
+            Map<String, Object> defaultAccount = accounts.stream().filter(a -> Boolean.TRUE.equals(a.get("is_default")))
+                    .findFirst().orElse(accounts.isEmpty() ? null : accounts.get(0)); // Fall back to first if no
+                                                                                      // default
+
+            if (defaultAccount != null) {
+                builder.accountName((String) defaultAccount.get("account_name"));
+                builder.accountNumber((String) defaultAccount.get("account_number"));
+                String bankCode = (String) defaultAccount.get("bank_code");
+                builder.bankName(bankName(bankCode));
+            }
+        } catch (Exception e) {
+            // Log and continue - account info from gRPC is optional during transition
+        }
+
+        // Fetch MSC fields from legacy table for backward compatibility
         try {
             Object[] row = (Object[]) entityManager
-                    .createNativeQuery("SELECT settlement_type, settlement_time, settlement_days, "
-                            + "account_name, bank_name, account_number, account_type, "
-                            + "msc_pos_percentage, instant_transfer_fee, monthly_terminal_fee, pending_change "
+                    .createNativeQuery("SELECT msc_pos_percentage, instant_transfer_fee, monthly_terminal_fee "
                             + "FROM supermerchant.settlement_configs WHERE user_id = :userId")
                     .setParameter("userId", merchantId).getSingleResult();
-
-            return ApiResponse.success(SettlementConfigResponse.builder().settlementType(str(row[0]))
-                    .settlementTime(str(row[1])).settlementDays(str(row[2])).accountName(str(row[3]))
-                    .bankName(str(row[4])).accountNumber(str(row[5])).accountType(str(row[6]))
-                    .mscPosPercentage(decimal(row[7])).instantTransferFee(decimal(row[8]))
-                    .monthlyTerminalFee(decimal(row[9])).pendingChange(str(row[10])).hasConfig(true).build());
+            builder.mscPosPercentage(decimal(row[0]));
+            builder.instantTransferFee(decimal(row[1]));
+            builder.monthlyTerminalFee(decimal(row[2]));
         } catch (jakarta.persistence.NoResultException e) {
-            // No config exists — return empty response
-            return ApiResponse.success(SettlementConfigResponse.builder().hasConfig(false).build());
+            // No legacy config - MSC fields remain null
         }
+
+        // hasConfig is true if settlement type was found OR accounts exist
+        builder.hasConfig(foundSettlementType || foundAccounts);
+
+        return ApiResponse.success(builder.build());
     }
 
     /**
