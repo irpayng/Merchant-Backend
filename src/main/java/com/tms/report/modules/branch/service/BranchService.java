@@ -26,9 +26,10 @@ import org.springframework.transaction.annotation.Transactional;
  * Service for merchant branch management.
  *
  * <p>
- * Branches are stored in the config database (merchant_branches table). Branch
- * queries execute via native SQL against the shared config schema, while
- * settlement account validation uses gRPC to tms-config.
+ * Branches are stored in tms-config (config database). All branch read/write
+ * operations go through gRPC to tms-config as the single source of truth. Local
+ * database queries are used only for enrichment data (terminal counts,
+ * transaction volumes) that live in the report database.
  * </p>
  */
 @Service
@@ -40,7 +41,9 @@ public class BranchService {
     private final GrpcClient grpcClient;
 
     /**
-     * List branches for a merchant with pagination and filtering.
+     * List branches for a merchant with pagination and filtering. Fetches branch
+     * data from tms-config via gRPC, enriches with terminal counts and transaction
+     * volumes from local database.
      */
     @Transactional(readOnly = true)
     @SuppressWarnings("unchecked")
@@ -48,81 +51,76 @@ public class BranchService {
         int page = Integer.parseInt(params.getOrDefault("page", "1")) - 1;
         int limit = Integer.parseInt(params.getOrDefault("limit", "15"));
 
-        StringBuilder where = new StringBuilder("WHERE b.user_id = :merchantId");
-        Map<String, Object> qp = new HashMap<>();
-        qp.put("merchantId", merchantId);
-
         String search = params.get("search");
-        if (search != null && !search.isBlank()) {
-            where.append(" AND (LOWER(b.name) LIKE :search OR LOWER(b.address) LIKE :search OR b.code LIKE :search)");
-            qp.put("search", "%" + search.toLowerCase() + "%");
-        }
-
         String status = params.get("status");
-        if (status != null && !status.isBlank()) {
-            where.append(" AND b.status = :status");
-            qp.put("status", status.toLowerCase());
+        boolean activeOnly = "active".equalsIgnoreCase(status);
+
+        // Fetch all branches from tms-config via gRPC (source of truth)
+        List<Map<String, Object>> allBranches = grpcClient.listMerchantBranches(merchantId, activeOnly);
+
+        // Apply search filter locally if provided
+        if (search != null && !search.isBlank()) {
+            String lowerSearch = search.toLowerCase();
+            allBranches = allBranches.stream().filter(b -> {
+                String name = (String) b.get("name");
+                String address = (String) b.get("address");
+                String code = (String) b.get("code");
+                return (name != null && name.toLowerCase().contains(lowerSearch))
+                        || (address != null && address.toLowerCase().contains(lowerSearch))
+                        || (code != null && code.toLowerCase().contains(lowerSearch));
+            }).toList();
         }
 
-        // Count query
-        String countSql = "SELECT COUNT(*) FROM merchant_branches b " + where;
-        Query countQ = entityManager.createNativeQuery(countSql);
-        qp.forEach(countQ::setParameter);
-        long total = ((Number) countQ.getSingleResult()).longValue();
+        // Apply status filter locally if not activeOnly (which is handled by gRPC)
+        if (status != null && !status.isBlank() && !activeOnly) {
+            String lowerStatus = status.toLowerCase();
+            allBranches = allBranches.stream().filter(b -> lowerStatus.equals(b.get("status"))).toList();
+        }
 
-        // Data query with POS terminal count and transaction volume
-        // - Terminal count: from terminals table (POS devices) linked via branch_id
-        // - Volume: from transactions linked via terminals (transactions.terminal_id =
-        // terminals.serial)
-        // Note: transactions.terminal_id contains POS serial numbers, NOT TID strings
-        // Using LATERAL joins for efficiency - computes only for the filtered
-        // merchant's branches
-        String dataSql = """
-                SELECT b.id, b.name, b.code, b.address, b.state_code, b.lga_code,
-                       b.phone_number, b.email, b.status, b.is_primary,
-                       b.created_at, b.updated_at,
-                       COALESCE(tc.terminal_count, 0) as terminals,
-                       COALESCE(tv.total_volume, 0) as total_volume
-                FROM merchant_branches b
-                LEFT JOIN LATERAL (
-                    SELECT COUNT(*) as terminal_count
-                    FROM terminals
-                    WHERE branch_id = b.id
-                ) tc ON true
-                LEFT JOIN LATERAL (
-                    SELECT SUM(tx.amount) as total_volume
-                    FROM terminals t
-                    JOIN transactions tx ON tx.terminal_id = t.serial
-                    WHERE t.branch_id = b.id AND tx.status_code = 'successful'
-                ) tv ON true
-                """ + where + " ORDER BY b.is_primary DESC, b.name ASC";
+        // Sort: primary branches first, then by name
+        allBranches = allBranches.stream().sorted((a, b) -> {
+            boolean aPrimary = Boolean.TRUE.equals(a.get("is_primary"));
+            boolean bPrimary = Boolean.TRUE.equals(b.get("is_primary"));
+            if (aPrimary != bPrimary) {
+                return aPrimary ? -1 : 1;
+            }
+            String aName = (String) a.get("name");
+            String bName = (String) b.get("name");
+            return (aName != null ? aName : "").compareTo(bName != null ? bName : "");
+        }).toList();
 
-        Query dataQ = entityManager.createNativeQuery(dataSql);
-        qp.forEach(dataQ::setParameter);
-        dataQ.setFirstResult(page * limit);
-        dataQ.setMaxResults(limit);
+        long total = allBranches.size();
 
-        List<Object[]> rows = dataQ.getResultList();
+        // Apply pagination
+        int start = page * limit;
+        int end = Math.min(start + limit, allBranches.size());
+        List<Map<String, Object>> pagedBranches = start < allBranches.size()
+                ? allBranches.subList(start, end)
+                : List.of();
+
+        // Enrich with terminal counts and volumes from local database
         List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> branch : pagedBranches) {
+            Long branchId = ((Number) branch.get("id")).longValue();
+            Map<String, Object> enrichment = getEnrichmentData(branchId);
 
-        for (Object[] r : rows) {
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("id", num(r[0]));
-            m.put("branch_id", String.valueOf(num(r[0])));
-            m.put("name", str(r[1]));
-            m.put("code", str(r[2]));
-            m.put("address", str(r[3]));
-            m.put("location", str(r[3])); // alias for frontend compatibility
-            m.put("state_code", str(r[4]));
-            m.put("lga_code", str(r[5]));
-            m.put("phone_number", str(r[6]));
-            m.put("email", str(r[7]));
-            m.put("status", formatStatus(str(r[8])));
-            m.put("is_primary", r[9]);
-            m.put("created_at", timestamp(r[10]));
-            m.put("updated_at", timestamp(r[11]));
-            m.put("terminals", num(r[12]));
-            m.put("total_volume", num(r[13]));
+            m.put("id", branchId);
+            m.put("branch_id", String.valueOf(branchId));
+            m.put("name", branch.get("name"));
+            m.put("code", branch.get("code"));
+            m.put("address", branch.get("address"));
+            m.put("location", branch.get("address")); // alias for frontend compatibility
+            m.put("state_code", branch.get("state_code"));
+            m.put("lga_code", branch.get("lga_code"));
+            m.put("phone_number", branch.get("phone_number"));
+            m.put("email", branch.get("email"));
+            m.put("status", formatStatus((String) branch.get("status")));
+            m.put("is_primary", branch.get("is_primary"));
+            m.put("created_at", branch.get("created_at"));
+            m.put("updated_at", branch.get("updated_at"));
+            m.put("terminals", enrichment.get("terminal_count"));
+            m.put("total_volume", enrichment.get("total_volume"));
             out.add(m);
         }
 
@@ -130,66 +128,113 @@ public class BranchService {
     }
 
     /**
-     * Get a single branch by ID.
+     * Get enrichment data (terminal count and volume) for a branch from local DB.
+     */
+    private Map<String, Object> getEnrichmentData(Long branchId) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("terminal_count", 0L);
+        result.put("total_volume", 0L);
+
+        try {
+            // Terminal count
+            Long terminalCount = ((Number) entityManager
+                    .createNativeQuery("SELECT COUNT(*) FROM terminals WHERE branch_id = :branchId")
+                    .setParameter("branchId", branchId).getSingleResult()).longValue();
+            result.put("terminal_count", terminalCount);
+
+            // Total volume from successful transactions via terminals
+            Object volumeResult = entityManager.createNativeQuery("""
+                    SELECT COALESCE(SUM(tx.amount), 0)
+                    FROM terminals t
+                    JOIN transactions tx ON tx.terminal_id = t.serial
+                    WHERE t.branch_id = :branchId AND tx.status_code = 'successful'
+                    """).setParameter("branchId", branchId).getSingleResult();
+            result.put("total_volume", volumeResult != null ? ((Number) volumeResult).longValue() : 0L);
+        } catch (Exception e) {
+            log.warn("Failed to get enrichment data for branch {}: {}", branchId, e.getMessage());
+        }
+
+        return result;
+    }
+
+    /**
+     * Get a single branch by ID. Fetches branch data from tms-config via gRPC,
+     * enriches with terminal counts and transaction volumes from local database.
      */
     @Transactional(readOnly = true)
     public BranchResponse getBranch(Long branchId, Long merchantId) {
-        String sql = """
-                SELECT b.id, b.name, b.code, b.address, b.state_code, b.lga_code,
-                       b.phone_number, b.email, b.status, b.is_primary,
-                       b.created_at, b.updated_at,
-                       COALESCE(tc.terminal_count, 0) as terminals,
-                       COALESCE(tv.total_volume, 0) as total_volume,
-                       b.settlement_account_id
-                FROM merchant_branches b
-                LEFT JOIN LATERAL (
-                    SELECT COUNT(*) as terminal_count
-                    FROM terminals WHERE branch_id = b.id
-                ) tc ON true
-                LEFT JOIN LATERAL (
-                    SELECT SUM(tx.amount) as total_volume
-                    FROM terminals t
-                    JOIN transactions tx ON tx.terminal_id = t.serial
-                    WHERE t.branch_id = b.id AND tx.status_code = 'successful'
-                ) tv ON true
-                WHERE b.id = :branchId AND b.user_id = :merchantId
-                """;
+        // Fetch branch from tms-config via gRPC (source of truth)
+        Map<String, Object> branch = grpcClient.getMerchantBranch(branchId, merchantId);
+        if (branch == null) {
+            return null;
+        }
 
-        try {
-            Object[] r = (Object[]) entityManager.createNativeQuery(sql).setParameter("branchId", branchId)
-                    .setParameter("merchantId", merchantId).getSingleResult();
+        // Get enrichment data from local database
+        Map<String, Object> enrichment = getEnrichmentData(branchId);
+        Long terminalCount = (Long) enrichment.get("terminal_count");
+        Long totalVolume = (Long) enrichment.get("total_volume");
 
-            Long settlementAccountId = num(r[14]);
+        // Get settlement account ID from tms-config (stored on branch)
+        Long settlementAccountId = branch.get("settlement_account_id") != null
+                ? ((Number) branch.get("settlement_account_id")).longValue()
+                : null;
 
-            // Fetch settlement account details via gRPC if account is assigned
-            String accountNumber = null;
-            String accountName = null;
-            String bankCode = null;
-            String bankName = null;
+        // Fetch settlement account details via gRPC if account is assigned
+        String accountNumber = null;
+        String accountName = null;
+        String bankCode = null;
+        String bankName = null;
 
-            if (settlementAccountId != null) {
-                List<Map<String, Object>> accounts = grpcClient.listMerchantSettlementAccounts(merchantId);
-                for (Map<String, Object> acct : accounts) {
-                    if (settlementAccountId.equals(((Number) acct.get("id")).longValue())) {
-                        accountNumber = (String) acct.get("account_number");
-                        accountName = (String) acct.get("account_name");
-                        bankCode = (String) acct.get("bank_code");
-                        // bank_name not returned by gRPC, leave as null
-                        break;
-                    }
+        if (settlementAccountId != null && settlementAccountId > 0) {
+            List<Map<String, Object>> accounts = grpcClient.listMerchantSettlementAccounts(merchantId);
+            for (Map<String, Object> acct : accounts) {
+                if (settlementAccountId.equals(((Number) acct.get("id")).longValue())) {
+                    accountNumber = (String) acct.get("account_number");
+                    accountName = (String) acct.get("account_name");
+                    bankCode = (String) acct.get("bank_code");
+                    // bank_name not returned by gRPC, leave as null
+                    break;
                 }
             }
+        }
 
-            return BranchResponse.builder().id(num(r[0])).branchId(String.valueOf(num(r[0]))).name(str(r[1]))
-                    .code(str(r[2])).address(str(r[3])).location(str(r[3])).stateCode(str(r[4])).lgaCode(str(r[5]))
-                    .phoneNumber(str(r[6])).email(str(r[7])).status(formatStatus(str(r[8])))
-                    .isPrimary(Boolean.TRUE.equals(r[9])).createdAt(toInstant(r[10])).updatedAt(toInstant(r[11]))
-                    .terminals(num(r[12]) != null ? num(r[12]).intValue() : 0)
-                    .totalVolume(num(r[13]) != null ? num(r[13]) : 0L).settlementAccountId(settlementAccountId)
-                    .settlementAccountNumber(accountNumber).settlementAccountName(accountName)
-                    .settlementBankCode(bankCode).settlementBankName(bankName).build();
-        } catch (jakarta.persistence.NoResultException e) {
+        Long id = ((Number) branch.get("id")).longValue();
+        String createdAt = (String) branch.get("created_at");
+        String updatedAt = (String) branch.get("updated_at");
+
+        return BranchResponse.builder().id(id).branchId(String.valueOf(id)).name((String) branch.get("name"))
+                .code((String) branch.get("code")).address((String) branch.get("address"))
+                .location((String) branch.get("address")).stateCode((String) branch.get("state_code"))
+                .lgaCode((String) branch.get("lga_code")).phoneNumber((String) branch.get("phone_number"))
+                .email((String) branch.get("email")).status(formatStatus((String) branch.get("status")))
+                .isPrimary(Boolean.TRUE.equals(branch.get("is_primary")))
+                .createdAt(createdAt != null ? parseInstant(createdAt) : null)
+                .updatedAt(updatedAt != null ? parseInstant(updatedAt) : null)
+                .terminals(terminalCount != null ? terminalCount.intValue() : 0)
+                .totalVolume(totalVolume != null ? totalVolume : 0L)
+                .settlementAccountId(
+                        settlementAccountId != null && settlementAccountId > 0 ? settlementAccountId : null)
+                .settlementAccountNumber(accountNumber).settlementAccountName(accountName).settlementBankCode(bankCode)
+                .settlementBankName(bankName).build();
+    }
+
+    /**
+     * Parse a timestamp string to Instant.
+     */
+    private Instant parseInstant(String timestamp) {
+        if (timestamp == null || timestamp.isBlank()) {
             return null;
+        }
+        try {
+            return Instant.parse(timestamp);
+        } catch (Exception e) {
+            // Try parsing as LocalDateTime and convert
+            try {
+                return java.time.LocalDateTime.parse(timestamp).atZone(java.time.ZoneId.systemDefault()).toInstant();
+            } catch (Exception ex) {
+                log.warn("Failed to parse timestamp: {}", timestamp);
+                return null;
+            }
         }
     }
 

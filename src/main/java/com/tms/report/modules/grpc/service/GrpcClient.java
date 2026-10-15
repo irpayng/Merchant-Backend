@@ -883,6 +883,7 @@ public class GrpcClient {
         m.put("is_primary", branch.getIsPrimary());
         m.put("created_at", branch.getCreatedAt());
         m.put("updated_at", branch.getUpdatedAt());
+        m.put("settlement_account_id", branch.getSettlementAccountId());
         return m;
     }
 

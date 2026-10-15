@@ -470,6 +470,7 @@ message MerchantBranch {
   bool is_primary = 11;
   string created_at = 12;
   string updated_at = 13;
+  int64 settlement_account_id = 14;  // 0 if no settlement account configured
 }
 
 message ListMerchantBranchesResponse {
