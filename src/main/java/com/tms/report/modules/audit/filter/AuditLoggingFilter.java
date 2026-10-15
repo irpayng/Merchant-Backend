@@ -5,6 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tms.report.core.security.MerchantUserDetails;
 import com.tms.report.modules.audit.model.AuditLog;
 import com.tms.report.modules.audit.repository.AuditLogRepository;
+import com.tms.report.modules.audit.service.AuditEntityLookupService;
+import com.tms.report.modules.audit.util.DescriptionBuilder;
+import com.tms.report.modules.audit.util.EntityType;
+import com.tms.report.modules.audit.util.PathContext;
+import com.tms.report.modules.audit.util.PathContextExtractor;
 import com.tms.report.modules.merchantuser.model.MerchantUser;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -13,9 +18,11 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationContext;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -38,10 +45,37 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
 
     private final AuditLogRepository auditLogRepository;
     private final ObjectMapper objectMapper;
+    private final ApplicationContext applicationContext;
 
-    public AuditLoggingFilter(AuditLogRepository auditLogRepository) {
+    public AuditLoggingFilter(AuditLogRepository auditLogRepository, ApplicationContext applicationContext) {
         this.auditLogRepository = auditLogRepository;
         this.objectMapper = new ObjectMapper();
+        this.applicationContext = applicationContext;
+    }
+
+    /**
+     * Get the request-scoped AuditEntityLookupService bean from the application
+     * context. This must be retrieved per-request because the service is
+     * request-scoped.
+     *
+     * @return the AuditEntityLookupService for the current request
+     */
+    private AuditEntityLookupService getLookupService() {
+        return applicationContext.getBean(AuditEntityLookupService.class);
+    }
+
+    /**
+     * Extract the merchant ID from the current security context.
+     *
+     * @return the merchant ID or null if not authenticated or not a merchant user
+     */
+    private Long getMerchantIdFromContext() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof MerchantUserDetails details)) {
+            return null;
+        }
+        MerchantUser user = details.getMerchantUser();
+        return user != null ? user.getMerchantId() : null;
     }
 
     /**
@@ -120,8 +154,9 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
         String responseBody = getResponseBody(response);
         String sanitizedRequestBody = sanitizeBody(requestBody);
 
-        // Derive action with entity context from response
-        String action = deriveActionWithContext(method, path, requestBody, responseBody);
+        // Derive action with smart entity context (uses lookup service for nested
+        // resources)
+        String action = deriveSmartAction(method, path, requestBody, responseBody, user.getMerchantId());
 
         AuditLog auditLog = AuditLog.builder().merchantId(user.getMerchantId()).userId(user.getId())
                 .userName(user.getName()).userEmail(user.getEmail()).userRole(user.getRole()).method(method)
@@ -163,6 +198,720 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
             sanitized = pattern.matcher(sanitized).replaceAll("$1\"[REDACTED]\"");
         }
         return sanitized;
+    }
+
+    /**
+     * Derive a smart, human-readable action description using entity lookups for
+     * nested resource operations. Falls back to the existing
+     * deriveActionWithContext method on error.
+     *
+     * <p>
+     * For nested resources like /branches/{id}/tids/{tidId}, this method resolves
+     * entity names using the AuditEntityLookupService to produce descriptions like
+     * "Assign TID 2001234 to branch 'Lagos Main'".
+     *
+     * @param method
+     *            HTTP method (POST, PUT, PATCH, DELETE)
+     * @param path
+     *            URL path like "/branches/123/tids/456"
+     * @param requestBody
+     *            JSON request body (may be null)
+     * @param responseBody
+     *            JSON response body (may be null)
+     * @param merchantId
+     *            the merchant ID for entity lookups
+     * @return human-readable action description
+     */
+    private String deriveSmartAction(String method, String path, String requestBody, String responseBody,
+            Long merchantId) {
+        try {
+            // Check for special paths first (settlement-config/request-account)
+            if (isSettlementAccountRequestPath(path, method)) {
+                return buildSettlementAccountRequestDescription(requestBody, merchantId);
+            }
+
+            // Check for merchant user management paths
+            String merchantUserDescription = buildMerchantUserDescription(method, path, requestBody, responseBody);
+            if (merchantUserDescription != null) {
+                return merchantUserDescription;
+            }
+
+            // Check for terminal action paths (lock, unlock, config updates)
+            Optional<String> terminalAction = buildTerminalActionDescription(method, path);
+            if (terminalAction.isPresent()) {
+                return terminalAction.get();
+            }
+
+            // Check for nested resource operations first
+            Optional<PathContext> nestedContext = PathContextExtractor.extractNestedContext(path);
+            if (nestedContext.isPresent()) {
+                PathContext ctx = nestedContext.get();
+
+                if (ctx.isNestedResource()) {
+                    // Nested resource operation (e.g., /branches/123/tids/456)
+                    return buildSmartNestedDescription(method, ctx, merchantId);
+                } else if (ctx.isSubAction()) {
+                    // Sub-action operation (e.g., /branches/123/settlement-account)
+                    return buildSmartSubActionDescription(method, ctx, requestBody, responseBody, merchantId);
+                }
+            }
+
+            // Check for root resource operations (e.g., /branches/123)
+            Optional<PathContext> rootContext = PathContextExtractor.extractRootContext(path);
+            if (rootContext.isPresent()) {
+                PathContext ctx = rootContext.get();
+                return buildSmartRootDescription(method, ctx, requestBody, responseBody, merchantId);
+            }
+
+            // Fall back to existing method for unrecognized paths
+            return deriveActionWithContext(method, path, requestBody, responseBody);
+
+        } catch (Exception e) {
+            log.debug("Failed to generate smart action description for path={}: {}", path, e.getMessage());
+            // Fall back to existing method on any error
+            return deriveActionWithContext(method, path, requestBody, responseBody);
+        }
+    }
+
+    /**
+     * Check if the path is a settlement account request path.
+     *
+     * @param path
+     *            the URL path
+     * @param method
+     *            the HTTP method
+     * @return true if this is a POST to /settlement-config/request-account
+     */
+    private boolean isSettlementAccountRequestPath(String path, String method) {
+        if (!"POST".equalsIgnoreCase(method)) {
+            return false;
+        }
+        // Normalize path: remove query string
+        String normalizedPath = path.contains("?") ? path.substring(0, path.indexOf('?')) : path;
+        // Remove trailing slash
+        if (normalizedPath.endsWith("/")) {
+            normalizedPath = normalizedPath.substring(0, normalizedPath.length() - 1);
+        }
+        return normalizedPath.endsWith("/settlement-config/request-account");
+    }
+
+    /**
+     * Pattern for terminal lock/unlock paths like /terminals/{id}/lock or
+     * /terminals/{id}/unlock. Captures: group(1)=terminal ID, group(2)=action (lock
+     * or unlock).
+     */
+    private static final Pattern TERMINAL_ACTION_PATTERN = Pattern.compile("/terminals/(\\d+)/(lock|unlock)(?:/)?$",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Pattern for root terminal paths like /terminals/{id}. Captures:
+     * group(1)=terminal ID.
+     */
+    private static final Pattern TERMINAL_ROOT_PATTERN = Pattern.compile("/terminals/(\\d+)(?:/)?$",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Build a description for terminal action operations (lock, unlock, config
+     * updates).
+     *
+     * <p>
+     * Handles the following patterns:
+     * <ul>
+     * <li>POST /terminals/{id}/lock → "Lock terminal {serial}"</li>
+     * <li>POST /terminals/{id}/unlock → "Unlock terminal {serial}"</li>
+     * <li>PUT/PATCH /terminals/{id} → "Update terminal {serial} configuration"</li>
+     * </ul>
+     *
+     * @param method
+     *            HTTP method
+     * @param path
+     *            URL path
+     * @return Optional containing the description if this is a terminal action
+     *         path, empty otherwise
+     */
+    private Optional<String> buildTerminalActionDescription(String method, String path) {
+        if (path == null || path.isBlank()) {
+            return Optional.empty();
+        }
+
+        // Normalize path: remove query string and trailing slashes
+        String normalizedPath = normalizeTerminalPath(path);
+
+        // Check for terminal lock/unlock actions (POST /terminals/{id}/lock or /unlock)
+        if ("POST".equalsIgnoreCase(method)) {
+            Matcher actionMatcher = TERMINAL_ACTION_PATTERN.matcher(normalizedPath);
+            if (actionMatcher.find()) {
+                String terminalIdStr = actionMatcher.group(1);
+                String action = actionMatcher.group(2).toLowerCase();
+
+                Long terminalId = parseNumericId(terminalIdStr);
+                if (terminalId == null) {
+                    return Optional.empty();
+                }
+
+                // Look up terminal serial
+                String serial = resolveTerminalSerial(terminalId);
+
+                // Build description based on action
+                String actionVerb = "lock".equals(action) ? "Lock" : "Unlock";
+                if (serial != null) {
+                    return Optional.of(String.format("%s terminal %s", actionVerb, serial));
+                }
+
+                // Fallback with ID if serial lookup fails
+                return Optional.of(String.format("%s terminal #%d", actionVerb, terminalId));
+            }
+        }
+
+        // Check for terminal configuration updates (PUT/PATCH /terminals/{id})
+        if ("PUT".equalsIgnoreCase(method) || "PATCH".equalsIgnoreCase(method)) {
+            Matcher rootMatcher = TERMINAL_ROOT_PATTERN.matcher(normalizedPath);
+            if (rootMatcher.find()) {
+                String terminalIdStr = rootMatcher.group(1);
+                Long terminalId = parseNumericId(terminalIdStr);
+                if (terminalId == null) {
+                    return Optional.empty();
+                }
+
+                // Look up terminal serial
+                String serial = resolveTerminalSerial(terminalId);
+
+                if (serial != null) {
+                    return Optional.of(String.format("Update terminal %s configuration", serial));
+                }
+
+                // Fallback with ID if serial lookup fails
+                return Optional.of(String.format("Update terminal #%d configuration", terminalId));
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    /**
+     * Resolve terminal serial number from terminal ID using the lookup service.
+     *
+     * @param terminalId
+     *            the terminal ID
+     * @return terminal serial number or null if lookup fails
+     */
+    private String resolveTerminalSerial(Long terminalId) {
+        try {
+            return getLookupService().getTerminalSerial(terminalId).orElse(null);
+        } catch (Exception e) {
+            log.debug("Failed to resolve terminal serial for ID {}: {}", terminalId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Parse a string as a numeric ID.
+     *
+     * @param idStr
+     *            the string to parse
+     * @return the parsed Long, or null if parsing fails
+     */
+    private Long parseNumericId(String idStr) {
+        if (idStr == null || idStr.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(idStr);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Normalize a URL path by removing query strings and trailing slashes.
+     *
+     * @param path
+     *            the path to normalize
+     * @return normalized path
+     */
+    private String normalizeTerminalPath(String path) {
+        // Remove query string if present
+        int queryIndex = path.indexOf('?');
+        String result = queryIndex >= 0 ? path.substring(0, queryIndex) : path;
+
+        // Remove trailing slash (but keep leading slash)
+        if (result.length() > 1 && result.endsWith("/")) {
+            result = result.substring(0, result.length() - 1);
+        }
+
+        return result;
+    }
+
+    /**
+     * Build a description for settlement account request operations.
+     *
+     * <p>
+     * Format when current account exists: "Request settlement account change from
+     * '{current_bank_name} ****{current_last_4}' to '{new_bank_name}
+     * ****{new_last_4} ({new_account_name})'"
+     *
+     * <p>
+     * Format when no current account: "Request settlement account '{new_bank_name}
+     * ****{new_last_4} ({new_account_name})'"
+     *
+     * @param requestBody
+     *            the JSON request body containing new account details
+     * @param merchantId
+     *            the merchant ID for looking up current default account
+     * @return human-readable description for the audit log
+     */
+    private String buildSettlementAccountRequestDescription(String requestBody, Long merchantId) {
+        AuditEntityLookupService lookupService = getLookupService();
+
+        // Get current default settlement account
+        var currentAccount = lookupService.getDefaultSettlementAccount(merchantId).orElse(null);
+
+        // Extract new account details from request body
+        var newAccount = lookupService.extractSettlementAccountFromJson(requestBody).orElse(null);
+
+        // Use DescriptionBuilder to generate the description
+        return DescriptionBuilder.buildSettlementRequestDescription(currentAccount, newAccount);
+    }
+
+    /**
+     * Build a description for merchant user management actions.
+     *
+     * <p>
+     * Handles the following cases:
+     * <ul>
+     * <li>POST /merchant-users/invite → "Invite user {email} as {role}"</li>
+     * <li>PUT/PATCH /merchant-users/{id} with role change → "Update user {name}:
+     * role changed to {new_role}"</li>
+     * <li>POST/PUT /merchant-users/{id}/deactivate → "Deactivate user {name}"</li>
+     * </ul>
+     *
+     * @param method
+     *            HTTP method
+     * @param path
+     *            URL path
+     * @param requestBody
+     *            JSON request body
+     * @param responseBody
+     *            JSON response body
+     * @return human-readable description, or null if path is not a merchant user
+     *         path
+     */
+    @SuppressWarnings("unchecked")
+    private String buildMerchantUserDescription(String method, String path, String requestBody, String responseBody) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+
+        // Normalize path: remove query string and trailing slash
+        String normalizedPath = path.contains("?") ? path.substring(0, path.indexOf('?')) : path;
+        if (normalizedPath.endsWith("/")) {
+            normalizedPath = normalizedPath.substring(0, normalizedPath.length() - 1);
+        }
+
+        // Check for user invite: POST /merchant-users/invite
+        if ("POST".equalsIgnoreCase(method) && normalizedPath.endsWith("/merchant-users/invite")) {
+            return buildUserInviteDescription(responseBody, requestBody);
+        }
+
+        // Check for user deactivation: POST/PUT /merchant-users/{id}/deactivate
+        if (("POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method))
+                && normalizedPath.matches(".*/merchant-users/\\d+/deactivate$")) {
+            return buildUserDeactivateDescription(responseBody, requestBody);
+        }
+
+        // Check for user update: PUT/PATCH /merchant-users/{id}
+        if (("PUT".equalsIgnoreCase(method) || "PATCH".equalsIgnoreCase(method))
+                && normalizedPath.matches(".*/merchant-users/\\d+$")) {
+            return buildUserUpdateDescription(responseBody, requestBody);
+        }
+
+        // Not a merchant user path we handle
+        return null;
+    }
+
+    /**
+     * Build description for user invite action. Format: "Invite user {email} as
+     * {role}"
+     *
+     * @param responseBody
+     *            JSON response body
+     * @param requestBody
+     *            JSON request body (fallback)
+     * @return human-readable description
+     */
+    @SuppressWarnings("unchecked")
+    private String buildUserInviteDescription(String responseBody, String requestBody) {
+        // Try response body first (priority per Requirement 4.4)
+        Map<String, Object> data = extractDataFromBody(responseBody);
+        if (data == null || data.isEmpty()) {
+            data = extractDataFromBody(requestBody);
+        }
+
+        if (data == null || data.isEmpty()) {
+            return "Invite user";
+        }
+
+        String email = getStringField(data, "email");
+        String role = getStringField(data, "role", "role_name", "roleName");
+
+        if (email != null && role != null) {
+            return String.format("Invite user %s as %s", email, role);
+        } else if (email != null) {
+            return String.format("Invite user %s", email);
+        }
+
+        return "Invite user";
+    }
+
+    /**
+     * Build description for user deactivation action. Format: "Deactivate user
+     * {name}"
+     *
+     * @param responseBody
+     *            JSON response body
+     * @param requestBody
+     *            JSON request body (fallback)
+     * @return human-readable description
+     */
+    @SuppressWarnings("unchecked")
+    private String buildUserDeactivateDescription(String responseBody, String requestBody) {
+        // Try response body first (priority per Requirement 4.4)
+        Map<String, Object> data = extractDataFromBody(responseBody);
+        if (data == null || data.isEmpty()) {
+            data = extractDataFromBody(requestBody);
+        }
+
+        if (data == null || data.isEmpty()) {
+            return "Deactivate user";
+        }
+
+        String name = getStringField(data, "name", "full_name", "fullName");
+        if (name == null) {
+            name = getStringField(data, "email");
+        }
+
+        if (name != null) {
+            return String.format("Deactivate user %s", name);
+        }
+
+        return "Deactivate user";
+    }
+
+    /**
+     * Build description for user update action. Detects role changes and formats
+     * accordingly. Format: "Update user {name}: role changed to {new_role}" for
+     * role changes Format: "Update user {name}" for other updates
+     *
+     * @param responseBody
+     *            JSON response body
+     * @param requestBody
+     *            JSON request body (fallback)
+     * @return human-readable description
+     */
+    @SuppressWarnings("unchecked")
+    private String buildUserUpdateDescription(String responseBody, String requestBody) {
+        // Try response body first (priority per Requirement 4.4)
+        Map<String, Object> data = extractDataFromBody(responseBody);
+        if (data == null || data.isEmpty()) {
+            data = extractDataFromBody(requestBody);
+        }
+
+        if (data == null || data.isEmpty()) {
+            return "Update user";
+        }
+
+        String name = getStringField(data, "name", "full_name", "fullName");
+        if (name == null) {
+            name = getStringField(data, "email");
+        }
+
+        String role = getStringField(data, "role", "role_name", "roleName");
+
+        // Check if this is a role change by looking at request body for role field
+        Map<String, Object> requestData = extractDataFromBody(requestBody);
+        boolean isRoleChange = requestData != null && (requestData.containsKey("role")
+                || requestData.containsKey("role_name") || requestData.containsKey("roleName"));
+
+        if (name != null && role != null && isRoleChange) {
+            return String.format("Update user %s: role changed to %s", name, role);
+        } else if (name != null) {
+            return String.format("Update user %s", name);
+        }
+
+        return "Update user";
+    }
+
+    /**
+     * Extract the 'data' object from a JSON body. Handles both wrapped responses
+     * {data: {...}} and direct objects.
+     *
+     * @param jsonBody
+     *            the JSON body to parse
+     * @return the data map, or null if parsing fails
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> extractDataFromBody(String jsonBody) {
+        if (jsonBody == null || jsonBody.isBlank()) {
+            return null;
+        }
+
+        try {
+            Map<String, Object> body = objectMapper.readValue(jsonBody, new TypeReference<Map<String, Object>>() {
+            });
+
+            // If response has a "data" wrapper, unwrap it
+            if (body.containsKey("data") && body.get("data") instanceof Map) {
+                return (Map<String, Object>) body.get("data");
+            }
+
+            return body;
+        } catch (Exception e) {
+            log.debug("Failed to extract data from body: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Build a smart description for nested resource operations using entity
+     * lookups.
+     *
+     * @param method
+     *            HTTP method (POST, DELETE)
+     * @param ctx
+     *            path context with parent and target entity info
+     * @param merchantId
+     *            the merchant ID for entity lookups
+     * @return human-readable description like "Assign TID 2001234 to branch 'Lagos
+     *         Main'"
+     */
+    private String buildSmartNestedDescription(String method, PathContext ctx, Long merchantId) {
+        AuditEntityLookupService lookupService = getLookupService();
+
+        // Resolve parent entity name
+        String parentName = resolveEntityName(ctx.parentType(), ctx.parentId(), merchantId, lookupService);
+
+        // Resolve target entity name/identifier
+        String targetName = resolveEntityName(ctx.targetType(), ctx.targetId(), merchantId, lookupService);
+
+        // If we have both names, use the description builder
+        if (parentName != null && targetName != null) {
+            return DescriptionBuilder.buildNestedDescription(method, parentName, ctx.parentType(), targetName,
+                    ctx.targetType());
+        }
+
+        // Fall back to ID-based description
+        return DescriptionBuilder.buildFallbackDescription(method, ctx.parentId(), ctx.parentType(), ctx.targetId(),
+                ctx.targetType());
+    }
+
+    /**
+     * Build a smart description for sub-action operations (e.g.,
+     * /branches/123/settlement-account).
+     *
+     * @param method
+     *            HTTP method
+     * @param ctx
+     *            path context with parent entity and sub-action
+     * @param requestBody
+     *            JSON request body
+     * @param responseBody
+     *            JSON response body
+     * @param merchantId
+     *            the merchant ID for entity lookups
+     * @return human-readable description
+     */
+    private String buildSmartSubActionDescription(String method, PathContext ctx, String requestBody,
+            String responseBody, Long merchantId) {
+        AuditEntityLookupService lookupService = getLookupService();
+
+        // Resolve parent entity name
+        String parentName = resolveEntityName(ctx.parentType(), ctx.parentId(), merchantId, lookupService);
+
+        String subAction = ctx.subAction();
+        if (subAction == null) {
+            subAction = "action";
+        }
+
+        // Handle settlement-account sub-action specially
+        if ("settlement-account".equals(subAction)) {
+            return buildSettlementAccountSubActionDescription(method, parentName, ctx, requestBody, lookupService);
+        }
+
+        // Generic sub-action description
+        String action = switch (method.toUpperCase()) {
+            case "POST" -> "Assign";
+            case "PUT", "PATCH" -> "Update";
+            case "DELETE" -> "Clear";
+            default -> method;
+        };
+
+        String formattedSubAction = subAction.replace("-", " ");
+        String parentDesc = parentName != null
+                ? ctx.parentType().getSingular() + " '" + parentName + "'"
+                : ctx.parentType().getSingular() + " #" + ctx.parentId();
+
+        if ("DELETE".equalsIgnoreCase(method)) {
+            return String.format("Clear %s from %s", formattedSubAction, parentDesc);
+        }
+
+        return String.format("%s %s for %s", action, formattedSubAction, parentDesc);
+    }
+
+    /**
+     * Build description for settlement-account sub-action operations.
+     *
+     * <p>
+     * Format for PUT: "Assign settlement account '{bank} ****{last4}' to branch
+     * '{name}'" Format for DELETE: "Clear settlement account from branch '{name}'"
+     *
+     * @param method
+     *            HTTP method (PUT/PATCH for assign, DELETE for clear)
+     * @param parentName
+     *            the resolved parent entity name (e.g., branch name)
+     * @param ctx
+     *            path context with parent entity info
+     * @param requestBody
+     *            JSON request body (may contain settlement account details)
+     * @param lookupService
+     *            the lookup service to use
+     * @return human-readable description
+     */
+    private String buildSettlementAccountSubActionDescription(String method, String parentName, PathContext ctx,
+            String requestBody, AuditEntityLookupService lookupService) {
+        String parentDesc = parentName != null
+                ? ctx.parentType().getSingular() + " '" + parentName + "'"
+                : ctx.parentType().getSingular() + " #" + ctx.parentId();
+
+        if ("DELETE".equalsIgnoreCase(method)) {
+            return String.format("Clear settlement account from %s", parentDesc);
+        }
+
+        // For PUT/PATCH, try to extract settlement account details from request body
+        var accountInfo = lookupService.extractSettlementAccountFromJson(requestBody).orElse(null);
+
+        if (accountInfo != null) {
+            String accountDesc = accountInfo.bankName() + " " + accountInfo.maskedAccountNumber();
+            return String.format("Assign settlement account '%s' to %s", accountDesc, parentDesc);
+        }
+
+        // Fallback if account details can't be extracted
+        return String.format("Assign settlement account to %s", parentDesc);
+    }
+
+    /**
+     * Build a smart description for root resource operations (e.g., /branches/123).
+     *
+     * @param method
+     *            HTTP method
+     * @param ctx
+     *            path context with entity type and ID
+     * @param requestBody
+     *            JSON request body
+     * @param responseBody
+     *            JSON response body
+     * @param merchantId
+     *            the merchant ID for entity lookups
+     * @return human-readable description
+     */
+    private String buildSmartRootDescription(String method, PathContext ctx, String requestBody, String responseBody,
+            Long merchantId) {
+        AuditEntityLookupService lookupService = getLookupService();
+
+        // Try to get entity name from response body first (priority per Requirement
+        // 4.4)
+        String entityName = extractEntityNameFromBody(responseBody, ctx.targetType());
+        if (entityName == null) {
+            entityName = extractEntityNameFromBody(requestBody, ctx.targetType());
+        }
+
+        // If not in body, try lookup service
+        if (entityName == null) {
+            entityName = resolveEntityName(ctx.targetType(), ctx.targetId(), merchantId, lookupService);
+        }
+
+        // Build description with resolved name or fallback to ID
+        if (entityName != null) {
+            return DescriptionBuilder.buildRootDescription(method, entityName, ctx.targetType());
+        }
+
+        // Fallback with ID
+        String entityDesc = "#" + ctx.targetId();
+        return DescriptionBuilder.buildRootDescription(method, entityDesc, ctx.targetType());
+    }
+
+    /**
+     * Resolve an entity name by type and ID using the lookup service.
+     *
+     * @param entityType
+     *            the type of entity to resolve
+     * @param entityId
+     *            the entity ID
+     * @param merchantId
+     *            the merchant ID for scoped lookups
+     * @param lookupService
+     *            the lookup service to use
+     * @return resolved entity name or null if not found
+     */
+    private String resolveEntityName(EntityType entityType, Long entityId, Long merchantId,
+            AuditEntityLookupService lookupService) {
+        if (entityType == null || entityId == null) {
+            return null;
+        }
+
+        return switch (entityType) {
+            case BRANCH -> lookupService.getBranchName(entityId, merchantId).orElse(null);
+            case TID -> lookupService.getTidValue(entityId).orElse(null);
+            case TERMINAL -> lookupService.getTerminalSerial(entityId).orElse(null);
+            case SETTLEMENT_ACCOUNT -> lookupService.getSettlementAccount(entityId, merchantId)
+                    .map(info -> info.bankName() + " " + info.maskedAccountNumber()).orElse(null);
+            default -> null;
+        };
+    }
+
+    /**
+     * Extract entity name from JSON body based on entity type.
+     *
+     * @param jsonBody
+     *            the JSON body to parse
+     * @param entityType
+     *            the expected entity type
+     * @return extracted entity name or null
+     */
+    @SuppressWarnings("unchecked")
+    private String extractEntityNameFromBody(String jsonBody, EntityType entityType) {
+        if (jsonBody == null || jsonBody.isBlank() || entityType == null) {
+            return null;
+        }
+
+        try {
+            Map<String, Object> body = objectMapper.readValue(jsonBody, new TypeReference<Map<String, Object>>() {
+            });
+
+            // If response has a "data" wrapper, unwrap it
+            if (body.containsKey("data") && body.get("data") instanceof Map) {
+                body = (Map<String, Object>) body.get("data");
+            }
+
+            return switch (entityType) {
+                case BRANCH -> getStringField(body, "name", "branch_name", "branchName");
+                case TERMINAL -> getStringField(body, "serial", "serial_number", "serialNumber");
+                case TID -> getStringField(body, "terminal_id", "terminalId");
+                case SETTLEMENT_ACCOUNT -> {
+                    String accountName = getStringField(body, "account_name", "accountName");
+                    String bankName = getStringField(body, "bank_name", "bankName");
+                    if (accountName != null && bankName != null) {
+                        yield bankName + " - " + accountName;
+                    }
+                    yield accountName != null ? accountName : bankName;
+                }
+                case MERCHANT_USER -> getStringField(body, "name", "full_name", "fullName", "email");
+                case ROLE -> getStringField(body, "name", "role_name", "roleName");
+                default -> getStringField(body, "name");
+            };
+        } catch (Exception e) {
+            log.debug("Failed to extract entity name from body: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**

@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -39,6 +40,7 @@ public class SecurityConfig {
     private final MerchantUserDetailsService merchantUserDetailsService;
     private final ObjectMapper objectMapper;
     private final AuditLogRepository auditLogRepository;
+    private final ApplicationContext applicationContext;
 
     /**
      * Comma-separated list of browser origins allowed to call this API. Defaults
@@ -85,8 +87,8 @@ public class SecurityConfig {
                             .write(objectMapper.writeValueAsString(Map.of("code", 403, "message", "Forbidden")));
                 })).sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authenticationProvider(authenticationProvider())
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(new AuditLoggingFilter(auditLogRepository), JwtAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class).addFilterAfter(
+                        new AuditLoggingFilter(auditLogRepository, applicationContext), JwtAuthenticationFilter.class);
 
         return http.build();
     }
