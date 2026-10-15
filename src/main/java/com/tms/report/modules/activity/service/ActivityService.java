@@ -29,6 +29,33 @@ public class ActivityService {
 
     private static final DateTimeFormatter LIST_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy h:mma");
 
+    /** SQL CASE expression for deriving module from path. */
+    private static final String MODULE_CASE_SQL = """
+            CASE
+              WHEN al.path LIKE '/terminals%' THEN 'Terminals'
+              WHEN al.path LIKE '/transactions%' THEN 'Transactions'
+              WHEN al.path LIKE '/disputes%' THEN 'Disputes'
+              WHEN al.path LIKE '/settlements%' THEN 'Settlements'
+              WHEN al.path LIKE '/settlement-accounts%' THEN 'Settlements'
+              WHEN al.path LIKE '/settlement-config%' THEN 'Settlements'
+              WHEN al.path LIKE '/statements%' THEN 'Statements'
+              WHEN al.path LIKE '/merchant-users%' THEN 'Team'
+              WHEN al.path LIKE '/invitations%' THEN 'Team'
+              WHEN al.path LIKE '/roles%' THEN 'Roles & Privileges'
+              WHEN al.path LIKE '/settings%' THEN 'Settings'
+              WHEN al.path LIKE '/notifications%' THEN 'Notifications'
+              WHEN al.path LIKE '/auth%' THEN 'Authentication'
+              WHEN al.path LIKE '/profile%' THEN 'Profile'
+              WHEN al.path LIKE '/branches%' THEN 'Branches'
+              WHEN al.path LIKE '/virtual-accounts%' THEN 'Virtual Accounts'
+              WHEN al.path LIKE '/products%' THEN 'Products'
+              WHEN al.path LIKE '/device-activities%' THEN 'Device Activities'
+              WHEN al.path LIKE '/dashboard%' THEN 'Dashboard'
+              WHEN al.path LIKE '/otp%' THEN 'Authentication'
+              WHEN al.path LIKE '/upload%' THEN 'File Upload'
+              ELSE 'Other'
+            END""";
+
     @Transactional(readOnly = true)
     @SuppressWarnings("unchecked")
     public Page<Map<String, Object>> index(Map<String, String> params) {
@@ -81,25 +108,9 @@ public class ActivityService {
             queryParams.add(java.sql.Timestamp.valueOf(dateTo + " 23:59:59"));
         }
 
-        String sql = """
-                SELECT al.id, al.action, al.path, al.user_id, al.user_name, al.user_email, al.user_role,
-                       CASE
-                         WHEN al.path LIKE '/terminals%' THEN 'Terminals'
-                         WHEN al.path LIKE '/transactions%' THEN 'Transactions'
-                         WHEN al.path LIKE '/disputes%' THEN 'Disputes'
-                         WHEN al.path LIKE '/settlements%' THEN 'Settlements'
-                         WHEN al.path LIKE '/statements%' THEN 'Statements'
-                         WHEN al.path LIKE '/merchant-users%' THEN 'Team'
-                         WHEN al.path LIKE '/roles%' THEN 'Roles'
-                         WHEN al.path LIKE '/settings%' THEN 'Settings'
-                         WHEN al.path LIKE '/notifications%' THEN 'Notifications'
-                         WHEN al.path LIKE '/auth%' THEN 'Authentication'
-                         WHEN al.path LIKE '/profile%' THEN 'Profile'
-                         ELSE 'Other'
-                       END as module,
-                       al.created_at
-                FROM merchant.audit_logs al
-                """ + where + " ORDER BY al.created_at DESC";
+        String sql = "SELECT al.id, al.action, al.path, al.user_id, al.user_name, al.user_email, al.user_role, "
+                + MODULE_CASE_SQL + " as module, al.created_at FROM merchant.audit_logs al " + where
+                + " ORDER BY al.created_at DESC";
 
         String countSql = "SELECT COUNT(*) FROM merchant.audit_logs al " + where;
 
@@ -121,12 +132,13 @@ public class ActivityService {
             item.put("id", ((Number) row[0]).longValue());
 
             String rowAction = row[1] != null ? row[1].toString() : null;
+            String rowPath = row[2] != null ? row[2].toString() : null;
             String userName = row[4] != null ? row[4].toString() : null;
             String module = row[7] != null ? row[7].toString() : null;
 
             item.put("action", rowAction);
             item.put("module", module);
-            item.put("description", buildDescription(userName, rowAction));
+            item.put("description", buildDescription(userName, rowAction, rowPath, module));
 
             // User object for the table
             if (row[3] != null) {
@@ -160,19 +172,9 @@ public class ActivityService {
 
         Query q = entityManager
                 .createNativeQuery("SELECT al.id, al.action, al.path, al.user_id, al.user_name, al.user_email, "
-                        + "al.user_role, al.ip_address, al.user_agent, al.response_status, al.created_at, " + "CASE "
-                        + "  WHEN al.path LIKE '/terminals%' THEN 'Terminals' "
-                        + "  WHEN al.path LIKE '/transactions%' THEN 'Transactions' "
-                        + "  WHEN al.path LIKE '/disputes%' THEN 'Disputes' "
-                        + "  WHEN al.path LIKE '/settlements%' THEN 'Settlements' "
-                        + "  WHEN al.path LIKE '/statements%' THEN 'Statements' "
-                        + "  WHEN al.path LIKE '/merchant-users%' THEN 'Team' "
-                        + "  WHEN al.path LIKE '/roles%' THEN 'Roles' "
-                        + "  WHEN al.path LIKE '/settings%' THEN 'Settings' "
-                        + "  WHEN al.path LIKE '/notifications%' THEN 'Notifications' "
-                        + "  WHEN al.path LIKE '/auth%' THEN 'Authentication' "
-                        + "  WHEN al.path LIKE '/profile%' THEN 'Profile' " + "  ELSE 'Other' " + "END as module "
-                        + "FROM merchant.audit_logs al " + "WHERE al.id = :id" + scopeClause);
+                        + "al.user_role, al.ip_address, al.user_agent, al.response_status, al.created_at, "
+                        + MODULE_CASE_SQL + " as module " + "FROM merchant.audit_logs al " + "WHERE al.id = :id"
+                        + scopeClause);
         q.setParameter("id", id);
         if (merchantId != null) {
             q.setParameter("merchantId", merchantId);
@@ -198,7 +200,7 @@ public class ActivityService {
         data.put("admin_role", r[6] != null ? r[6].toString() : null);
         data.put("action", action);
         data.put("module", module);
-        data.put("description", buildDescription(userName, action));
+        data.put("description", buildDescription(userName, action, path, module));
         data.put("path", path);
         data.put("ip_address", r[7] != null ? r[7].toString() : null);
         data.put("user_agent", r[8] != null ? r[8].toString() : null);
@@ -263,10 +265,171 @@ public class ActivityService {
         return null;
     }
 
-    private String buildDescription(String userName, String action) {
+    private String buildDescription(String userName, String action, String path, String module) {
         String user = userName != null ? userName : "User";
-        String act = action != null ? action.toLowerCase() : "performed action";
-        return user + " performed " + act;
+
+        // Handle specific actions with better descriptions
+        if (action != null) {
+            String lowerAction = action.toLowerCase();
+
+            // Authentication actions
+            if (lowerAction.equals("login")) {
+                return user + " logged into the dashboard";
+            }
+            if (lowerAction.equals("logout")) {
+                return user + " logged out of the dashboard";
+            }
+            if (lowerAction.contains("password")) {
+                return user + " changed their password";
+            }
+            if (lowerAction.contains("otp") || lowerAction.contains("verify")) {
+                return user + " verified their identity";
+            }
+
+            // Notification actions
+            if (lowerAction.contains("mark") && lowerAction.contains("read")) {
+                if (path != null && path.contains("mark-all")) {
+                    return user + " marked all notifications as read";
+                }
+                return user + " marked a notification as read";
+            }
+
+            // Settlement account actions
+            if (path != null && path.contains("settlement-account")) {
+                if (lowerAction.contains("create") || lowerAction.contains("add")) {
+                    return user + " added a new settlement account";
+                }
+                if (lowerAction.contains("update") || lowerAction.contains("edit")) {
+                    return user + " updated a settlement account";
+                }
+                if (lowerAction.contains("delete") || lowerAction.contains("remove")) {
+                    return user + " removed a settlement account";
+                }
+                if (lowerAction.contains("request")) {
+                    return user + " requested a new settlement account";
+                }
+                return user + " modified settlement account settings";
+            }
+
+            // Terminal actions
+            if (path != null && path.contains("terminal")) {
+                if (lowerAction.contains("lock")) {
+                    return user + " locked a terminal";
+                }
+                if (lowerAction.contains("unlock")) {
+                    return user + " unlocked a terminal";
+                }
+                if (lowerAction.contains("assign")) {
+                    return user + " assigned a terminal";
+                }
+                if (lowerAction.contains("create") || lowerAction.contains("add")) {
+                    return user + " added a new terminal";
+                }
+                if (lowerAction.contains("update") || lowerAction.contains("edit")) {
+                    return user + " updated terminal configuration";
+                }
+                return user + " modified terminal settings";
+            }
+
+            // Team/User actions
+            if (path != null && (path.contains("merchant-user") || path.contains("invitation"))) {
+                if (lowerAction.contains("invite") || lowerAction.contains("create")) {
+                    return user + " invited a new team member";
+                }
+                if (lowerAction.contains("update") || lowerAction.contains("edit")) {
+                    return user + " updated a team member's profile";
+                }
+                if (lowerAction.contains("delete") || lowerAction.contains("remove")) {
+                    return user + " removed a team member";
+                }
+                if (lowerAction.contains("resend")) {
+                    return user + " resent an invitation";
+                }
+                return user + " modified team settings";
+            }
+
+            // Role actions
+            if (path != null && path.contains("role")) {
+                if (lowerAction.contains("create") || lowerAction.contains("add")) {
+                    return user + " created a new role";
+                }
+                if (lowerAction.contains("update") || lowerAction.contains("edit")) {
+                    return user + " updated role permissions";
+                }
+                if (lowerAction.contains("delete") || lowerAction.contains("remove")) {
+                    return user + " deleted a role";
+                }
+                return user + " modified role settings";
+            }
+
+            // Branch actions
+            if (path != null && path.contains("branch")) {
+                if (lowerAction.contains("create") || lowerAction.contains("add")) {
+                    return user + " created a new branch";
+                }
+                if (lowerAction.contains("update") || lowerAction.contains("edit")) {
+                    return user + " updated branch details";
+                }
+                if (lowerAction.contains("delete") || lowerAction.contains("remove")) {
+                    return user + " deleted a branch";
+                }
+                return user + " modified branch settings";
+            }
+
+            // Dispute actions
+            if (path != null && path.contains("dispute")) {
+                if (lowerAction.contains("create") || lowerAction.contains("raise")) {
+                    return user + " raised a dispute";
+                }
+                if (lowerAction.contains("update") || lowerAction.contains("respond")) {
+                    return user + " responded to a dispute";
+                }
+                if (lowerAction.contains("close") || lowerAction.contains("resolve")) {
+                    return user + " resolved a dispute";
+                }
+                return user + " updated a dispute";
+            }
+
+            // Profile actions
+            if (path != null && path.contains("profile")) {
+                return user + " updated their profile";
+            }
+
+            // Settings actions
+            if (path != null && path.contains("setting")) {
+                return user + " updated account settings";
+            }
+
+            // Virtual account actions
+            if (path != null && path.contains("virtual-account")) {
+                if (lowerAction.contains("create") || lowerAction.contains("request")) {
+                    return user + " requested a new virtual account";
+                }
+                return user + " modified virtual account settings";
+            }
+
+            // Generic action with module context
+            if (module != null && !"Other".equals(module)) {
+                return user + " performed " + formatAction(action) + " in " + module;
+            }
+        }
+
+        // Fallback: use action if available, otherwise generic
+        if (action != null && !action.isBlank()) {
+            return user + " performed " + formatAction(action);
+        }
+
+        return user + " performed an action";
+    }
+
+    /**
+     * Format an action string to be more readable (lowercase, replace
+     * dashes/underscores with spaces).
+     */
+    private String formatAction(String action) {
+        if (action == null)
+            return "action";
+        return action.toLowerCase().replace("-", " ").replace("_", " ");
     }
 
     /**
