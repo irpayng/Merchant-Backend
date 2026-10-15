@@ -199,14 +199,23 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
             return method.toLowerCase();
         }
 
+        // Determine the effective entity type for extraction
+        // For nested resources (e.g., /branches/{id}/terminals/{terminalId}),
+        // the subAction represents the actual entity being operated on
+        String effectiveResource = isEntityResource(subAction) ? subAction : resource;
+
         // Try to extract entity identifier from response body
-        String entityRef = extractEntityReference(responseBody, requestBody, resource);
+        String entityRef = extractEntityReference(responseBody, requestBody, effectiveResource);
 
         // Build action description with entity context
         String baseAction = switch (method.toUpperCase()) {
-            case "POST" -> subAction != null ? subAction.replace("-", " ") : "Create " + singularize(resource);
+            case "POST" -> subAction != null
+                    ? buildNestedAction("Assign", subAction, resource)
+                    : "Create " + singularize(resource);
             case "PUT", "PATCH" -> subAction != null ? subAction.replace("-", " ") : "Update " + singularize(resource);
-            case "DELETE" -> "Delete " + singularize(resource);
+            case "DELETE" -> subAction != null
+                    ? buildNestedAction("Remove", subAction, resource)
+                    : "Delete " + singularize(resource);
             default -> method.toLowerCase() + " " + resource;
         };
 
@@ -349,6 +358,29 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
             return number;
         }
         return "****" + number.substring(number.length() - 4);
+    }
+
+    /**
+     * Check if a path segment represents an entity resource that can be extracted.
+     */
+    private boolean isEntityResource(String segment) {
+        if (segment == null) {
+            return false;
+        }
+        return switch (segment.toLowerCase()) {
+            case "terminals", "settlement-accounts", "branches", "roles", "merchant-users", "invitations", "disputes",
+                    "virtual-accounts" ->
+                true;
+            default -> false;
+        };
+    }
+
+    /**
+     * Build a descriptive action for nested resource operations. E.g., "Assign
+     * terminal to branch" for POST /branches/{id}/terminals/{terminalId}
+     */
+    private String buildNestedAction(String verb, String nestedResource, String parentResource) {
+        return verb + " " + singularize(nestedResource) + " to " + singularize(parentResource);
     }
 
     private boolean isNumeric(String str) {
