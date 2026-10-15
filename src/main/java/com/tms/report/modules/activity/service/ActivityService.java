@@ -13,8 +13,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -35,12 +33,6 @@ public class ActivityService {
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("MMM d, yyyy h:mma");
     private static final DateTimeFormatter LIST_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy h:mma");
-
-    /**
-     * Pattern to extract resource ID from paths like /terminals/123 or
-     * /roles/45/permissions
-     */
-    private static final Pattern PATH_ID_PATTERN = Pattern.compile("^/([^/]+)/([0-9]+)(?:/.*)?$");
 
     /** SQL CASE expression for deriving module from path. */
     private static final String MODULE_CASE_SQL = """
@@ -121,9 +113,9 @@ public class ActivityService {
             queryParams.add(java.sql.Timestamp.valueOf(dateTo + " 23:59:59"));
         }
 
-        // Include request_body for building rich descriptions
+        // Include action which now contains entity context
         String sql = "SELECT al.id, al.action, al.path, al.user_id, al.user_name, al.user_email, al.user_role, "
-                + MODULE_CASE_SQL + " as module, al.created_at, al.request_body FROM merchant.audit_logs al " + where
+                + MODULE_CASE_SQL + " as module, al.created_at FROM merchant.audit_logs al " + where
                 + " ORDER BY al.created_at DESC";
 
         String countSql = "SELECT COUNT(*) FROM merchant.audit_logs al " + where;
@@ -149,11 +141,10 @@ public class ActivityService {
             String rowPath = row[2] != null ? row[2].toString() : null;
             String userName = row[4] != null ? row[4].toString() : null;
             String module = row[7] != null ? row[7].toString() : null;
-            String requestBody = row[9] != null ? row[9].toString() : null;
 
-            item.put("action", rowAction);
+            item.put("action", extractBaseAction(rowAction));
             item.put("module", module);
-            item.put("description", buildDescription(userName, rowAction, rowPath, module, requestBody));
+            item.put("description", buildDescription(userName, rowAction, rowPath));
 
             // User object for the table
             if (row[3] != null) {
@@ -214,16 +205,16 @@ public class ActivityService {
         }
         data.put("admin_name", userName);
         data.put("admin_role", r[6] != null ? r[6].toString() : null);
-        data.put("action", action);
+        data.put("action", extractBaseAction(action));
         data.put("module", module);
-        data.put("description", buildDescription(userName, action, path, module, requestBody));
+        data.put("description", buildDescription(userName, action, path));
         data.put("path", path);
         data.put("ip_address", r[7] != null ? r[7].toString() : null);
         data.put("user_agent", r[8] != null ? r[8].toString() : null);
         data.put("response_status", r[9] != null ? ((Number) r[9]).intValue() : null);
 
         // Parse and include changes from request body
-        Map<String, Object> changes = parseChanges(requestBody, path, action);
+        Map<String, Object> changes = parseChanges(requestBody);
         if (changes != null && !changes.isEmpty()) {
             data.put("changes", changes);
         }
@@ -249,7 +240,8 @@ public class ActivityService {
 
         return rows.stream().map(row -> {
             Map<String, Object> map = new HashMap<>();
-            map.put("type", row[0] != null ? capitalize(row[0].toString()) : null);
+            String action = row[0] != null ? row[0].toString() : null;
+            map.put("type", extractBaseAction(action));
             map.put("details", row[1] != null ? row[1].toString() : null);
             LocalDateTime createdAt = null;
             if (row[2] != null) {
@@ -265,6 +257,57 @@ public class ActivityService {
             map.put("date", createdAt != null ? createdAt.format(FMT) : null);
             return map;
         }).toList();
+    }
+
+    /**
+     * Extract the base action from action string that may contain entity reference.
+     * e.g., "Update terminal: 12345678" -> "Update terminal"
+     */
+    private String extractBaseAction(String action) {
+        if (action == null)
+            return null;
+        int colonIdx = action.indexOf(':');
+        if (colonIdx > 0) {
+            return action.substring(0, colonIdx).trim();
+        }
+        return action;
+    }
+
+    /**
+     * Build description from action string. The action now includes entity context
+     * from the filter, so we just need to format it nicely with the user name.
+     */
+    private String buildDescription(String userName, String action, String path) {
+        String user = userName != null ? userName : "User";
+
+        if (action == null || action.isBlank()) {
+            return user + " performed an action";
+        }
+
+        // Handle special cases
+        String lowerAction = action.toLowerCase();
+
+        // Authentication
+        if (lowerAction.contains("login") || (path != null && path.contains("/auth/login"))) {
+            return user + " logged into the dashboard";
+        }
+        if (lowerAction.contains("logout")) {
+            return user + " logged out of the dashboard";
+        }
+
+        // Check if action already has entity context (contains ":")
+        if (action.contains(":")) {
+            // Action format: "Update terminal: 12345678"
+            // Description: "Nelo Limited updated terminal 12345678"
+            String[] parts = action.split(":", 2);
+            String baseAction = parts[0].trim().toLowerCase();
+            String entityRef = parts[1].trim();
+
+            return user + " " + baseAction + " " + entityRef;
+        }
+
+        // Fallback: just use the action
+        return user + " " + action.toLowerCase();
     }
 
     private String capitalize(String s) {
@@ -291,7 +334,7 @@ public class ActivityService {
      * Parse the request body JSON and extract meaningful changes for the detail
      * view.
      */
-    private Map<String, Object> parseChanges(String requestBody, String path, String action) {
+    private Map<String, Object> parseChanges(String requestBody) {
         if (requestBody == null || requestBody.isBlank()) {
             return null;
         }
@@ -312,315 +355,6 @@ public class ActivityService {
     }
 
     /**
-     * Extract a specific field value from request body JSON.
-     */
-    private String extractField(String requestBody, String... fieldNames) {
-        if (requestBody == null || requestBody.isBlank()) {
-            return null;
-        }
-        try {
-            Map<String, Object> body = objectMapper.readValue(requestBody, new TypeReference<Map<String, Object>>() {
-            });
-            for (String fieldName : fieldNames) {
-                Object value = body.get(fieldName);
-                if (value != null) {
-                    return value.toString();
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Failed to extract field from request body: {}", e.getMessage());
-        }
-        return null;
-    }
-
-    /**
-     * Extract resource ID from path like /terminals/123 or /roles/45/permissions.
-     */
-    private String extractIdFromPath(String path) {
-        if (path == null)
-            return null;
-        Matcher m = PATH_ID_PATTERN.matcher(path);
-        if (m.matches()) {
-            return m.group(2);
-        }
-        return null;
-    }
-
-    /**
-     * Build a human-readable description based on action, path, module, and request
-     * body.
-     */
-    private String buildDescription(String userName, String action, String path, String module, String requestBody) {
-        String user = userName != null ? userName : "User";
-
-        if (action == null) {
-            return user + " performed an action";
-        }
-
-        String lowerAction = action.toLowerCase();
-
-        // ── Authentication actions ──
-        if (lowerAction.equals("login")) {
-            return user + " logged into the dashboard";
-        }
-        if (lowerAction.equals("logout")) {
-            return user + " logged out of the dashboard";
-        }
-        if (lowerAction.contains("password")) {
-            return user + " changed their password";
-        }
-        if (lowerAction.contains("otp") || lowerAction.contains("verify")) {
-            return user + " verified their identity";
-        }
-
-        // ── Notification actions ──
-        if (lowerAction.contains("mark") && lowerAction.contains("read")) {
-            if (path != null && path.contains("mark-all")) {
-                return user + " marked all notifications as read";
-            }
-            return user + " marked a notification as read";
-        }
-
-        // ── Settlement account actions ──
-        if (path != null && path.contains("settlement-account")) {
-            String accountName = extractField(requestBody, "account_name", "accountName", "name");
-            String accountNumber = extractField(requestBody, "account_number", "accountNumber");
-            String bankName = extractField(requestBody, "bank_name", "bankName");
-
-            String accountRef = buildAccountReference(accountName, accountNumber, bankName);
-
-            if (lowerAction.contains("create") || lowerAction.contains("add")) {
-                if (accountRef != null) {
-                    return user + " added settlement account " + accountRef;
-                }
-                return user + " added a new settlement account";
-            }
-            if (lowerAction.contains("update") || lowerAction.contains("edit")) {
-                if (accountRef != null) {
-                    return user + " updated settlement account " + accountRef;
-                }
-                return user + " updated a settlement account";
-            }
-            if (lowerAction.contains("delete") || lowerAction.contains("remove")) {
-                return user + " removed a settlement account";
-            }
-            if (lowerAction.contains("request")) {
-                if (accountRef != null) {
-                    return user + " requested settlement account " + accountRef;
-                }
-                return user + " requested a new settlement account";
-            }
-            if (lowerAction.contains("default")) {
-                if (accountRef != null) {
-                    return user + " set " + accountRef + " as default settlement account";
-                }
-                return user + " changed the default settlement account";
-            }
-            if (accountRef != null) {
-                return user + " modified settlement account " + accountRef;
-            }
-            return user + " modified settlement account settings";
-        }
-
-        // ── Terminal actions ──
-        if (path != null && path.contains("terminal")) {
-            String serial = extractField(requestBody, "serial", "serial_number", "serialNumber");
-            String terminalRef = serial != null ? "terminal " + serial : "a terminal";
-
-            if (lowerAction.contains("lock")) {
-                return user + " locked " + terminalRef;
-            }
-            if (lowerAction.contains("unlock")) {
-                return user + " unlocked " + terminalRef;
-            }
-            if (lowerAction.contains("assign")) {
-                String branchName = extractField(requestBody, "branch_name", "branchName");
-                if (branchName != null) {
-                    return user + " assigned " + terminalRef + " to branch " + branchName;
-                }
-                return user + " assigned " + terminalRef;
-            }
-            if (lowerAction.contains("unassign")) {
-                return user + " unassigned " + terminalRef + " from branch";
-            }
-            if (lowerAction.contains("create") || lowerAction.contains("add")) {
-                return user + " added " + terminalRef;
-            }
-            if (lowerAction.contains("update") || lowerAction.contains("edit")) {
-                return user + " updated " + terminalRef + " configuration";
-            }
-            return user + " modified " + terminalRef;
-        }
-
-        // ── Team/User actions ──
-        if (path != null && (path.contains("merchant-user") || path.contains("invitation"))) {
-            String memberName = extractField(requestBody, "name", "full_name", "fullName");
-            String memberEmail = extractField(requestBody, "email");
-            String role = extractField(requestBody, "role", "role_name", "roleName");
-
-            String memberRef = memberName != null ? memberName : (memberEmail != null ? memberEmail : "a team member");
-
-            if (lowerAction.contains("invite") || lowerAction.contains("create")) {
-                if (role != null) {
-                    return user + " invited " + memberRef + " as " + role;
-                }
-                return user + " invited " + memberRef;
-            }
-            if (lowerAction.contains("update") || lowerAction.contains("edit")) {
-                return user + " updated " + memberRef + "'s profile";
-            }
-            if (lowerAction.contains("delete") || lowerAction.contains("remove")) {
-                return user + " removed " + memberRef;
-            }
-            if (lowerAction.contains("resend")) {
-                return user + " resent invitation to " + memberRef;
-            }
-            return user + " modified " + memberRef + "'s settings";
-        }
-
-        // ── Role actions ──
-        if (path != null && path.contains("role")) {
-            String roleName = extractField(requestBody, "name", "role_name", "roleName");
-            String roleRef = roleName != null ? "role \"" + roleName + "\"" : "a role";
-
-            if (lowerAction.contains("create") || lowerAction.contains("add")) {
-                return user + " created " + roleRef;
-            }
-            if (lowerAction.contains("update") || lowerAction.contains("edit")) {
-                return user + " updated " + roleRef + " permissions";
-            }
-            if (lowerAction.contains("delete") || lowerAction.contains("remove")) {
-                return user + " deleted " + roleRef;
-            }
-            return user + " modified " + roleRef;
-        }
-
-        // ── Branch actions ──
-        if (path != null && path.contains("branch")) {
-            String branchName = extractField(requestBody, "name", "branch_name", "branchName");
-            String branchRef = branchName != null ? "branch \"" + branchName + "\"" : "a branch";
-
-            if (lowerAction.contains("create") || lowerAction.contains("add")) {
-                return user + " created " + branchRef;
-            }
-            if (lowerAction.contains("update") || lowerAction.contains("edit")) {
-                return user + " updated " + branchRef;
-            }
-            if (lowerAction.contains("delete") || lowerAction.contains("remove")) {
-                return user + " deleted " + branchRef;
-            }
-            return user + " modified " + branchRef;
-        }
-
-        // ── Dispute actions ──
-        if (path != null && path.contains("dispute")) {
-            String disputeRef = extractField(requestBody, "reference", "dispute_reference", "disputeReference");
-            String refStr = disputeRef != null ? "dispute " + disputeRef : "a dispute";
-
-            if (lowerAction.contains("create") || lowerAction.contains("raise")) {
-                return user + " raised " + refStr;
-            }
-            if (lowerAction.contains("update") || lowerAction.contains("respond")) {
-                return user + " responded to " + refStr;
-            }
-            if (lowerAction.contains("close") || lowerAction.contains("resolve")) {
-                return user + " resolved " + refStr;
-            }
-            return user + " updated " + refStr;
-        }
-
-        // ── Profile actions ──
-        if (path != null && path.contains("profile")) {
-            // Try to identify what was updated
-            List<String> updatedFields = new ArrayList<>();
-            if (extractField(requestBody, "name", "full_name") != null)
-                updatedFields.add("name");
-            if (extractField(requestBody, "email") != null)
-                updatedFields.add("email");
-            if (extractField(requestBody, "phone", "phone_number") != null)
-                updatedFields.add("phone");
-            if (extractField(requestBody, "address") != null)
-                updatedFields.add("address");
-
-            if (!updatedFields.isEmpty()) {
-                return user + " updated their " + String.join(", ", updatedFields);
-            }
-            return user + " updated their profile";
-        }
-
-        // ── Settings actions ──
-        if (path != null && path.contains("setting")) {
-            String settingName = extractField(requestBody, "key", "setting", "name");
-            if (settingName != null) {
-                return user + " updated setting \"" + settingName + "\"";
-            }
-            return user + " updated account settings";
-        }
-
-        // ── Virtual account actions ──
-        if (path != null && path.contains("virtual-account")) {
-            String accountNumber = extractField(requestBody, "account_number", "accountNumber");
-            String accountRef = accountNumber != null ? "virtual account " + accountNumber : "a virtual account";
-
-            if (lowerAction.contains("create") || lowerAction.contains("request")) {
-                return user + " requested " + accountRef;
-            }
-            return user + " modified " + accountRef;
-        }
-
-        // ── Generic action with module context ──
-        if (module != null && !"Other".equals(module)) {
-            return user + " performed " + formatAction(action) + " in " + module;
-        }
-
-        // Fallback
-        if (!action.isBlank()) {
-            return user + " performed " + formatAction(action);
-        }
-
-        return user + " performed an action";
-    }
-
-    /**
-     * Build a reference string for a settlement account from available fields.
-     */
-    private String buildAccountReference(String accountName, String accountNumber, String bankName) {
-        if (accountName != null && accountNumber != null) {
-            return accountName + " (" + maskAccountNumber(accountNumber) + ")";
-        }
-        if (accountName != null) {
-            return accountName;
-        }
-        if (accountNumber != null && bankName != null) {
-            return maskAccountNumber(accountNumber) + " at " + bankName;
-        }
-        if (accountNumber != null) {
-            return maskAccountNumber(accountNumber);
-        }
-        return null;
-    }
-
-    /**
-     * Mask account number for display (show last 4 digits).
-     */
-    private String maskAccountNumber(String accountNumber) {
-        if (accountNumber == null || accountNumber.length() <= 4) {
-            return accountNumber;
-        }
-        return "****" + accountNumber.substring(accountNumber.length() - 4);
-    }
-
-    /**
-     * Format an action string to be more readable (lowercase, replace
-     * dashes/underscores with spaces).
-     */
-    private String formatAction(String action) {
-        if (action == null)
-            return "action";
-        return action.toLowerCase().replace("-", " ").replace("_", " ");
-    }
-
-    /**
      * Get filter options for the audit log listing. Returns distinct actions for
      * the current merchant so the frontend can populate the Action dropdown.
      */
@@ -632,13 +366,16 @@ public class ActivityService {
             return Map.of("actions", List.of());
         }
 
-        List<String> rows = entityManager
-                .createNativeQuery("SELECT DISTINCT al.action FROM merchant.audit_logs al "
-                        + "WHERE al.merchant_id = :merchantId AND al.action IS NOT NULL " + "ORDER BY al.action")
+        // Extract base action (before the colon) for filtering
+        List<String> rows = entityManager.createNativeQuery(
+                "SELECT DISTINCT CASE WHEN position(':' in al.action) > 0 THEN substring(al.action from 1 for position(':' in al.action) - 1) ELSE al.action END "
+                        + "FROM merchant.audit_logs al "
+                        + "WHERE al.merchant_id = :merchantId AND al.action IS NOT NULL " + "ORDER BY 1")
                 .setParameter("merchantId", merchantId).getResultList();
 
-        List<Map<String, String>> actions = rows.stream().filter(action -> action != null && !action.isBlank())
-                .map(action -> Map.of("id", action, "name", action)).toList();
+        List<Map<String, String>> actions = rows.stream()
+                .filter(action -> action != null && !action.toString().isBlank())
+                .map(action -> Map.of("id", action.toString().trim(), "name", action.toString().trim())).toList();
 
         return Map.of("actions", actions);
     }
