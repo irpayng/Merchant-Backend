@@ -741,6 +741,151 @@ public class GrpcClient {
         }
     }
 
+    // ── Merchant Branch Management ──────────────────────────────────────────────
+
+    /**
+     * List all branches for a merchant.
+     */
+    public List<Map<String, Object>> listMerchantBranches(long userId, boolean activeOnly) {
+        String ref = Ulid.generate();
+        logRequest("ListMerchantBranches", ref);
+        try {
+            var resp = configStub.listMerchantBranches(com.tms.report.grpc.config.ListMerchantBranchesRequest
+                    .newBuilder().setUserId(userId).setActiveOnly(activeOnly).build());
+            List<Map<String, Object>> branches = new java.util.ArrayList<>();
+            for (var branch : resp.getBranchesList()) {
+                branches.add(branchToMap(branch));
+            }
+            return branches;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("ListMerchantBranches", ref, e);
+        }
+    }
+
+    /**
+     * Get a single branch by ID.
+     */
+    public Map<String, Object> getMerchantBranch(long id, long userId) {
+        String ref = Ulid.generate();
+        logRequest("GetMerchantBranch", ref);
+        try {
+            var resp = configStub.getMerchantBranch(com.tms.report.grpc.config.GetMerchantBranchRequest.newBuilder()
+                    .setId(id).setUserId(userId).build());
+            if (resp.getFound()) {
+                return branchToMap(resp.getBranch());
+            }
+            return null;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetMerchantBranch", ref, e);
+        }
+    }
+
+    /**
+     * Create a new branch for a merchant.
+     */
+    public Map<String, Object> createMerchantBranch(Map<String, Object> data) {
+        String ref = Ulid.generate();
+        logRequest("CreateMerchantBranch", ref);
+        try {
+            var builder = com.tms.report.grpc.config.CreateMerchantBranchRequest.newBuilder()
+                    .setUserId(longVal(data, "user_id")).setName(str(data, "name")).setCode(str(data, "code"));
+            if (data.containsKey("address"))
+                builder.setAddress(str(data, "address"));
+            if (data.containsKey("state_code"))
+                builder.setStateCode(str(data, "state_code"));
+            if (data.containsKey("lga_code"))
+                builder.setLgaCode(str(data, "lga_code"));
+            if (data.containsKey("phone_number"))
+                builder.setPhoneNumber(str(data, "phone_number"));
+            if (data.containsKey("email"))
+                builder.setEmail(str(data, "email"));
+            if (data.containsKey("is_primary"))
+                builder.setIsPrimary(Boolean.TRUE.equals(data.get("is_primary")));
+            var resp = configStub.createMerchantBranch(builder.build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("CreateMerchantBranch", ref, e);
+        }
+    }
+
+    /**
+     * Update an existing branch.
+     */
+    public Map<String, Object> updateMerchantBranch(long id, long userId, Map<String, Object> data) {
+        String ref = Ulid.generate();
+        logRequest("UpdateMerchantBranch", ref);
+        try {
+            var builder = com.tms.report.grpc.config.UpdateMerchantBranchRequest.newBuilder().setId(id)
+                    .setUserId(userId);
+            if (data.containsKey("name"))
+                builder.setName(str(data, "name"));
+            if (data.containsKey("address"))
+                builder.setAddress(str(data, "address"));
+            if (data.containsKey("state_code"))
+                builder.setStateCode(str(data, "state_code"));
+            if (data.containsKey("lga_code"))
+                builder.setLgaCode(str(data, "lga_code"));
+            if (data.containsKey("phone_number"))
+                builder.setPhoneNumber(str(data, "phone_number"));
+            if (data.containsKey("email"))
+                builder.setEmail(str(data, "email"));
+            if (data.containsKey("status"))
+                builder.setStatus(str(data, "status"));
+            var resp = configStub.updateMerchantBranch(builder.build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("UpdateMerchantBranch", ref, e);
+        }
+    }
+
+    /**
+     * Set a branch as the primary for a merchant.
+     */
+    public Map<String, Object> setPrimaryMerchantBranch(long id, long userId) {
+        String ref = Ulid.generate();
+        logRequest("SetPrimaryMerchantBranch", ref);
+        try {
+            var resp = configStub.setPrimaryMerchantBranch(com.tms.report.grpc.config.SetPrimaryMerchantBranchRequest
+                    .newBuilder().setId(id).setUserId(userId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("SetPrimaryMerchantBranch", ref, e);
+        }
+    }
+
+    /**
+     * Delete a branch.
+     */
+    public Map<String, Object> deleteMerchantBranch(long id, long userId) {
+        String ref = Ulid.generate();
+        logRequest("DeleteMerchantBranch", ref);
+        try {
+            var resp = configStub.deleteMerchantBranch(com.tms.report.grpc.config.DeleteMerchantBranchRequest
+                    .newBuilder().setId(id).setUserId(userId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("DeleteMerchantBranch", ref, e);
+        }
+    }
+
+    private Map<String, Object> branchToMap(com.tms.report.grpc.config.MerchantBranch branch) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("id", branch.getId());
+        m.put("user_id", branch.getUserId());
+        m.put("name", branch.getName());
+        m.put("code", branch.getCode());
+        m.put("address", branch.getAddress());
+        m.put("state_code", branch.getStateCode());
+        m.put("lga_code", branch.getLgaCode());
+        m.put("phone_number", branch.getPhoneNumber());
+        m.put("email", branch.getEmail());
+        m.put("status", branch.getStatus());
+        m.put("is_primary", branch.getIsPrimary());
+        m.put("created_at", branch.getCreatedAt());
+        m.put("updated_at", branch.getUpdatedAt());
+        return m;
+    }
+
     // ── Configuration commands → config-service ──
 
     public Map<String, Object> updateConfiguration(String configurationId, String value) {
@@ -2714,6 +2859,19 @@ public class GrpcClient {
         if (v instanceof String s)
             return Integer.parseInt(s);
         return 0;
+    }
+
+    private long longVal(Map<String, Object> data, String key) {
+        Object val = data.get(key);
+        if (val == null)
+            return 0L;
+        if (val instanceof Number n)
+            return n.longValue();
+        try {
+            return Long.parseLong(val.toString().trim());
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
 
     @SuppressWarnings("unchecked")

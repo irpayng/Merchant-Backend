@@ -62,6 +62,19 @@ service ConfigService {
   // Updates tids.branch_id in the authoritative config_service DB.
   rpc AssignTidToBranch (AssignTidToBranchRequest) returns (ConfigCommandResponse);
   rpc UnassignTidFromBranch (UnassignTidFromBranchRequest) returns (ConfigCommandResponse);
+  // ── Merchant Branch Management RPCs ──
+  // List all branches for a merchant
+  rpc ListMerchantBranches (ListMerchantBranchesRequest) returns (ListMerchantBranchesResponse);
+  // Get a single branch by ID
+  rpc GetMerchantBranch (GetMerchantBranchRequest) returns (GetMerchantBranchResponse);
+  // Create a new branch
+  rpc CreateMerchantBranch (CreateMerchantBranchRequest) returns (ConfigCommandResponse);
+  // Update an existing branch
+  rpc UpdateMerchantBranch (UpdateMerchantBranchRequest) returns (ConfigCommandResponse);
+  // Set a branch as the primary for the merchant
+  rpc SetPrimaryMerchantBranch (SetPrimaryMerchantBranchRequest) returns (ConfigCommandResponse);
+  // Delete a branch
+  rpc DeleteMerchantBranch (DeleteMerchantBranchRequest) returns (ConfigCommandResponse);
 }
 
 message ValidateTransactionRequest {
@@ -433,6 +446,78 @@ message AssignTidToBranchRequest {
 message UnassignTidFromBranchRequest {
   int64 tid_id = 1;
   int64 branch_id = 2;
+}
+
+// ── Merchant Branch Management messages ──
+// CRUD operations for merchant branches (multi-branch structure).
+
+message ListMerchantBranchesRequest {
+  int64 user_id = 1;
+  bool active_only = 2;  // When true, only return branches with status='active'
+}
+
+message MerchantBranch {
+  int64 id = 1;
+  int64 user_id = 2;
+  string name = 3;
+  string code = 4;
+  string address = 5;
+  string state_code = 6;
+  string lga_code = 7;
+  string phone_number = 8;
+  string email = 9;
+  string status = 10;
+  bool is_primary = 11;
+  string created_at = 12;
+  string updated_at = 13;
+}
+
+message ListMerchantBranchesResponse {
+  repeated MerchantBranch branches = 1;
+}
+
+message GetMerchantBranchRequest {
+  int64 id = 1;
+  int64 user_id = 2;  // For ownership validation
+}
+
+message GetMerchantBranchResponse {
+  bool found = 1;
+  MerchantBranch branch = 2;
+}
+
+message CreateMerchantBranchRequest {
+  int64 user_id = 1;
+  string name = 2;
+  string code = 3;
+  string address = 4;
+  string state_code = 5;
+  string lga_code = 6;
+  string phone_number = 7;
+  string email = 8;
+  bool is_primary = 9;
+}
+
+message UpdateMerchantBranchRequest {
+  int64 id = 1;
+  int64 user_id = 2;  // For ownership validation
+  string name = 3;
+  string address = 4;
+  string state_code = 5;
+  string lga_code = 6;
+  string phone_number = 7;
+  string email = 8;
+  string status = 9;  // active, suspended, closed
+}
+
+message SetPrimaryMerchantBranchRequest {
+  int64 id = 1;
+  int64 user_id = 2;  // For ownership validation
+}
+
+message DeleteMerchantBranchRequest {
+  int64 id = 1;
+  int64 user_id = 2;  // For ownership validation
 }
 
 // ── Merchant Settlement Type messages ──
