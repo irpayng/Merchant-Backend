@@ -48,6 +48,8 @@ service ConfigService {
   rpc CheckInstantSettlement (CheckInstantSettlementRequest) returns (CheckInstantSettlementResponse);
   // Merchant Settlement Account RPCs (multi-branch structure)
   rpc ListMerchantSettlementAccounts (ListMerchantSettlementAccountsRequest) returns (ListMerchantSettlementAccountsResponse);
+  // Get a merchant's configured settlement type (INSTANT, HOURLY, T+1, T+2, T+3)
+  rpc GetMerchantSettlementType (GetMerchantSettlementTypeRequest) returns (GetMerchantSettlementTypeResponse);
   // Ensure a terminal has a TID mapping for its assigned branch. Called after
   // assigning a terminal to a branch. If the terminal already has a TID mapping,
   // this is a no-op. If not, creates one linking the terminal to a branch TID.
@@ -431,5 +433,16 @@ message AssignTidToBranchRequest {
 message UnassignTidFromBranchRequest {
   int64 tid_id = 1;
   int64 branch_id = 2;
+}
+
+// ── Merchant Settlement Type messages ──
+
+message GetMerchantSettlementTypeRequest {
+  int64 user_id = 1;
+}
+
+message GetMerchantSettlementTypeResponse {
+  bool found = 1;
+  string settlement_type = 2;
 }
 
