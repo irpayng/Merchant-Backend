@@ -1,0 +1,29 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Update merchant-fe SettlementConfig.tsx frontend layout to match super-merchant's SettlementConfigTab component. Key changes: (1) InfoRow component uses flex-col (label on top, value below) not side-by-side; (2) Settlement Schedule card shows only Settlement Type and Settlement Days in 2-column grid; (3) MSC Breakdown card replaces Settlement Account Details in the second column with 2-column grid layout; (4) Settlement Accounts card spans full width (lg:col-span-2) and displays accounts in a scrollable list matching the existing pattern. The merchant version is read-only (no Edit buttons) but keeps the existing Add Account functionality.",
+  "status": "completed",
+  "steps": [
+    "1. Update the InfoRow component in /Users/mathew/merchant-fe/app/(user)/settlements/(files)/SettlementConfig.tsx to use flex-col layout: change from 'flex justify-between py-3 border-b border-border last:border-b-0' to 'flex flex-col gap-1 py-3'. Change label to text-xs (from text-sm) and value remains text-sm font-medium.",
+    "2. Restructure the Settlement Schedule Card to use a 2-column grid inside CardContent: wrap InfoRows in a div with 'grid grid-cols-2 gap-x-6 gap-y-1'. Show only Settlement Type and Settlement Days (remove Settlement Time InfoRow).",
+    "3. Move MSC Breakdown card to be the second card in the grid (replacing Settlement Account Details position). Change it from lg:col-span-2 to no col-span. Use the new InfoRow style in a 2-column grid: MSC (POS), Instant Transfer Fee in first row; Monthly Terminal Fee alone in second row.",
+    "4. Move Settlement Account Details card (rename to 'Settlement Accounts' to match super-merchant) to span full width with lg:col-span-2. Keep the existing account list rendering and Add Account button functionality. The card should come after the Schedule and MSC cards.",
+    "5. Update the grid layout: the main grid should be 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start'. Settlement Schedule is first, MSC Breakdown second, Settlement Accounts spans full width below.",
+    "6. Remove the inline 3-column stat boxes in MSC Breakdown (the p-4 bg-muted/50 rounded-lg divs) and use InfoRow components instead for consistency with super-merchant.",
+    "7. Ensure all styling follows design system: card padding p-6 via CardContent, section gaps gap-6, card titles text-base font-medium, labels text-xs, values text-sm font-medium, use semantic colors (text-muted-foreground for labels, text-foreground for values)."
+  ],
+  "acceptance_criteria": [
+    "InfoRow uses flex-col layout with label (text-xs) on top, value (text-sm font-medium) below",
+    "Settlement Schedule card shows only Settlement Type and Settlement Days in 2-col grid",
+    "MSC Breakdown card is in second column (not full width), uses InfoRow style in 2-col grid",
+    "Settlement Accounts card spans full width (lg:col-span-2) with existing account list and Add Account button",
+    "Layout matches super-merchant's SettlementConfigTab visual structure",
+    "npm run lint passes in /Users/mathew/merchant-fe"
+  ],
+  "verification": [
+    "Run npm run lint in /Users/mathew/merchant-fe",
+    "Run npm run build in /Users/mathew/merchant-fe to verify TypeScript compilation"
+  ],
+  "blocked_reason": null,
+  "findings": "Implementation complete. Updated InfoRow to use flex-col layout (label text-xs on top, value text-sm font-medium below). Settlement Schedule card now uses 2-column grid with only Settlement Type and Settlement Days (removed Settlement Time). MSC Breakdown moved to second column position with InfoRow components in 2-column grid instead of inline stat boxes. Settlement Accounts card renamed from 'Settlement Account Details' and now spans full width (lg:col-span-2) with matching super-merchant styling: Building2 icon in circular bg-primary/10, Star icon in Default badge, label shown as separate Badge component. Merchant version remains read-only (no Edit/Delete buttons) but keeps Add Account functionality. Loading skeleton updated to match new layout."
+}
