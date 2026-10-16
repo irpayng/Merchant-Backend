@@ -102,12 +102,32 @@ public class AuditLogResponse {
             return "Receipt reprint guard toggle";
         }
 
+        // ── Roles and Privileges ──
+        if (normalizedPath.contains("/roles/assign")) {
+            return "Role assignment";
+        }
+        if (normalizedPath.contains("/roles/unassign")) {
+            return "Role unassignment";
+        }
+        if (normalizedPath.matches(".*/roles/\\d+$") && "PUT".equalsIgnoreCase(method)) {
+            return "Role update";
+        }
+        if (normalizedPath.matches(".*/roles/\\d+$") && "DELETE".equalsIgnoreCase(method)) {
+            return "Role deletion";
+        }
+        if (normalizedPath.endsWith("/roles") && "POST".equalsIgnoreCase(method)) {
+            return "Role creation";
+        }
+
         // ── Settlement account request ──
         if (normalizedPath.contains("/settlement-config/request-account")) {
             return "Settlement account request";
         }
 
-        // ── Terminal lock/unlock ──
+        // ── Terminal operations ──
+        if (normalizedPath.matches(".*/terminals/\\d+/request-prep.*")) {
+            return "Terminal key injection request";
+        }
         if (normalizedPath.matches(".*/terminals/\\d+/lock.*")) {
             return "Terminal lock";
         }
