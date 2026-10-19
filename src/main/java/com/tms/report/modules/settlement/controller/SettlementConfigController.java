@@ -4,6 +4,7 @@ import com.tms.report.core.dto.ApiResponse;
 import com.tms.report.core.security.MerchantScope;
 import com.tms.report.modules.grpc.service.GrpcClient;
 import com.tms.report.modules.settlement.dto.ApprovalRequestResponse;
+import com.tms.report.modules.settlement.dto.NameEnquiryRequestDto;
 import com.tms.report.modules.settlement.dto.SettlementAccountDto;
 import com.tms.report.modules.settlement.dto.SettlementAccountRequestDto;
 import com.tms.report.modules.settlement.dto.SettlementConfigResponse;
@@ -126,6 +127,22 @@ public class SettlementConfigController {
 
         List<ApprovalRequestResponse> requests = settlementApprovalService.getApprovalRequests(merchantId);
         return ApiResponse.success(requests);
+    }
+
+    /**
+     * Perform a name enquiry to resolve the account holder's name from bank. Used
+     * by the "Add Settlement Account" form to auto-populate the account name.
+     */
+    @PostMapping("/name-enquiry")
+    public ApiResponse<Map<String, Object>> nameEnquiry(@RequestBody @Valid NameEnquiryRequestDto request) {
+        try {
+            Map<String, Object> result = grpcClient.nameEnquiry(request.getAccountNumber(), request.getBankCode());
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("account_name", result.get("account_name"));
+            return ApiResponse.success(data);
+        } catch (Exception e) {
+            return ApiResponse.error(400, e.getMessage());
+        }
     }
 
     /**
