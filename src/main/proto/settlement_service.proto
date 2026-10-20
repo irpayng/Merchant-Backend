@@ -220,6 +220,7 @@ message BranchSettlementRecord {
   string period_end = 17;               // Settlement period end (ISO-8601)
   string created_at = 18;
   string completed_at = 19;
+  repeated string transaction_references = 20; // References to underlying transactions
 }
 
 message BranchSettlementsResponse {

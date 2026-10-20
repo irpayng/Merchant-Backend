@@ -1326,6 +1326,7 @@ public class GrpcClient {
                 sm.put("period_end", s.getPeriodEnd());
                 sm.put("created_at", s.getCreatedAt());
                 sm.put("completed_at", s.getCompletedAt());
+                sm.put("transaction_references", s.getTransactionReferencesList());
                 return sm;
             }).toList());
             return result;
