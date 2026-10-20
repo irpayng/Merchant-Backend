@@ -1283,7 +1283,8 @@ public class GrpcClient {
     public Map<String, Object> getBranchSettlements(long userId, Long branchId, String startDate, String endDate,
             String status, int limit, int offset) {
         String ref = Ulid.generate();
-        logRequest("GetBranchSettlements", ref);
+        log.info("GetBranchSettlements: userId={} branchId={} startDate={} endDate={} status={} limit={} offset={}",
+                userId, branchId, startDate, endDate, status, limit, offset);
         try {
             var builder = com.tms.report.grpc.settlement.GetBranchSettlementsRequest.newBuilder().setUserId(userId)
                     .setStartDate(startDate != null ? startDate : "").setEndDate(endDate != null ? endDate : "")
@@ -1296,6 +1297,8 @@ public class GrpcClient {
             }
 
             var resp = settlementStub.getBranchSettlements(builder.build());
+            log.info("GetBranchSettlements response: totalCount={} totalAmount={} settlementsCount={}",
+                    resp.getTotalCount(), resp.getTotalAmount(), resp.getSettlementsCount());
 
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
