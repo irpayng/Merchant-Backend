@@ -109,6 +109,28 @@ public class SettlementHistoryController {
                 getSettlementAmount(paid)));
     }
 
+    /**
+     * Get branch settlements for instant settlement merchants. Returns the actual
+     * payouts made to branch settlement accounts, including branch name, account
+     * details, amount, and status.
+     */
+    @GetMapping("/branch")
+    public ApiResponse<Map<String, Object>> getBranchSettlements(@RequestParam(required = false) Long branchId,
+            @RequestParam(required = false) String startDate, @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false, defaultValue = "100") int limit,
+            @RequestParam(required = false, defaultValue = "0") int offset) {
+        Long userId = merchantScope.userId();
+        if (userId == null) {
+            return ApiResponse.error(404, "Merchant not found");
+        }
+
+        Map<String, Object> result = grpcClient.getBranchSettlements(userId, branchId, startDate, endDate, status,
+                limit, offset);
+
+        return ApiResponse.success(result);
+    }
+
     @SuppressWarnings("unchecked")
     private int getSettlementCount(Map<String, Object> result) {
         Object settlements = result.get("settlements");

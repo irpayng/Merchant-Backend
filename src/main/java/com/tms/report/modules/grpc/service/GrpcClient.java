@@ -1276,6 +1276,61 @@ public class GrpcClient {
         }
     }
 
+    /**
+     * Get branch settlements for instant settlement merchants. These are the actual
+     * payouts made to branch settlement accounts.
+     */
+    public Map<String, Object> getBranchSettlements(long userId, Long branchId, String startDate, String endDate,
+            String status, int limit, int offset) {
+        String ref = Ulid.generate();
+        logRequest("GetBranchSettlements", ref);
+        try {
+            var builder = com.tms.report.grpc.settlement.GetBranchSettlementsRequest.newBuilder().setUserId(userId)
+                    .setStartDate(startDate != null ? startDate : "").setEndDate(endDate != null ? endDate : "")
+                    .setLimit(limit > 0 ? limit : 100).setOffset(offset);
+            if (branchId != null && branchId > 0) {
+                builder.setBranchId(branchId);
+            }
+            if (status != null && !status.isEmpty()) {
+                builder.setStatus(status);
+            }
+
+            var resp = settlementStub.getBranchSettlements(builder.build());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("reference", ref);
+            result.put("total_count", resp.getTotalCount());
+            result.put("total_amount", resp.getTotalAmount());
+            result.put("settlements", resp.getSettlementsList().stream().map(s -> {
+                Map<String, Object> sm = new HashMap<>();
+                sm.put("id", s.getId());
+                sm.put("reference", s.getReference());
+                sm.put("user_id", s.getUserId());
+                sm.put("branch_id", s.getBranchId());
+                sm.put("branch_name", s.getBranchName());
+                sm.put("settlement_account_id", s.getSettlementAccountId());
+                sm.put("account_number", s.getAccountNumber());
+                sm.put("bank_code", s.getBankCode());
+                sm.put("bank_name", s.getBankName());
+                sm.put("account_name", s.getAccountName());
+                sm.put("amount", s.getAmount());
+                sm.put("transaction_count", s.getTransactionCount());
+                sm.put("status", s.getStatus());
+                sm.put("bank_reference", s.getBankReference());
+                sm.put("failure_reason", s.getFailureReason());
+                sm.put("period_start", s.getPeriodStart());
+                sm.put("period_end", s.getPeriodEnd());
+                sm.put("created_at", s.getCreatedAt());
+                sm.put("completed_at", s.getCompletedAt());
+                return sm;
+            }).toList());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetBranchSettlements", ref, e);
+        }
+    }
+
     // ── Notification commands → notification-service ──
 
     public Map<String, Object> sendNotification(Map<String, Object> data) {

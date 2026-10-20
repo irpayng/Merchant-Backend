@@ -20,6 +20,10 @@ service SettlementService {
   rpc GetSettlementsByResolutionStatus (GetByResolutionStatusRequest) returns (SettlementsResponse);
   // Get settlements (actual transactions) for a merchant - use this for Settlement History UI
   rpc GetSettlements (GetSettlementsRequest) returns (SettlementsResponse);
+
+  // ── Branch Settlement RPCs ──
+  // Get branch settlement history for instant settlement merchants
+  rpc GetBranchSettlements (GetBranchSettlementsRequest) returns (BranchSettlementsResponse);
 }
 
 message CreateSettlementRequest {
@@ -178,4 +182,48 @@ message GetSettlementsRequest {
   string start_date = 3;                // Date range filter
   string end_date = 4;
   int32 limit = 5;                      // Max records to return (default 100)
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Branch Settlement Messages (for INSTANT settlement merchants)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Get branch settlements for a merchant
+message GetBranchSettlementsRequest {
+  int64 user_id = 1;                    // Merchant user ID (required)
+  int64 branch_id = 2;                  // Filter by branch (optional, 0 = all branches)
+  string start_date = 3;                // Date range filter (ISO-8601)
+  string end_date = 4;
+  string status = 5;                    // Filter by status: pending, processing, completed, failed
+  int32 limit = 6;                      // Max records (default 100)
+  int32 offset = 7;                     // Pagination offset
+}
+
+message BranchSettlementRecord {
+  int64 id = 1;
+  string reference = 2;
+  int64 user_id = 3;
+  int64 branch_id = 4;
+  string branch_name = 5;               // Resolved from config
+  int64 settlement_account_id = 6;
+  string account_number = 7;
+  string bank_code = 8;
+  string bank_name = 9;                 // Resolved from bank code
+  string account_name = 10;
+  double amount = 11;
+  int32 transaction_count = 12;
+  string status = 13;                   // pending, processing, completed, failed
+  string bank_reference = 14;           // Provider transaction reference
+  string failure_reason = 15;
+  string period_start = 16;             // Settlement period start (ISO-8601)
+  string period_end = 17;               // Settlement period end (ISO-8601)
+  string created_at = 18;
+  string completed_at = 19;
+}
+
+message BranchSettlementsResponse {
+  repeated BranchSettlementRecord settlements = 1;
+  int32 total_count = 2;
+  double total_amount = 3;              // Sum of completed settlement amounts
 }
