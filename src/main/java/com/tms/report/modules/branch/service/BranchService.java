@@ -280,7 +280,7 @@ public class BranchService {
         }
 
         // Extract branch ID from response
-        String dataJson = (String) result.get("data_json");
+        String dataJson = (String) result.get("data");
         Long branchId = null;
         if (dataJson != null && !dataJson.isBlank()) {
             try {
