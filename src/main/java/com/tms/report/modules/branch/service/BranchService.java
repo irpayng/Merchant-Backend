@@ -668,12 +668,11 @@ public class BranchService {
      */
     @Transactional
     public Terminal assignTerminalToBranch(Long branchId, Long terminalId, Long merchantId) {
-        // Verify branch exists and belongs to merchant
-        Long branchCount = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
-                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
-
-        if (branchCount == 0) {
+        // Verify branch exists and belongs to merchant via gRPC (tms-config is source
+        // of truth)
+        Map<String, Object> branch = grpcClient.getMerchantBranch(branchId, merchantId);
+        if (branch == null) {
+            log.warn("Branch {} not found for merchant {} via gRPC", branchId, merchantId);
             return null;
         }
 
