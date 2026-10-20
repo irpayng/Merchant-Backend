@@ -496,12 +496,10 @@ public class BranchService {
     @Transactional(readOnly = true)
     @SuppressWarnings("unchecked")
     public Map<String, Object> listBranchTerminals(Long branchId, Long merchantId, Map<String, String> params) {
-        // Verify branch exists and belongs to merchant
-        Long branchCount = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
-                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
-
-        if (branchCount == 0) {
+        // Verify branch exists and belongs to merchant via gRPC (tms-config is source
+        // of truth)
+        Map<String, Object> branch = grpcClient.getMerchantBranch(branchId, merchantId);
+        if (branch == null) {
             return PagedResponse.empty("/branches/" + branchId + "/terminals");
         }
 
@@ -703,6 +701,11 @@ public class BranchService {
             throw new AppException("Failed to assign terminal to branch: " + msg, HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
+        // Also update local database for immediate visibility in terminal lists
+        // (replication from tms-config may have delay)
+        entityManager.createNativeQuery("UPDATE terminals SET branch_id = :branchId WHERE id = :terminalId")
+                .setParameter("branchId", branchId).setParameter("terminalId", terminalId).executeUpdate();
+
         if (currentBranchId != null) {
             log.info("Reassigned terminal {} from branch {} to branch {} for merchant {}", terminalId, currentBranchId,
                     branchId, merchantId);
@@ -755,6 +758,11 @@ public class BranchService {
             log.error("Failed to unassign terminal {} from branch {} via gRPC: {}", terminalId, branchId, msg);
             throw new AppException("Failed to unassign terminal from branch: " + msg, HttpStatus.INTERNAL_SERVER_ERROR);
         }
+
+        // Also update local database for immediate visibility
+        // (replication from tms-config may have delay)
+        entityManager.createNativeQuery("UPDATE terminals SET branch_id = NULL WHERE id = :terminalId")
+                .setParameter("terminalId", terminalId).executeUpdate();
 
         log.info("Unassigned terminal {} from branch {} for merchant {}", terminalId, branchId, merchantId);
 
