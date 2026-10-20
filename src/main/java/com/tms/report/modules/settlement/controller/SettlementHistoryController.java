@@ -120,7 +120,7 @@ public class SettlementHistoryController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false, defaultValue = "100") int limit,
             @RequestParam(required = false, defaultValue = "0") int offset) {
-        Long userId = merchantScope.userId();
+        Long userId = merchantScope.merchantId();
         if (userId == null) {
             return ApiResponse.error(404, "Merchant not found");
         }
