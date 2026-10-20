@@ -208,7 +208,9 @@ public class AuditLogResponse {
 
     /**
      * Build a human-readable description from the action and merchant name. Format:
-     * "{merchant_name} {action_details}"
+     * "{merchant_name} {past_tense_action_details}"
+     * 
+     * Converts action verbs to past tense for better readability.
      */
     private static String buildDescription(AuditLog log) {
         String merchantName = log.getUserName();
@@ -218,12 +220,60 @@ public class AuditLogResponse {
             action = log.getMethod() + " " + log.getPath();
         }
 
+        // Convert action to past tense
+        String pastTenseAction = convertToPastTense(action);
+
         // Build description with merchant name prefix
         if (merchantName != null && !merchantName.isBlank()) {
-            return merchantName + " " + action.toLowerCase();
+            return merchantName + " " + pastTenseAction.toLowerCase();
         }
 
-        return action;
+        return pastTenseAction;
+    }
+
+    /**
+     * Convert action verbs to past tense for description. "Assign TID X to branch
+     * Y" -> "assigned TID X to branch Y" "Create branch 'X'" -> "created branch
+     * 'X'"
+     */
+    private static String convertToPastTense(String action) {
+        if (action == null || action.isEmpty()) {
+            return action;
+        }
+
+        // Common action verb mappings to past tense
+        String result = action;
+
+        // Handle common verbs at the start of the action
+        if (action.startsWith("Assign ") || action.startsWith("assign ")) {
+            result = "assigned " + action.substring(7);
+        } else if (action.startsWith("Remove ") || action.startsWith("remove ")) {
+            result = "removed " + action.substring(7);
+        } else if (action.startsWith("Create ") || action.startsWith("create ")) {
+            result = "created " + action.substring(7);
+        } else if (action.startsWith("Update ") || action.startsWith("update ")) {
+            result = "updated " + action.substring(7);
+        } else if (action.startsWith("Delete ") || action.startsWith("delete ")) {
+            result = "deleted " + action.substring(7);
+        } else if (action.startsWith("Clear ") || action.startsWith("clear ")) {
+            result = "cleared " + action.substring(6);
+        } else if (action.startsWith("Lock ") || action.startsWith("lock ")) {
+            result = "locked " + action.substring(5);
+        } else if (action.startsWith("Unlock ") || action.startsWith("unlock ")) {
+            result = "unlocked " + action.substring(7);
+        } else if (action.startsWith("Invite ") || action.startsWith("invite ")) {
+            result = "invited " + action.substring(7);
+        } else if (action.startsWith("Deactivate ") || action.startsWith("deactivate ")) {
+            result = "deactivated " + action.substring(11);
+        } else if (action.startsWith("Activate ") || action.startsWith("activate ")) {
+            result = "activated " + action.substring(9);
+        } else if (action.startsWith("Request ") || action.startsWith("request ")) {
+            result = "requested " + action.substring(8);
+        } else if (action.startsWith("Mark ") || action.startsWith("mark ")) {
+            result = "marked " + action.substring(5);
+        }
+
+        return result;
     }
 
     private static String extractActionableType(String path) {
