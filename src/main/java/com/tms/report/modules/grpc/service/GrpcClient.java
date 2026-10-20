@@ -831,6 +831,15 @@ public class GrpcClient {
                 builder.setEmail(str(data, "email"));
             if (data.containsKey("status"))
                 builder.setStatus(str(data, "status"));
+            if (data.containsKey("settlement_account_id")) {
+                Object accountId = data.get("settlement_account_id");
+                if (accountId != null) {
+                    builder.setSettlementAccountId(((Number) accountId).longValue());
+                }
+            }
+            if (Boolean.TRUE.equals(data.get("clear_settlement_account"))) {
+                builder.setClearSettlementAccount(true);
+            }
             var resp = configStub.updateMerchantBranch(builder.build());
             return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
         } catch (StatusRuntimeException e) {

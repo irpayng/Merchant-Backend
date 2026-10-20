@@ -451,38 +451,16 @@ public class BranchService {
      */
     @Transactional
     public BranchResponse assignSettlementAccount(Long branchId, Long merchantId, Long settlementAccountId) {
-        // Verify branch exists and belongs to merchant
-        Long branchCount = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
-                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
+        // Update branch settlement account via gRPC to tms-config (source of truth)
+        Map<String, Object> data = new HashMap<>();
+        data.put("settlement_account_id", settlementAccountId);
 
-        if (branchCount == 0) {
-            log.warn("Branch {} not found for merchant {}", branchId, merchantId);
+        Map<String, Object> result = grpcClient.updateMerchantBranch(branchId, merchantId, data);
+        if (!Boolean.TRUE.equals(result.get("success"))) {
+            log.warn("Failed to assign settlement account {} to branch {} for merchant {}: {}", settlementAccountId,
+                    branchId, merchantId, result.get("message"));
             return null;
         }
-
-        // Verify settlement account exists and belongs to merchant via gRPC
-        // The settlement accounts are stored in tms-config, not in the merchant
-        // database
-        List<Map<String, Object>> accounts = grpcClient.listMerchantSettlementAccounts(merchantId);
-        boolean accountValid = accounts.stream()
-                .anyMatch(acct -> settlementAccountId.equals(((Number) acct.get("id")).longValue())
-                        && "active".equals(acct.get("status")));
-
-        if (!accountValid) {
-            log.warn("Settlement account {} not found or not active for merchant {}", settlementAccountId, merchantId);
-            return null;
-        }
-
-        String sql = """
-                UPDATE merchant_branches SET
-                    settlement_account_id = :accountId,
-                    updated_at = NOW()
-                WHERE id = :id AND user_id = :merchantId
-                """;
-
-        entityManager.createNativeQuery(sql).setParameter("accountId", settlementAccountId).setParameter("id", branchId)
-                .setParameter("merchantId", merchantId).executeUpdate();
 
         log.info("Assigned settlement account {} to branch {} for merchant {}", settlementAccountId, branchId,
                 merchantId);
@@ -494,24 +472,16 @@ public class BranchService {
      */
     @Transactional
     public BranchResponse clearSettlementAccount(Long branchId, Long merchantId) {
-        // Verify branch exists and belongs to merchant
-        Long count = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
-                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
+        // Clear branch settlement account via gRPC to tms-config (source of truth)
+        Map<String, Object> data = new HashMap<>();
+        data.put("clear_settlement_account", true);
 
-        if (count == 0) {
+        Map<String, Object> result = grpcClient.updateMerchantBranch(branchId, merchantId, data);
+        if (!Boolean.TRUE.equals(result.get("success"))) {
+            log.warn("Failed to clear settlement account for branch {} of merchant {}: {}", branchId, merchantId,
+                    result.get("message"));
             return null;
         }
-
-        String sql = """
-                UPDATE merchant_branches SET
-                    settlement_account_id = NULL,
-                    updated_at = NOW()
-                WHERE id = :id AND user_id = :merchantId
-                """;
-
-        entityManager.createNativeQuery(sql).setParameter("id", branchId).setParameter("merchantId", merchantId)
-                .executeUpdate();
 
         log.info("Cleared settlement account for branch {} of merchant {}", branchId, merchantId);
         return getBranch(branchId, merchantId);

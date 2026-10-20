@@ -509,6 +509,8 @@ message UpdateMerchantBranchRequest {
   string phone_number = 7;
   string email = 8;
   string status = 9;  // active, suspended, closed
+  int64 settlement_account_id = 10;  // 0 to clear
+  bool clear_settlement_account = 11;  // Set true to explicitly clear the account
 }
 
 message SetPrimaryMerchantBranchRequest {
