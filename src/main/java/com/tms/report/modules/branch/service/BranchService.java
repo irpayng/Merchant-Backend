@@ -401,12 +401,9 @@ public class BranchService {
      */
     @Transactional(readOnly = true)
     public Map<String, Object> getBranchStats(Long branchId, Long merchantId) {
-        // Verify branch exists
-        Long count = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
-                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
-
-        if (count == 0) {
+        // Verify branch exists via gRPC (tms-config is source of truth)
+        Map<String, Object> branch = grpcClient.getMerchantBranch(branchId, merchantId);
+        if (branch == null) {
             return null;
         }
 
@@ -587,12 +584,9 @@ public class BranchService {
      */
     @Transactional(readOnly = true)
     public Map<String, Object> getBranchTerminalStats(Long branchId, Long merchantId) {
-        // Verify branch exists
-        Long branchCount = ((Number) entityManager
-                .createNativeQuery("SELECT COUNT(*) FROM merchant_branches WHERE id = :id AND user_id = :merchantId")
-                .setParameter("id", branchId).setParameter("merchantId", merchantId).getSingleResult()).longValue();
-
-        if (branchCount == 0) {
+        // Verify branch exists via gRPC (tms-config is source of truth)
+        Map<String, Object> branch = grpcClient.getMerchantBranch(branchId, merchantId);
+        if (branch == null) {
             return null;
         }
 
