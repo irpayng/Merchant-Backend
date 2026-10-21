@@ -1143,9 +1143,26 @@ public class AuditLoggingFilter extends OncePerRequestFilter {
     }
 
     private String singularize(String word) {
+        if (word == null || word.isEmpty()) {
+            return word;
+        }
+        // Handle -ies -> -y (e.g., "categories" -> "category")
         if (word.endsWith("ies")) {
             return word.substring(0, word.length() - 3) + "y";
         }
+        // Handle -ches, -shes, -xes -> -ch, -sh, -x (e.g., "branches" -> "branch")
+        if (word.endsWith("ches") || word.endsWith("shes") || word.endsWith("xes")) {
+            return word.substring(0, word.length() - 2);
+        }
+        // Handle -es -> "" for other -es words (e.g., "boxes" -> "box")
+        if (word.endsWith("es") && word.length() > 2) {
+            char beforeEs = word.charAt(word.length() - 3);
+            // Only remove -es if preceded by s, x, z, ch, sh
+            if (beforeEs == 's' || beforeEs == 'x' || beforeEs == 'z') {
+                return word.substring(0, word.length() - 2);
+            }
+        }
+        // Handle regular -s -> "" (e.g., "terminals" -> "terminal")
         if (word.endsWith("s") && !word.endsWith("ss")) {
             return word.substring(0, word.length() - 1);
         }

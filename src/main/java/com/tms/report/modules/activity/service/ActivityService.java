@@ -261,21 +261,37 @@ public class ActivityService {
 
     /**
      * Extract the base action from action string that may contain entity reference.
-     * e.g., "Update terminal: 12345678" -> "Update terminal"
+     * e.g., "Update terminal: 12345678" -> "Update terminal" Also fixes common
+     * typos like "branche" -> "branch"
      */
     private String extractBaseAction(String action) {
         if (action == null)
             return null;
         int colonIdx = action.indexOf(':');
-        if (colonIdx > 0) {
-            return action.substring(0, colonIdx).trim();
+        String baseAction = colonIdx > 0 ? action.substring(0, colonIdx).trim() : action;
+
+        // Fix common typos in stored actions
+        baseAction = fixActionTypos(baseAction);
+
+        return baseAction;
+    }
+
+    /**
+     * Fix common typos in action strings. This handles legacy data that was stored
+     * with typos.
+     */
+    private String fixActionTypos(String action) {
+        if (action == null) {
+            return null;
         }
-        return action;
+        // Fix "branche" -> "branch" (singularize bug)
+        return action.replace("branche", "branch").replace("Branche", "Branch");
     }
 
     /**
      * Build description from action string. The action now includes entity context
      * from the filter, so we just need to format it nicely with the user name.
+     * Converts verbs to past tense for better readability.
      */
     private String buildDescription(String userName, String action, String path) {
         String user = userName != null ? userName : "User";
@@ -283,6 +299,9 @@ public class ActivityService {
         if (action == null || action.isBlank()) {
             return user + " performed an action";
         }
+
+        // Fix typos in the action string
+        action = fixActionTypos(action);
 
         // Handle special cases
         String lowerAction = action.toLowerCase();
@@ -300,14 +319,75 @@ public class ActivityService {
             // Action format: "Update terminal: 12345678"
             // Description: "Nelo Limited updated terminal 12345678"
             String[] parts = action.split(":", 2);
-            String baseAction = parts[0].trim().toLowerCase();
+            String baseAction = parts[0].trim();
             String entityRef = parts[1].trim();
 
-            return user + " " + baseAction + " " + entityRef;
+            // Convert base action to past tense
+            String pastTenseAction = convertToPastTense(baseAction);
+
+            return user + " " + pastTenseAction + " " + entityRef;
         }
 
-        // Fallback: just use the action
-        return user + " " + action.toLowerCase();
+        // Convert action to past tense
+        String pastTenseAction = convertToPastTense(action);
+
+        // Fallback: just use the past tense action
+        return user + " " + pastTenseAction;
+    }
+
+    /**
+     * Convert action verbs to past tense for description. "Create branch" ->
+     * "created branch" "Assign TID" -> "assigned TID"
+     */
+    private String convertToPastTense(String action) {
+        if (action == null || action.isEmpty()) {
+            return action;
+        }
+
+        String lowerAction = action.toLowerCase();
+
+        // Common action verb mappings to past tense
+        if (lowerAction.startsWith("assign ")) {
+            return "assigned " + action.substring(7);
+        }
+        if (lowerAction.startsWith("remove ")) {
+            return "removed " + action.substring(7);
+        }
+        if (lowerAction.startsWith("create ")) {
+            return "created " + action.substring(7);
+        }
+        if (lowerAction.startsWith("update ")) {
+            return "updated " + action.substring(7);
+        }
+        if (lowerAction.startsWith("delete ")) {
+            return "deleted " + action.substring(7);
+        }
+        if (lowerAction.startsWith("clear ")) {
+            return "cleared " + action.substring(6);
+        }
+        if (lowerAction.startsWith("lock ")) {
+            return "locked " + action.substring(5);
+        }
+        if (lowerAction.startsWith("unlock ")) {
+            return "unlocked " + action.substring(7);
+        }
+        if (lowerAction.startsWith("invite ")) {
+            return "invited " + action.substring(7);
+        }
+        if (lowerAction.startsWith("deactivate ")) {
+            return "deactivated " + action.substring(11);
+        }
+        if (lowerAction.startsWith("activate ")) {
+            return "activated " + action.substring(9);
+        }
+        if (lowerAction.startsWith("request ")) {
+            return "requested " + action.substring(8);
+        }
+        if (lowerAction.startsWith("mark ")) {
+            return "marked " + action.substring(5);
+        }
+
+        return action.toLowerCase();
     }
 
     private String capitalize(String s) {
