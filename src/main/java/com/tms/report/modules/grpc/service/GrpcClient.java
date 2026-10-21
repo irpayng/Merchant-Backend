@@ -18,8 +18,10 @@ import com.tms.report.grpc.config.DeleteTidRequest;
 import com.tms.report.grpc.config.EnrollInstantSettlementRequest;
 import com.tms.report.grpc.config.GetAllProviderBalancesRequest;
 import com.tms.report.grpc.config.GetConfigValueRequest;
+import com.tms.report.grpc.config.GetMerchantSettlementTypeRequest;
 import com.tms.report.grpc.config.GetProviderBalanceRequest;
 import com.tms.report.grpc.config.ImportDataPlansRequest;
+import com.tms.report.grpc.config.ListMerchantSettlementAccountsRequest;
 import com.tms.report.grpc.config.MapTerminalRequest;
 import com.tms.report.grpc.config.ReactivateInstantSettlementRequest;
 import com.tms.report.grpc.config.RefreshProviderBalanceRequest;
@@ -454,6 +456,56 @@ public class GrpcClient {
     }
 
     /**
+     * Get a user preference by key from tms-user.
+     *
+     * @param userId
+     *            the user's id in tms-user
+     * @param key
+     *            the preference key to look up
+     * @return map with found (boolean), key, and value (if found)
+     */
+    public Map<String, Object> getUserPreference(long userId, String key) {
+        logRequest("GetUserPreference", key);
+        try {
+            var resp = userStub.getUserPreference(com.tms.report.grpc.user.GetUserPreferenceRequest.newBuilder()
+                    .setUserId(userId).setKey(key).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("found", resp.getFound());
+            result.put("key", resp.getKey());
+            result.put("value", resp.getValue());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetUserPreference", key, e);
+        }
+    }
+
+    /**
+     * Set a user preference in tms-user.
+     *
+     * @param userId
+     *            the user's id in tms-user
+     * @param key
+     *            the preference key
+     * @param value
+     *            the preference value
+     * @return map with success, key, and value
+     */
+    public Map<String, Object> setUserPreference(long userId, String key, String value) {
+        logRequest("SetUserPreference", key);
+        try {
+            var resp = userStub.setUserPreference(com.tms.report.grpc.user.SetUserPreferenceRequest.newBuilder()
+                    .setUserId(userId).setKey(key).setValue(value).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("key", resp.getKey());
+            result.put("value", resp.getValue());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("SetUserPreference", key, e);
+        }
+    }
+
+    /**
      * Find a user by email address. Returns exists=true and user_id if found.
      *
      * @param email
@@ -601,6 +653,247 @@ public class GrpcClient {
         } catch (StatusRuntimeException e) {
             throw grpcError("UnmapTerminal", ref, e);
         }
+    }
+
+    /**
+     * Ensure a terminal has a TID mapping for its assigned branch. Called after
+     * assigning a terminal to a branch. If the terminal already has a TID mapping,
+     * this is a no-op. If not, creates one linking the terminal to a branch TID.
+     */
+    public Map<String, Object> ensureTidMappingForBranch(long terminalId, long branchId) {
+        String ref = Ulid.generate();
+        logRequest("EnsureTidMappingForBranch", ref);
+        try {
+            var resp = configStub.ensureTidMappingForBranch(com.tms.report.grpc.config.EnsureTidMappingForBranchRequest
+                    .newBuilder().setTerminalId(terminalId).setBranchId(branchId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("EnsureTidMappingForBranch", ref, e);
+        }
+    }
+
+    /**
+     * Assign a terminal to a merchant branch. Updates the authoritative
+     * terminals.branch_id in config-service, which then replicates to
+     * tms_report_java.
+     */
+    public Map<String, Object> assignTerminalToBranch(Long terminalId, Long branchId) {
+        String ref = Ulid.generate();
+        logRequest("AssignTerminalToBranch", ref);
+        try {
+            var resp = configStub.assignTerminalToBranch(com.tms.report.grpc.config.AssignTerminalToBranchRequest
+                    .newBuilder().setTerminalId(terminalId).setBranchId(branchId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("AssignTerminalToBranch", ref, e);
+        }
+    }
+
+    /**
+     * Unassign a terminal from its branch (sets branch_id to NULL). Updates the
+     * authoritative terminals.branch_id in config-service.
+     */
+    public Map<String, Object> unassignTerminalFromBranch(Long terminalId) {
+        String ref = Ulid.generate();
+        logRequest("UnassignTerminalFromBranch", ref);
+        try {
+            var resp = configStub
+                    .unassignTerminalFromBranch(com.tms.report.grpc.config.UnassignTerminalFromBranchRequest
+                            .newBuilder().setTerminalId(terminalId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("UnassignTerminalFromBranch", ref, e);
+        }
+    }
+
+    // ── TID branch assignment → config-service ──
+
+    /**
+     * Assign a TID to a branch. Updates tids.branch_id in the authoritative
+     * config-service database, which then replicates to the merchant database.
+     */
+    public Map<String, Object> assignTidToBranch(Long tidId, Long branchId) {
+        String ref = Ulid.generate();
+        logRequest("AssignTidToBranch", ref);
+        try {
+            var resp = configStub.assignTidToBranch(com.tms.report.grpc.config.AssignTidToBranchRequest.newBuilder()
+                    .setTidId(tidId).setBranchId(branchId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("AssignTidToBranch", ref, e);
+        }
+    }
+
+    /**
+     * Unassign a TID from a specific branch. Removes the entry from the branch_tids
+     * join table in config-service. The TID may still be assigned to other
+     * branches.
+     */
+    public Map<String, Object> unassignTidFromBranch(Long tidId, Long branchId) {
+        String ref = Ulid.generate();
+        logRequest("UnassignTidFromBranch", ref);
+        try {
+            var resp = configStub.unassignTidFromBranch(com.tms.report.grpc.config.UnassignTidFromBranchRequest
+                    .newBuilder().setTidId(tidId).setBranchId(branchId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("UnassignTidFromBranch", ref, e);
+        }
+    }
+
+    // ── Merchant Branch Management ──────────────────────────────────────────────
+
+    /**
+     * List all branches for a merchant.
+     */
+    public List<Map<String, Object>> listMerchantBranches(long userId, boolean activeOnly) {
+        String ref = Ulid.generate();
+        logRequest("ListMerchantBranches", ref);
+        try {
+            var resp = configStub.listMerchantBranches(com.tms.report.grpc.config.ListMerchantBranchesRequest
+                    .newBuilder().setUserId(userId).setActiveOnly(activeOnly).build());
+            List<Map<String, Object>> branches = new java.util.ArrayList<>();
+            for (var branch : resp.getBranchesList()) {
+                branches.add(branchToMap(branch));
+            }
+            return branches;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("ListMerchantBranches", ref, e);
+        }
+    }
+
+    /**
+     * Get a single branch by ID.
+     */
+    public Map<String, Object> getMerchantBranch(long id, long userId) {
+        String ref = Ulid.generate();
+        logRequest("GetMerchantBranch", ref);
+        try {
+            var resp = configStub.getMerchantBranch(com.tms.report.grpc.config.GetMerchantBranchRequest.newBuilder()
+                    .setId(id).setUserId(userId).build());
+            if (resp.getFound()) {
+                return branchToMap(resp.getBranch());
+            }
+            return null;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetMerchantBranch", ref, e);
+        }
+    }
+
+    /**
+     * Create a new branch for a merchant.
+     */
+    public Map<String, Object> createMerchantBranch(Map<String, Object> data) {
+        String ref = Ulid.generate();
+        logRequest("CreateMerchantBranch", ref);
+        try {
+            var builder = com.tms.report.grpc.config.CreateMerchantBranchRequest.newBuilder()
+                    .setUserId(longVal(data, "user_id")).setName(str(data, "name")).setCode(str(data, "code"));
+            if (data.containsKey("address"))
+                builder.setAddress(str(data, "address"));
+            if (data.containsKey("state_code"))
+                builder.setStateCode(str(data, "state_code"));
+            if (data.containsKey("lga_code"))
+                builder.setLgaCode(str(data, "lga_code"));
+            if (data.containsKey("phone_number"))
+                builder.setPhoneNumber(str(data, "phone_number"));
+            if (data.containsKey("email"))
+                builder.setEmail(str(data, "email"));
+            if (data.containsKey("is_primary"))
+                builder.setIsPrimary(Boolean.TRUE.equals(data.get("is_primary")));
+            var resp = configStub.createMerchantBranch(builder.build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("CreateMerchantBranch", ref, e);
+        }
+    }
+
+    /**
+     * Update an existing branch.
+     */
+    public Map<String, Object> updateMerchantBranch(long id, long userId, Map<String, Object> data) {
+        String ref = Ulid.generate();
+        logRequest("UpdateMerchantBranch", ref);
+        try {
+            var builder = com.tms.report.grpc.config.UpdateMerchantBranchRequest.newBuilder().setId(id)
+                    .setUserId(userId);
+            if (data.containsKey("name"))
+                builder.setName(str(data, "name"));
+            if (data.containsKey("address"))
+                builder.setAddress(str(data, "address"));
+            if (data.containsKey("state_code"))
+                builder.setStateCode(str(data, "state_code"));
+            if (data.containsKey("lga_code"))
+                builder.setLgaCode(str(data, "lga_code"));
+            if (data.containsKey("phone_number"))
+                builder.setPhoneNumber(str(data, "phone_number"));
+            if (data.containsKey("email"))
+                builder.setEmail(str(data, "email"));
+            if (data.containsKey("status"))
+                builder.setStatus(str(data, "status"));
+            if (data.containsKey("settlement_account_id")) {
+                Object accountId = data.get("settlement_account_id");
+                if (accountId != null) {
+                    builder.setSettlementAccountId(((Number) accountId).longValue());
+                }
+            }
+            if (Boolean.TRUE.equals(data.get("clear_settlement_account"))) {
+                builder.setClearSettlementAccount(true);
+            }
+            var resp = configStub.updateMerchantBranch(builder.build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("UpdateMerchantBranch", ref, e);
+        }
+    }
+
+    /**
+     * Set a branch as the primary for a merchant.
+     */
+    public Map<String, Object> setPrimaryMerchantBranch(long id, long userId) {
+        String ref = Ulid.generate();
+        logRequest("SetPrimaryMerchantBranch", ref);
+        try {
+            var resp = configStub.setPrimaryMerchantBranch(com.tms.report.grpc.config.SetPrimaryMerchantBranchRequest
+                    .newBuilder().setId(id).setUserId(userId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("SetPrimaryMerchantBranch", ref, e);
+        }
+    }
+
+    /**
+     * Delete a branch.
+     */
+    public Map<String, Object> deleteMerchantBranch(long id, long userId) {
+        String ref = Ulid.generate();
+        logRequest("DeleteMerchantBranch", ref);
+        try {
+            var resp = configStub.deleteMerchantBranch(com.tms.report.grpc.config.DeleteMerchantBranchRequest
+                    .newBuilder().setId(id).setUserId(userId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("DeleteMerchantBranch", ref, e);
+        }
+    }
+
+    private Map<String, Object> branchToMap(com.tms.report.grpc.config.MerchantBranch branch) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("id", branch.getId());
+        m.put("user_id", branch.getUserId());
+        m.put("name", branch.getName());
+        m.put("code", branch.getCode());
+        m.put("address", branch.getAddress());
+        m.put("state_code", branch.getStateCode());
+        m.put("lga_code", branch.getLgaCode());
+        m.put("phone_number", branch.getPhoneNumber());
+        m.put("email", branch.getEmail());
+        m.put("status", branch.getStatus());
+        m.put("is_primary", branch.getIsPrimary());
+        m.put("created_at", branch.getCreatedAt());
+        m.put("updated_at", branch.getUpdatedAt());
+        m.put("settlement_account_id", branch.getSettlementAccountId());
+        return m;
     }
 
     // ── Configuration commands → config-service ──
@@ -860,6 +1153,194 @@ public class GrpcClient {
             return toMap(resp.getSuccess(), ref, resp.getMessage(), null);
         } catch (StatusRuntimeException e) {
             throw grpcError("CreateSettlement", ref, e);
+        }
+    }
+
+    /**
+     * Get settlement history for a reference or merchant.
+     */
+    public Map<String, Object> getSettlementHistory(String reference, String merchantId, String startDate,
+            String endDate, int limit) {
+        String ref = Ulid.generate();
+        logRequest("GetSettlementHistory", ref);
+        try {
+            var resp = settlementStub.getSettlementHistory(com.tms.report.grpc.settlement.GetSettlementHistoryRequest
+                    .newBuilder().setReference(reference != null ? reference : "")
+                    .setMerchantId(merchantId != null ? merchantId : "")
+                    .setStartDate(startDate != null ? startDate : "").setEndDate(endDate != null ? endDate : "")
+                    .setLimit(limit > 0 ? limit : 100).build());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("reference", ref);
+            result.put("total_count", resp.getTotalCount());
+            result.put("history", resp.getHistoryList().stream().map(h -> {
+                Map<String, Object> hm = new HashMap<>();
+                hm.put("id", h.getId());
+                hm.put("settlement_reference", h.getSettlementReference());
+                hm.put("merchant_id", h.getMerchantId());
+                hm.put("event_type", h.getEventType());
+                hm.put("previous_status", h.getPreviousStatus());
+                hm.put("new_status", h.getNewStatus());
+                hm.put("amount", h.getAmount());
+                hm.put("net_amount", h.getNetAmount());
+                hm.put("settlement_type", h.getSettlementType());
+                hm.put("actor", h.getActor());
+                hm.put("actor_type", h.getActorType());
+                hm.put("notes", h.getNotes());
+                hm.put("related_reference", h.getRelatedReference());
+                hm.put("created_at", h.getCreatedAt());
+                return hm;
+            }).toList());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetSettlementHistory", ref, e);
+        }
+    }
+
+    /**
+     * Get settlements by resolution status.
+     */
+    public Map<String, Object> getSettlementsByResolutionStatus(String merchantId, String resolutionStatus,
+            String startDate, String endDate, int limit) {
+        String ref = Ulid.generate();
+        logRequest("GetSettlementsByResolutionStatus", ref);
+        try {
+            var resp = settlementStub.getSettlementsByResolutionStatus(
+                    com.tms.report.grpc.settlement.GetByResolutionStatusRequest.newBuilder().setMerchantId(merchantId)
+                            .setResolutionStatus(resolutionStatus).setStartDate(startDate != null ? startDate : "")
+                            .setEndDate(endDate != null ? endDate : "").setLimit(limit > 0 ? limit : 100).build());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("reference", ref);
+            result.put("settlements", resp.getSettlementsList().stream().map(s -> {
+                Map<String, Object> sm = new HashMap<>();
+                sm.put("reference", s.getReference());
+                sm.put("terminal_id", s.getTerminalId());
+                sm.put("merchant_id", s.getMerchantId());
+                sm.put("amount", s.getAmount());
+                sm.put("acquirer_fee", s.getAcquirerFee());
+                sm.put("status", s.getStatus());
+                sm.put("transaction_time", s.getTransactionTime());
+                sm.put("card_scheme", s.getCardScheme());
+                sm.put("bank", s.getBank());
+                sm.put("resolution_status", s.getResolutionStatus());
+                sm.put("settlement_type", s.getSettlementType());
+                sm.put("scheduled_resolution_date", s.getScheduledResolutionDate());
+                sm.put("resolved_at", s.getResolvedAt());
+                sm.put("paid_at", s.getPaidAt());
+                sm.put("net_amount", s.getNetAmount());
+                sm.put("payout_reference", s.getPayoutReference());
+                return sm;
+            }).toList());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetSettlementsByResolutionStatus", ref, e);
+        }
+    }
+
+    /**
+     * Get settlements (actual transactions) for a merchant. This returns the
+     * settled transactions, not the audit history. Use this for Settlement History
+     * UI.
+     */
+    public Map<String, Object> getSettlements(String reference, String merchantId, String startDate, String endDate,
+            int limit) {
+        String ref = Ulid.generate();
+        logRequest("GetSettlements", ref);
+        try {
+            var resp = settlementStub.getSettlements(com.tms.report.grpc.settlement.GetSettlementsRequest.newBuilder()
+                    .setReference(reference != null ? reference : "")
+                    .setMerchantId(merchantId != null ? merchantId : "")
+                    .setStartDate(startDate != null ? startDate : "").setEndDate(endDate != null ? endDate : "")
+                    .setLimit(limit > 0 ? limit : 100).build());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("reference", ref);
+            result.put("settlements", resp.getSettlementsList().stream().map(s -> {
+                Map<String, Object> sm = new HashMap<>();
+                sm.put("reference", s.getReference());
+                sm.put("terminal_id", s.getTerminalId());
+                sm.put("merchant_id", s.getMerchantId());
+                sm.put("amount", s.getAmount());
+                sm.put("acquirer_fee", s.getAcquirerFee());
+                sm.put("status", s.getStatus());
+                sm.put("transaction_time", s.getTransactionTime());
+                sm.put("card_scheme", s.getCardScheme());
+                sm.put("bank", s.getBank());
+                sm.put("resolution_status", s.getResolutionStatus());
+                sm.put("settlement_type", s.getSettlementType());
+                sm.put("scheduled_resolution_date", s.getScheduledResolutionDate());
+                sm.put("resolved_at", s.getResolvedAt());
+                sm.put("paid_at", s.getPaidAt());
+                sm.put("net_amount", s.getNetAmount());
+                sm.put("payout_reference", s.getPayoutReference());
+                return sm;
+            }).toList());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetSettlements", ref, e);
+        }
+    }
+
+    /**
+     * Get branch settlements for instant settlement merchants. These are the actual
+     * payouts made to branch settlement accounts.
+     */
+    public Map<String, Object> getBranchSettlements(long userId, Long branchId, String startDate, String endDate,
+            String status, int limit, int offset) {
+        String ref = Ulid.generate();
+        log.info("GetBranchSettlements: userId={} branchId={} startDate={} endDate={} status={} limit={} offset={}",
+                userId, branchId, startDate, endDate, status, limit, offset);
+        try {
+            var builder = com.tms.report.grpc.settlement.GetBranchSettlementsRequest.newBuilder().setUserId(userId)
+                    .setStartDate(startDate != null ? startDate : "").setEndDate(endDate != null ? endDate : "")
+                    .setLimit(limit > 0 ? limit : 100).setOffset(offset);
+            if (branchId != null && branchId > 0) {
+                builder.setBranchId(branchId);
+            }
+            if (status != null && !status.isEmpty()) {
+                builder.setStatus(status);
+            }
+
+            var resp = settlementStub.getBranchSettlements(builder.build());
+            log.info("GetBranchSettlements response: totalCount={} totalAmount={} settlementsCount={}",
+                    resp.getTotalCount(), resp.getTotalAmount(), resp.getSettlementsCount());
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", true);
+            result.put("reference", ref);
+            result.put("total_count", resp.getTotalCount());
+            result.put("total_amount", resp.getTotalAmount());
+            result.put("settlements", resp.getSettlementsList().stream().map(s -> {
+                Map<String, Object> sm = new HashMap<>();
+                sm.put("id", s.getId());
+                sm.put("reference", s.getReference());
+                sm.put("user_id", s.getUserId());
+                sm.put("branch_id", s.getBranchId());
+                sm.put("branch_name", s.getBranchName());
+                sm.put("settlement_account_id", s.getSettlementAccountId());
+                sm.put("account_number", s.getAccountNumber());
+                sm.put("bank_code", s.getBankCode());
+                sm.put("bank_name", s.getBankName());
+                sm.put("account_name", s.getAccountName());
+                sm.put("amount", s.getAmount());
+                sm.put("transaction_count", s.getTransactionCount());
+                sm.put("status", s.getStatus());
+                sm.put("bank_reference", s.getBankReference());
+                sm.put("failure_reason", s.getFailureReason());
+                sm.put("period_start", s.getPeriodStart());
+                sm.put("period_end", s.getPeriodEnd());
+                sm.put("created_at", s.getCreatedAt());
+                sm.put("completed_at", s.getCompletedAt());
+                sm.put("transaction_references", s.getTransactionReferencesList());
+                return sm;
+            }).toList());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetBranchSettlements", ref, e);
         }
     }
 
@@ -1587,6 +2068,53 @@ public class GrpcClient {
             return m;
         } catch (StatusRuntimeException e) {
             throw grpcError("CheckInstantSettlement", ref, e);
+        }
+    }
+
+    /**
+     * List active settlement accounts for a merchant. Used by the branch/TID
+     * settlement assignment UI.
+     */
+    public java.util.List<Map<String, Object>> listMerchantSettlementAccounts(long userId) {
+        String ref = Ulid.generate();
+        logRequest("ListMerchantSettlementAccounts", ref);
+        try {
+            var resp = configStub.listMerchantSettlementAccounts(
+                    ListMerchantSettlementAccountsRequest.newBuilder().setUserId(userId).setActiveOnly(true).build());
+            java.util.List<Map<String, Object>> result = new java.util.ArrayList<>();
+            for (var acct : resp.getAccountsList()) {
+                Map<String, Object> m = new java.util.LinkedHashMap<>();
+                m.put("id", acct.getId());
+                m.put("account_number", acct.getAccountNumber());
+                m.put("account_name", acct.getAccountName());
+                m.put("bank_code", acct.getBankCode());
+                m.put("label", acct.getLabel());
+                m.put("is_default", acct.getIsDefault());
+                m.put("status", acct.getStatus());
+                result.add(m);
+            }
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("ListMerchantSettlementAccounts", ref, e);
+        }
+    }
+
+    /**
+     * Get a merchant's current settlement type from tms-config. Returns found=true
+     * with settlement_type if a record exists, found=false otherwise.
+     */
+    public Map<String, Object> getMerchantSettlementType(long userId) {
+        String ref = Ulid.generate();
+        logRequest("GetMerchantSettlementType", ref);
+        try {
+            var resp = configStub
+                    .getMerchantSettlementType(GetMerchantSettlementTypeRequest.newBuilder().setUserId(userId).build());
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("found", resp.getFound());
+            m.put("settlement_type", resp.getSettlementType());
+            return m;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("GetMerchantSettlementType", ref, e);
         }
     }
 
@@ -2400,6 +2928,19 @@ public class GrpcClient {
         if (v instanceof String s)
             return Integer.parseInt(s);
         return 0;
+    }
+
+    private long longVal(Map<String, Object> data, String key) {
+        Object val = data.get(key);
+        if (val == null)
+            return 0L;
+        if (val instanceof Number n)
+            return n.longValue();
+        try {
+            return Long.parseLong(val.toString().trim());
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
 
     @SuppressWarnings("unchecked")

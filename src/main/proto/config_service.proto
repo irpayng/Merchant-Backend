@@ -46,6 +46,35 @@ service ConfigService {
   rpc ReactivateInstantSettlement (ReactivateInstantSettlementRequest) returns (ConfigCommandResponse);
   rpc UpdateSettlementWindow (UpdateSettlementWindowRequest) returns (ConfigCommandResponse);
   rpc CheckInstantSettlement (CheckInstantSettlementRequest) returns (CheckInstantSettlementResponse);
+  // Merchant Settlement Account RPCs (multi-branch structure)
+  rpc ListMerchantSettlementAccounts (ListMerchantSettlementAccountsRequest) returns (ListMerchantSettlementAccountsResponse);
+  // Get a merchant's configured settlement type (INSTANT, HOURLY, T+1, T+2, T+3)
+  rpc GetMerchantSettlementType (GetMerchantSettlementTypeRequest) returns (GetMerchantSettlementTypeResponse);
+  // Ensure a terminal has a TID mapping for its assigned branch. Called after
+  // assigning a terminal to a branch. If the terminal already has a TID mapping,
+  // this is a no-op. If not, creates one linking the terminal to a branch TID.
+  rpc EnsureTidMappingForBranch (EnsureTidMappingForBranchRequest) returns (ConfigCommandResponse);
+  // Terminal branch assignment RPCs (multi-branch merchant structure).
+  // Updates terminals.branch_id in the authoritative config_service DB.
+  rpc AssignTerminalToBranch (AssignTerminalToBranchRequest) returns (ConfigCommandResponse);
+  rpc UnassignTerminalFromBranch (UnassignTerminalFromBranchRequest) returns (ConfigCommandResponse);
+  // TID branch assignment RPCs (multi-branch merchant structure).
+  // Updates tids.branch_id in the authoritative config_service DB.
+  rpc AssignTidToBranch (AssignTidToBranchRequest) returns (ConfigCommandResponse);
+  rpc UnassignTidFromBranch (UnassignTidFromBranchRequest) returns (ConfigCommandResponse);
+  // ── Merchant Branch Management RPCs ──
+  // List all branches for a merchant
+  rpc ListMerchantBranches (ListMerchantBranchesRequest) returns (ListMerchantBranchesResponse);
+  // Get a single branch by ID
+  rpc GetMerchantBranch (GetMerchantBranchRequest) returns (GetMerchantBranchResponse);
+  // Create a new branch
+  rpc CreateMerchantBranch (CreateMerchantBranchRequest) returns (ConfigCommandResponse);
+  // Update an existing branch
+  rpc UpdateMerchantBranch (UpdateMerchantBranchRequest) returns (ConfigCommandResponse);
+  // Set a branch as the primary for the merchant
+  rpc SetPrimaryMerchantBranch (SetPrimaryMerchantBranchRequest) returns (ConfigCommandResponse);
+  // Delete a branch
+  rpc DeleteMerchantBranch (DeleteMerchantBranchRequest) returns (ConfigCommandResponse);
 }
 
 message ValidateTransactionRequest {
@@ -362,3 +391,146 @@ message ReactivateInstantSettlementRequest {
   int64 user_id = 1;
   string notes = 2;
 }
+
+
+// ── Merchant Settlement Account Management messages ──
+// CRUD operations for merchant settlement accounts (multi-branch structure).
+
+message ListMerchantSettlementAccountsRequest {
+  int64 user_id = 1;
+  bool active_only = 2;  // When true, only return accounts with status='active'
+}
+
+message MerchantSettlementAccount {
+  int64 id = 1;
+  int64 user_id = 2;
+  string account_number = 3;
+  string bank_code = 4;
+  string account_name = 5;
+  string label = 6;
+  bool is_default = 7;
+  string status = 8;
+  string created_at = 9;
+  string updated_at = 10;
+}
+
+message ListMerchantSettlementAccountsResponse {
+  repeated MerchantSettlementAccount accounts = 1;
+}
+
+// ── Ensure TID mapping for branch-assigned terminal ──
+
+message EnsureTidMappingForBranchRequest {
+  int64 terminal_id = 1;
+  int64 branch_id = 2;
+}
+
+// ── Terminal branch assignment messages ──
+
+message AssignTerminalToBranchRequest {
+  int64 terminal_id = 1;
+  int64 branch_id = 2;
+}
+
+message UnassignTerminalFromBranchRequest {
+  int64 terminal_id = 1;
+}
+
+// ── TID branch assignment messages ──
+
+message AssignTidToBranchRequest {
+  int64 tid_id = 1;
+  int64 branch_id = 2;
+}
+
+message UnassignTidFromBranchRequest {
+  int64 tid_id = 1;
+  int64 branch_id = 2;
+}
+
+// ── Merchant Branch Management messages ──
+// CRUD operations for merchant branches (multi-branch structure).
+
+message ListMerchantBranchesRequest {
+  int64 user_id = 1;
+  bool active_only = 2;  // When true, only return branches with status='active'
+}
+
+message MerchantBranch {
+  int64 id = 1;
+  int64 user_id = 2;
+  string name = 3;
+  string code = 4;
+  string address = 5;
+  string state_code = 6;
+  string lga_code = 7;
+  string phone_number = 8;
+  string email = 9;
+  string status = 10;
+  bool is_primary = 11;
+  string created_at = 12;
+  string updated_at = 13;
+  int64 settlement_account_id = 14;  // 0 if no settlement account configured
+}
+
+message ListMerchantBranchesResponse {
+  repeated MerchantBranch branches = 1;
+}
+
+message GetMerchantBranchRequest {
+  int64 id = 1;
+  int64 user_id = 2;  // For ownership validation
+}
+
+message GetMerchantBranchResponse {
+  bool found = 1;
+  MerchantBranch branch = 2;
+}
+
+message CreateMerchantBranchRequest {
+  int64 user_id = 1;
+  string name = 2;
+  string code = 3;
+  string address = 4;
+  string state_code = 5;
+  string lga_code = 6;
+  string phone_number = 7;
+  string email = 8;
+  bool is_primary = 9;
+}
+
+message UpdateMerchantBranchRequest {
+  int64 id = 1;
+  int64 user_id = 2;  // For ownership validation
+  string name = 3;
+  string address = 4;
+  string state_code = 5;
+  string lga_code = 6;
+  string phone_number = 7;
+  string email = 8;
+  string status = 9;  // active, suspended, closed
+  int64 settlement_account_id = 10;  // 0 to clear
+  bool clear_settlement_account = 11;  // Set true to explicitly clear the account
+}
+
+message SetPrimaryMerchantBranchRequest {
+  int64 id = 1;
+  int64 user_id = 2;  // For ownership validation
+}
+
+message DeleteMerchantBranchRequest {
+  int64 id = 1;
+  int64 user_id = 2;  // For ownership validation
+}
+
+// ── Merchant Settlement Type messages ──
+
+message GetMerchantSettlementTypeRequest {
+  int64 user_id = 1;
+}
+
+message GetMerchantSettlementTypeResponse {
+  bool found = 1;
+  string settlement_type = 2;
+}
+

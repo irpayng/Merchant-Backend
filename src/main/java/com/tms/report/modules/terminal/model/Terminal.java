@@ -25,6 +25,10 @@ public class Terminal {
     @JsonProperty("user_id")
     private Long userId;
 
+    @Column(name = "branch_id")
+    @JsonProperty("branch_id")
+    private Long branchId;
+
     private String serial;
     private String os;
     private String model;

@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Pre-Push Build and Lint Checks",
+      "trigger": "PreToolUse",
+      "description": "Enforces that build/compilation and linting checks pass before pushing to any branch. Java projects run mvn spotless:check and mvn compile. Next.js projects run npm run lint and npm run build.",
+      "matcher": "execute_bash",
+      "action": {
+        "type": "agent",
+        "prompt": "**MANDATORY PRE-PUSH VERIFICATION**\n\nIf this command contains `git push`, you MUST run the appropriate verification checks BEFORE executing the push:\n\n**For Java/Maven projects (has pom.xml):**\n1. Run `mvn spotless:apply -B` to fix formatting\n2. Run `mvn spotless:check -B` to verify formatting\n3. Run `mvn compile -B -DskipTests` to verify compilation\n4. If ANY of these fail, DO NOT push. Fix the issues first.\n\n**For Next.js/TypeScript projects (has package.json with next):**\n1. Run `npm run lint` to check for linting errors\n2. Run `npm run build` to verify the build passes\n3. If ANY of these fail, DO NOT push. Fix the issues first.\n\n**Detection:**\n- Check if the target directory contains `pom.xml` → Java project\n- Check if the target directory contains `package.json` → Node.js project (check for Next.js)\n\n**BLOCKING RULE:** If verification fails, you MUST:\n1. Report the failure to the user\n2. NOT proceed with the git push\n3. Offer to fix the issues\n\nThis applies to ALL git push commands regardless of branch name."
+      }
+    }
+  ]
+}

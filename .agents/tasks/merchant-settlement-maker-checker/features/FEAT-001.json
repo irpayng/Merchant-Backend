@@ -1,0 +1,24 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Schema changes to super-merchant: Add merchant_initiated, merchant_name, merchant_email columns to pending_approvals table to support merchant-initiated requests (where maker_id is null).",
+  "status": "completed",
+  "steps": [
+    "1. Modify /Users/mathew/super-merchant/src/main/java/com/tms/report/modules/checker/model/PendingApproval.java: (a) Add 'merchant_initiated' Boolean field with @Column(name = \"merchant_initiated\") and @Builder.Default private Boolean merchantInitiated = false; (b) Add 'merchant_name' String field with @Column(name = \"merchant_name\", length = 255); (c) Add 'merchant_email' String field with @Column(name = \"merchant_email\", length = 255); (d) Change maker @JoinColumn nullable to true: @JoinColumn(name = \"maker_id\", nullable = true). Add @JsonProperty annotations for snake_case JSON output.",
+    "2. Update /Users/mathew/super-merchant/src/main/resources/db/admin-schema.sql: Add ALTER TABLE statements after the existing pending_approvals column additions (around line 195) to add the three new columns: ALTER TABLE supermerchant.pending_approvals ADD COLUMN IF NOT EXISTS merchant_initiated BOOLEAN DEFAULT FALSE; ALTER TABLE supermerchant.pending_approvals ADD COLUMN IF NOT EXISTS merchant_name VARCHAR(255); ALTER TABLE supermerchant.pending_approvals ADD COLUMN IF NOT EXISTS merchant_email VARCHAR(255);",
+    "3. Update /Users/mathew/super-merchant/src/main/java/com/tms/report/modules/approval/dto/SettlementConfigApprovalDto.java: Add three new fields with @JsonProperty: (a) @JsonProperty(\"merchant_initiated\") private Boolean merchantInitiated; (b) @JsonProperty(\"merchant_name_from_request\") private String merchantNameFromRequest; (c) @JsonProperty(\"merchant_email_from_request\") private String merchantEmailFromRequest;",
+    "4. Modify /Users/mathew/super-merchant/src/main/java/com/tms/report/modules/checker/service/ApprovalService.java toSettlementDto() method: When building the DTO, if approval.getMerchantInitiated() == true, use approval.getMerchantName() and approval.getMerchantEmail() for makerName/makerEmail instead of approval.getMaker().getName()/getEmail(). Add the merchantInitiated, merchantNameFromRequest, and merchantEmailFromRequest fields to the builder. Handle null maker gracefully (maker can be null for merchant-initiated requests)."
+  ],
+  "acceptance_criteria": [
+    "PendingApproval entity compiles with new nullable maker_id and three new fields (merchant_initiated, merchant_name, merchant_email)",
+    "admin-schema.sql contains idempotent ALTER TABLE statements for the three new columns",
+    "SettlementConfigApprovalDto has the three new fields",
+    "ApprovalService.toSettlementDto() returns merchant_name/merchant_email as makerName/makerEmail when merchant_initiated=true",
+    "super-merchant project compiles: mvn compile -DskipTests passes"
+  ],
+  "verification": [
+    "Run `cd /Users/mathew/super-merchant && mvn spotless:apply -B && mvn spotless:check -B && mvn compile -B -DskipTests` to verify super-merchant compiles"
+  ],
+  "blocked_reason": null,
+  "findings": "All schema changes applied successfully. The PendingApproval entity now supports merchant-initiated requests with nullable maker_id and three new fields (merchant_initiated, merchant_name, merchant_email). The toSettlementDto() method populates makerName/makerEmail from the merchant fields when merchantInitiated=true. Next features (FEAT-002) can now use these fields when creating approval requests from Merchant-Backend."
+}

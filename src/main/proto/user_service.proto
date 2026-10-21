@@ -73,6 +73,10 @@ service UserService {
   // Set a user's password in tms-user. Used by password reset and activation
   // flows to keep credentials in sync between Merchant-Backend and tms-user.
   rpc SetUserPassword (SetUserPasswordRequest) returns (SetUserPasswordResponse);
+
+  // ── User preferences (called by Merchant-Backend for merchant settings) ──
+  rpc SetUserPreference (SetUserPreferenceRequest) returns (UserPreferenceResponse);
+  rpc GetUserPreference (GetUserPreferenceRequest) returns (UserPreferenceResponse);
 }
 
 message UnfreezeUserRequest {
@@ -385,4 +389,23 @@ message SetUserPasswordResponse {
   // "ok", "not_found", "invalid_password", "protected_account", or error
   string reason = 2;
   string message = 3;
+}
+
+// ── User preferences ──
+
+message SetUserPreferenceRequest {
+  int64 user_id = 1;
+  string key = 2;
+  string value = 3;
+}
+
+message GetUserPreferenceRequest {
+  int64 user_id = 1;
+  string key = 2;
+}
+
+message UserPreferenceResponse {
+  bool found = 1;
+  string key = 2;
+  string value = 3;
 }

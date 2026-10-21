@@ -1,0 +1,44 @@
+{
+  "project_type": "Spring Boot Java backend + Next.js 15 TypeScript frontend (two separate repos)",
+  "language": "Java 17 (backend), TypeScript (frontend)",
+  "build_system": "Maven with spotless (backend), npm with Next.js (frontend)",
+  "test_framework": "JUnit (backend), ESLint (frontend) - no test coverage required for this task",
+  "build_command": "mvn compile -B -DskipTests (backend), npm run build (frontend)",
+  "test_command": "mvn spotless:apply -B && mvn spotless:check -B (backend), npm run lint (frontend)",
+  "verification_instructions": "Backend: run mvn spotless:apply -B && mvn spotless:check -B in /Users/mathew/Merchant-Backend. Frontend: run npm run lint in /Users/mathew/merchant-fe",
+  "snapshot_or_generated_files": null,
+  "environment_constraints": null,
+  "contribution_requirements": "Backend must pass spotless formatting checks. Frontend must pass linting. No AGENTS.md or CONTRIBUTING.md exists.",
+  "key_patterns": {
+    "backend_grpc_client": "GrpcClient.java uses configStub for tms-config calls; pattern: logRequest → try configStub.method → toMap for success / catch grpcError",
+    "backend_controller": "Controllers use @RequiredArgsConstructor, return ApiResponse<T>, inject services via constructor",
+    "backend_dto": "DTOs use Lombok @Data @Builder, Jackson @JsonProperty for snake_case",
+    "frontend_component": "Uses shadcn/ui components (Card, CardHeader, CardContent, CardTitle), cn() for class merging, apiRequest from @/lib/api",
+    "frontend_layout": "InfoRow component in super-merchant uses flex-col (label on top, value below) instead of side-by-side",
+    "frontend_state": "useState/useCallback pattern, apiRequest with suppressToast: true for fetches"
+  },
+  "relevant_files": {
+    "backend_modify": [
+      "/Users/mathew/Merchant-Backend/src/main/java/com/tms/report/modules/settlement/controller/SettlementConfigController.java",
+      "/Users/mathew/Merchant-Backend/src/main/java/com/tms/report/modules/grpc/service/GrpcClient.java"
+    ],
+    "backend_reference": [
+      "/Users/mathew/super-merchant/src/main/java/com/tms/report/modules/grpc/service/GrpcClient.java",
+      "/Users/mathew/super-merchant/src/main/java/com/tms/report/modules/settlement/service/SettlementConfigService.java"
+    ],
+    "frontend_modify": [
+      "/Users/mathew/merchant-fe/app/(user)/settlements/(files)/SettlementConfig.tsx"
+    ],
+    "frontend_reference": [
+      "/Users/mathew/super-merchant-ui/components/users/settlement-config-tab.tsx",
+      "/Users/mathew/super-merchant-ui/components/settlement/SettlementAccountsCard.tsx"
+    ],
+    "dto": [
+      "/Users/mathew/Merchant-Backend/src/main/java/com/tms/report/modules/settlement/dto/SettlementConfigResponse.java"
+    ]
+  },
+  "directory_structure": {
+    "backend": "/Users/mathew/Merchant-Backend - Spring Boot backend, modules/settlement/controller and modules/grpc/service",
+    "frontend": "/Users/mathew/merchant-fe - Next.js 15 frontend, app/(user)/settlements/(files)/SettlementConfig.tsx"
+  }
+}

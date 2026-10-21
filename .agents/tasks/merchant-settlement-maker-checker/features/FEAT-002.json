@@ -1,0 +1,25 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Merchant-Backend: Create POST /settlement-config/request-account endpoint for merchants to submit settlement account change requests. Writes directly to supermerchant.pending_approvals using native SQL.",
+  "status": "completed",
+  "steps": [
+    "1. Create /Users/mathew/Merchant-Backend/src/main/java/com/tms/report/modules/settlement/dto/SettlementAccountRequestDto.java: Request body DTO with @Valid annotations. Fields: @NotBlank String bankName, @NotBlank @Size(max=10) String accountNumber, @NotBlank String accountName, @NotBlank String accountType. Use @JsonProperty for snake_case and Lombok @Data, @Builder, @NoArgsConstructor, @AllArgsConstructor.",
+    "2. Create /Users/mathew/Merchant-Backend/src/main/java/com/tms/report/modules/settlement/service/SettlementApprovalService.java: New service with @Service and @RequiredArgsConstructor. Inject EntityManager and MerchantScope. Implement submitAccountChangeRequest(Long merchantId, SettlementAccountRequestDto request, String merchantName, String merchantEmail) that: (a) Resolves bank_code using native query: SELECT DISTINCT bank_code FROM tids WHERE user_id = :merchantId AND bank_code IS NOT NULL LIMIT 1; (b) Checks for existing pending request: SELECT COUNT(*) FROM supermerchant.pending_approvals WHERE user_id = :merchantId AND section = 'account' AND status = 'pending'; (c) Builds JSON payload with bank_name, account_number, account_name, account_type; (d) Inserts into supermerchant.pending_approvals with native SQL: INSERT INTO supermerchant.pending_approvals (action_type, user_id, bank_code, section, payload, description, status, merchant_initiated, merchant_name, merchant_email, required_approvals, received_approvals, version, created_at, updated_at) VALUES ('settlement_config', :userId, :bankCode, 'account', :payload::jsonb, :description, 'pending', true, :merchantName, :merchantEmail, 1, 0, 0, NOW(), NOW()) RETURNING id; (e) Returns the approval ID.",
+    "3. Modify /Users/mathew/Merchant-Backend/src/main/java/com/tms/report/modules/settlement/controller/SettlementConfigController.java: Add @Autowired SettlementApprovalService. Add POST /request-account endpoint: @PostMapping(\"/request-account\") @Transactional public ApiResponse<Map<String, Object>> requestAccountChange(@RequestBody @Valid SettlementAccountRequestDto request) { Get merchantId from MerchantScope; get current MerchantUser to extract name/email; call service.submitAccountChangeRequest(); return success with approval_id and message 'Settlement account change request submitted for approval'. }",
+    "4. Create helper method in SettlementConfigController or SettlementApprovalService to get merchant name/email: Query users and profiles tables: SELECT COALESCE(NULLIF(TRIM(COALESCE(p.first_name, '') || ' ' || COALESCE(p.last_name, '')), ''), u.email) as name, u.email FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.id = :merchantId"
+  ],
+  "acceptance_criteria": [
+    "SettlementAccountRequestDto validates bank_name, account_number, account_name, account_type as required fields",
+    "SettlementApprovalService resolves merchant's bank_code from tids table",
+    "Service rejects request if a pending approval already exists for this merchant's account section",
+    "Native INSERT writes to supermerchant.pending_approvals with merchant_initiated=true, maker_id=NULL",
+    "POST /settlement-config/request-account returns 200 with approval_id on success",
+    "Merchant-Backend compiles: mvn compile -DskipTests passes"
+  ],
+  "verification": [
+    "Run `cd /Users/mathew/Merchant-Backend && mvn spotless:apply -B && mvn spotless:check -B && mvn compile -B -DskipTests` to verify Merchant-Backend compiles"
+  ],
+  "blocked_reason": null,
+  "findings": "Endpoint implemented successfully. Created SettlementAccountRequestDto with @Valid annotations for request validation. SettlementApprovalService handles: (1) merchant info lookup from users/profiles tables, (2) bank_code resolution from tids table, (3) duplicate pending request detection, (4) native SQL INSERT to supermerchant.pending_approvals with merchant_initiated=true and maker_id=NULL. Controller returns approval_id on success, 409 for duplicate requests, 400 if no TID found. All acceptance criteria met - mvn compile passes."
+}

@@ -191,3 +191,80 @@ CREATE TABLE IF NOT EXISTS merchant.dispute_reads (
 
 CREATE INDEX IF NOT EXISTS idx_dispute_reads_user ON merchant.dispute_reads(merchant_user_id);
 CREATE INDEX IF NOT EXISTS idx_dispute_reads_dispute ON merchant.dispute_reads(dispute_id);
+
+
+-- =============================================================================
+-- DEVICE_ACTIVITIES — tracks operator login/logout events on POS terminals.
+-- Populated via Kafka consumer from tms-user login events.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS merchant.device_activities (
+    id              BIGSERIAL PRIMARY KEY,
+    merchant_id     BIGINT NOT NULL,              -- users.id (the merchant)
+    terminal_id     BIGINT,                       -- terminals.id (nullable for lookup failures)
+    device_serial   VARCHAR(64) NOT NULL,         -- POS terminal serial number
+    operator_id     BIGINT,                       -- operators.id (null for direct merchant login)
+    operator_name   VARCHAR(255),                 -- Snapshot of operator name at event time
+    action          VARCHAR(20) NOT NULL,         -- 'login' or 'logout'
+    platform        VARCHAR(32),                  -- Device platform (Android, iOS)
+    app_version     VARCHAR(32),                  -- App version string
+    ip_address      VARCHAR(64),                  -- Client IP if available
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_activities_merchant_id ON merchant.device_activities(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_device_activities_device_serial ON merchant.device_activities(device_serial);
+CREATE INDEX IF NOT EXISTS idx_device_activities_operator_id ON merchant.device_activities(operator_id);
+CREATE INDEX IF NOT EXISTS idx_device_activities_created_at ON merchant.device_activities(created_at);
+
+
+-- =============================================================================
+-- MERCHANT_BRANCHES — multi-branch merchant structure (2026-10)
+-- Merchants can have multiple branches (store locations). TIDs, terminals, and
+-- operators can be scoped to a branch. Each branch can have its own settlement
+-- account for per-branch settlement.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS public.merchant_branches (
+    id              BIGSERIAL PRIMARY KEY,
+    user_id         BIGINT NOT NULL,
+    name            VARCHAR(255) NOT NULL,
+    code            VARCHAR(20) NOT NULL,
+    address         TEXT,
+    state_code      VARCHAR(10),
+    lga_code        VARCHAR(20),
+    phone_number    VARCHAR(20),
+    email           VARCHAR(255),
+    status          VARCHAR(20) NOT NULL DEFAULT 'active',
+    is_primary      BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Reference to merchant_settlement_accounts (null = use merchant default)
+    settlement_account_id BIGINT,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_merchant_branches_user_id ON public.merchant_branches(user_id);
+
+-- =============================================================================
+-- BRANCH_TIDS — many-to-many TID-branch assignment join table (2026-10)
+-- One TID can be assigned to multiple branches simultaneously.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS public.branch_tids (
+    id              BIGSERIAL PRIMARY KEY,
+    branch_id       BIGINT NOT NULL,
+    tid_id          BIGINT NOT NULL,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(branch_id, tid_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_branch_tids_branch_id ON public.branch_tids(branch_id);
+CREATE INDEX IF NOT EXISTS idx_branch_tids_tid_id ON public.branch_tids(tid_id);
+
+-- Migration: replace inline settlement fields with FK reference
+-- Drop old inline columns if they exist
+ALTER TABLE public.merchant_branches DROP COLUMN IF EXISTS settlement_account_number;
+ALTER TABLE public.merchant_branches DROP COLUMN IF EXISTS settlement_account_name;
+ALTER TABLE public.merchant_branches DROP COLUMN IF EXISTS settlement_bank_code;
+ALTER TABLE public.merchant_branches DROP COLUMN IF EXISTS settlement_bank_name;
+
+-- Add settlement_account_id if it doesn't exist
+ALTER TABLE public.merchant_branches ADD COLUMN IF NOT EXISTS settlement_account_id BIGINT;

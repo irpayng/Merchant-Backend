@@ -1,5 +1,7 @@
 package com.tms.report.modules.activity.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tms.report.core.security.MerchantScope;
 import com.tms.report.modules.activity.repository.ActivityRepository;
 import jakarta.persistence.EntityManager;
@@ -12,6 +14,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -20,14 +23,43 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ActivityService {
 
     private final ActivityRepository activityRepository;
     private final EntityManager entityManager;
     private final MerchantScope merchantScope;
-    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("MMM d, yyyy h:mma");
+    private final ObjectMapper objectMapper;
 
+    private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("MMM d, yyyy h:mma");
     private static final DateTimeFormatter LIST_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy h:mma");
+
+    /** SQL CASE expression for deriving module from path. */
+    private static final String MODULE_CASE_SQL = """
+            CASE
+              WHEN al.path LIKE '/terminals%' THEN 'Terminals'
+              WHEN al.path LIKE '/transactions%' THEN 'Transactions'
+              WHEN al.path LIKE '/disputes%' THEN 'Disputes'
+              WHEN al.path LIKE '/settlements%' THEN 'Settlements'
+              WHEN al.path LIKE '/settlement-accounts%' THEN 'Settlements'
+              WHEN al.path LIKE '/settlement-config%' THEN 'Settlements'
+              WHEN al.path LIKE '/statements%' THEN 'Statements'
+              WHEN al.path LIKE '/merchant-users%' THEN 'Team'
+              WHEN al.path LIKE '/invitations%' THEN 'Team'
+              WHEN al.path LIKE '/roles%' THEN 'Roles & Privileges'
+              WHEN al.path LIKE '/settings%' THEN 'Settings'
+              WHEN al.path LIKE '/notifications%' THEN 'Notifications'
+              WHEN al.path LIKE '/auth%' THEN 'Authentication'
+              WHEN al.path LIKE '/profile%' THEN 'Profile'
+              WHEN al.path LIKE '/branches%' THEN 'Branches'
+              WHEN al.path LIKE '/virtual-accounts%' THEN 'Virtual Accounts'
+              WHEN al.path LIKE '/products%' THEN 'Products'
+              WHEN al.path LIKE '/device-activities%' THEN 'Device Activities'
+              WHEN al.path LIKE '/dashboard%' THEN 'Dashboard'
+              WHEN al.path LIKE '/otp%' THEN 'Authentication'
+              WHEN al.path LIKE '/upload%' THEN 'File Upload'
+              ELSE 'Other'
+            END""";
 
     @Transactional(readOnly = true)
     @SuppressWarnings("unchecked")
@@ -81,25 +113,10 @@ public class ActivityService {
             queryParams.add(java.sql.Timestamp.valueOf(dateTo + " 23:59:59"));
         }
 
-        String sql = """
-                SELECT al.id, al.action, al.path, al.user_id, al.user_name, al.user_email, al.user_role,
-                       CASE
-                         WHEN al.path LIKE '/terminals%' THEN 'Terminals'
-                         WHEN al.path LIKE '/transactions%' THEN 'Transactions'
-                         WHEN al.path LIKE '/disputes%' THEN 'Disputes'
-                         WHEN al.path LIKE '/settlements%' THEN 'Settlements'
-                         WHEN al.path LIKE '/statements%' THEN 'Statements'
-                         WHEN al.path LIKE '/merchant-users%' THEN 'Team'
-                         WHEN al.path LIKE '/roles%' THEN 'Roles'
-                         WHEN al.path LIKE '/settings%' THEN 'Settings'
-                         WHEN al.path LIKE '/notifications%' THEN 'Notifications'
-                         WHEN al.path LIKE '/auth%' THEN 'Authentication'
-                         WHEN al.path LIKE '/profile%' THEN 'Profile'
-                         ELSE 'Other'
-                       END as module,
-                       al.created_at
-                FROM merchant.audit_logs al
-                """ + where + " ORDER BY al.created_at DESC";
+        // Include action which now contains entity context
+        String sql = "SELECT al.id, al.action, al.path, al.user_id, al.user_name, al.user_email, al.user_role, "
+                + MODULE_CASE_SQL + " as module, al.created_at FROM merchant.audit_logs al " + where
+                + " ORDER BY al.created_at DESC";
 
         String countSql = "SELECT COUNT(*) FROM merchant.audit_logs al " + where;
 
@@ -121,12 +138,13 @@ public class ActivityService {
             item.put("id", ((Number) row[0]).longValue());
 
             String rowAction = row[1] != null ? row[1].toString() : null;
+            String rowPath = row[2] != null ? row[2].toString() : null;
             String userName = row[4] != null ? row[4].toString() : null;
             String module = row[7] != null ? row[7].toString() : null;
 
-            item.put("action", rowAction);
+            item.put("action", extractBaseAction(rowAction));
             item.put("module", module);
-            item.put("description", buildDescription(userName, rowAction));
+            item.put("description", buildDescription(userName, rowAction, rowPath));
 
             // User object for the table
             if (row[3] != null) {
@@ -160,19 +178,9 @@ public class ActivityService {
 
         Query q = entityManager
                 .createNativeQuery("SELECT al.id, al.action, al.path, al.user_id, al.user_name, al.user_email, "
-                        + "al.user_role, al.ip_address, al.user_agent, al.response_status, al.created_at, " + "CASE "
-                        + "  WHEN al.path LIKE '/terminals%' THEN 'Terminals' "
-                        + "  WHEN al.path LIKE '/transactions%' THEN 'Transactions' "
-                        + "  WHEN al.path LIKE '/disputes%' THEN 'Disputes' "
-                        + "  WHEN al.path LIKE '/settlements%' THEN 'Settlements' "
-                        + "  WHEN al.path LIKE '/statements%' THEN 'Statements' "
-                        + "  WHEN al.path LIKE '/merchant-users%' THEN 'Team' "
-                        + "  WHEN al.path LIKE '/roles%' THEN 'Roles' "
-                        + "  WHEN al.path LIKE '/settings%' THEN 'Settings' "
-                        + "  WHEN al.path LIKE '/notifications%' THEN 'Notifications' "
-                        + "  WHEN al.path LIKE '/auth%' THEN 'Authentication' "
-                        + "  WHEN al.path LIKE '/profile%' THEN 'Profile' " + "  ELSE 'Other' " + "END as module "
-                        + "FROM merchant.audit_logs al " + "WHERE al.id = :id" + scopeClause);
+                        + "al.user_role, al.ip_address, al.user_agent, al.response_status, al.created_at, "
+                        + MODULE_CASE_SQL + " as module, al.request_body " + "FROM merchant.audit_logs al "
+                        + "WHERE al.id = :id" + scopeClause);
         q.setParameter("id", id);
         if (merchantId != null) {
             q.setParameter("merchantId", merchantId);
@@ -183,6 +191,7 @@ public class ActivityService {
         String userName = r[4] != null ? r[4].toString() : null;
         String action = r[1] != null ? r[1].toString() : null;
         String module = r[11] != null ? r[11].toString() : null;
+        String requestBody = r[12] != null ? r[12].toString() : null;
 
         java.util.LinkedHashMap<String, Object> data = new java.util.LinkedHashMap<>();
         data.put("id", ((Number) r[0]).longValue());
@@ -196,13 +205,19 @@ public class ActivityService {
         }
         data.put("admin_name", userName);
         data.put("admin_role", r[6] != null ? r[6].toString() : null);
-        data.put("action", action);
+        data.put("action", extractBaseAction(action));
         data.put("module", module);
-        data.put("description", buildDescription(userName, action));
+        data.put("description", buildDescription(userName, action, path));
         data.put("path", path);
         data.put("ip_address", r[7] != null ? r[7].toString() : null);
         data.put("user_agent", r[8] != null ? r[8].toString() : null);
         data.put("response_status", r[9] != null ? ((Number) r[9]).intValue() : null);
+
+        // Parse and include changes from request body
+        Map<String, Object> changes = parseChanges(requestBody);
+        if (changes != null && !changes.isEmpty()) {
+            data.put("changes", changes);
+        }
 
         LocalDateTime ldt = parseDateTime(r[10]);
         data.put("created_at", ldt != null ? ldt.format(LIST_FMT) : null);
@@ -225,7 +240,8 @@ public class ActivityService {
 
         return rows.stream().map(row -> {
             Map<String, Object> map = new HashMap<>();
-            map.put("type", row[0] != null ? capitalize(row[0].toString()) : null);
+            String action = row[0] != null ? row[0].toString() : null;
+            map.put("type", extractBaseAction(action));
             map.put("details", row[1] != null ? row[1].toString() : null);
             LocalDateTime createdAt = null;
             if (row[2] != null) {
@@ -241,6 +257,137 @@ public class ActivityService {
             map.put("date", createdAt != null ? createdAt.format(FMT) : null);
             return map;
         }).toList();
+    }
+
+    /**
+     * Extract the base action from action string that may contain entity reference.
+     * e.g., "Update terminal: 12345678" -> "Update terminal" Also fixes common
+     * typos like "branche" -> "branch"
+     */
+    private String extractBaseAction(String action) {
+        if (action == null)
+            return null;
+        int colonIdx = action.indexOf(':');
+        String baseAction = colonIdx > 0 ? action.substring(0, colonIdx).trim() : action;
+
+        // Fix common typos in stored actions
+        baseAction = fixActionTypos(baseAction);
+
+        return baseAction;
+    }
+
+    /**
+     * Fix common typos in action strings. This handles legacy data that was stored
+     * with typos.
+     */
+    private String fixActionTypos(String action) {
+        if (action == null) {
+            return null;
+        }
+        // Fix "branche" -> "branch" (singularize bug)
+        return action.replace("branche", "branch").replace("Branche", "Branch");
+    }
+
+    /**
+     * Build description from action string. The action now includes entity context
+     * from the filter, so we just need to format it nicely with the user name.
+     * Converts verbs to past tense for better readability.
+     */
+    private String buildDescription(String userName, String action, String path) {
+        String user = userName != null ? userName : "User";
+
+        if (action == null || action.isBlank()) {
+            return user + " performed an action";
+        }
+
+        // Fix typos in the action string
+        action = fixActionTypos(action);
+
+        // Handle special cases
+        String lowerAction = action.toLowerCase();
+
+        // Authentication
+        if (lowerAction.contains("login") || (path != null && path.contains("/auth/login"))) {
+            return user + " logged into the dashboard";
+        }
+        if (lowerAction.contains("logout")) {
+            return user + " logged out of the dashboard";
+        }
+
+        // Check if action already has entity context (contains ":")
+        if (action.contains(":")) {
+            // Action format: "Update terminal: 12345678"
+            // Description: "Nelo Limited updated terminal 12345678"
+            String[] parts = action.split(":", 2);
+            String baseAction = parts[0].trim();
+            String entityRef = parts[1].trim();
+
+            // Convert base action to past tense
+            String pastTenseAction = convertToPastTense(baseAction);
+
+            return user + " " + pastTenseAction + " " + entityRef;
+        }
+
+        // Convert action to past tense
+        String pastTenseAction = convertToPastTense(action);
+
+        // Fallback: just use the past tense action
+        return user + " " + pastTenseAction;
+    }
+
+    /**
+     * Convert action verbs to past tense for description. "Create branch" ->
+     * "created branch" "Assign TID" -> "assigned TID"
+     */
+    private String convertToPastTense(String action) {
+        if (action == null || action.isEmpty()) {
+            return action;
+        }
+
+        String lowerAction = action.toLowerCase();
+
+        // Common action verb mappings to past tense
+        if (lowerAction.startsWith("assign ")) {
+            return "assigned " + action.substring(7);
+        }
+        if (lowerAction.startsWith("remove ")) {
+            return "removed " + action.substring(7);
+        }
+        if (lowerAction.startsWith("create ")) {
+            return "created " + action.substring(7);
+        }
+        if (lowerAction.startsWith("update ")) {
+            return "updated " + action.substring(7);
+        }
+        if (lowerAction.startsWith("delete ")) {
+            return "deleted " + action.substring(7);
+        }
+        if (lowerAction.startsWith("clear ")) {
+            return "cleared " + action.substring(6);
+        }
+        if (lowerAction.startsWith("lock ")) {
+            return "locked " + action.substring(5);
+        }
+        if (lowerAction.startsWith("unlock ")) {
+            return "unlocked " + action.substring(7);
+        }
+        if (lowerAction.startsWith("invite ")) {
+            return "invited " + action.substring(7);
+        }
+        if (lowerAction.startsWith("deactivate ")) {
+            return "deactivated " + action.substring(11);
+        }
+        if (lowerAction.startsWith("activate ")) {
+            return "activated " + action.substring(9);
+        }
+        if (lowerAction.startsWith("request ")) {
+            return "requested " + action.substring(8);
+        }
+        if (lowerAction.startsWith("mark ")) {
+            return "marked " + action.substring(5);
+        }
+
+        return action.toLowerCase();
     }
 
     private String capitalize(String s) {
@@ -263,10 +410,28 @@ public class ActivityService {
         return null;
     }
 
-    private String buildDescription(String userName, String action) {
-        String user = userName != null ? userName : "User";
-        String act = action != null ? action.toLowerCase() : "performed action";
-        return user + " performed " + act;
+    /**
+     * Parse the request body JSON and extract meaningful changes for the detail
+     * view.
+     */
+    private Map<String, Object> parseChanges(String requestBody) {
+        if (requestBody == null || requestBody.isBlank()) {
+            return null;
+        }
+        try {
+            Map<String, Object> body = objectMapper.readValue(requestBody, new TypeReference<Map<String, Object>>() {
+            });
+            // Filter out sensitive/internal fields
+            body.remove("password");
+            body.remove("pin");
+            body.remove("otp");
+            body.remove("token");
+            body.remove("secret");
+            return body.isEmpty() ? null : body;
+        } catch (Exception e) {
+            log.debug("Failed to parse request body as JSON: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -281,13 +446,16 @@ public class ActivityService {
             return Map.of("actions", List.of());
         }
 
-        List<String> rows = entityManager
-                .createNativeQuery("SELECT DISTINCT al.action FROM merchant.audit_logs al "
-                        + "WHERE al.merchant_id = :merchantId AND al.action IS NOT NULL " + "ORDER BY al.action")
+        // Extract base action (before the colon) for filtering
+        List<String> rows = entityManager.createNativeQuery(
+                "SELECT DISTINCT CASE WHEN position(':' in al.action) > 0 THEN substring(al.action from 1 for position(':' in al.action) - 1) ELSE al.action END "
+                        + "FROM merchant.audit_logs al "
+                        + "WHERE al.merchant_id = :merchantId AND al.action IS NOT NULL " + "ORDER BY 1")
                 .setParameter("merchantId", merchantId).getResultList();
 
-        List<Map<String, String>> actions = rows.stream().filter(action -> action != null && !action.isBlank())
-                .map(action -> Map.of("id", action, "name", action)).toList();
+        List<Map<String, String>> actions = rows.stream()
+                .filter(action -> action != null && !action.toString().isBlank())
+                .map(action -> Map.of("id", action.toString().trim(), "name", action.toString().trim())).toList();
 
         return Map.of("actions", actions);
     }

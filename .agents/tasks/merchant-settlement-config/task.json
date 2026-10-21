@@ -1,0 +1,7 @@
+{
+  "task_id": "task-merchant-settlement-config",
+  "task_description": "Update merchant dashboard settlement configuration to (1) fetch data from tms-config via gRPC (authoritative source) instead of legacy supermerchant.settlement_configs table, and (2) reformat frontend UI to match super-merchant's SettlementConfigTab layout",
+  "status": "pending",
+  "feature_order": ["FEAT-001", "FEAT-002"],
+  "blocked_reason": null
+}

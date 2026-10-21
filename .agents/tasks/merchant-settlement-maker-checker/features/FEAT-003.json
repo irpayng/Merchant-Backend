@@ -1,0 +1,24 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Merchant-Backend: Create GET /settlement-config/requests endpoint for merchants to view their pending and historical approval requests.",
+  "status": "completed",
+  "steps": [
+    "1. Create /Users/mathew/Merchant-Backend/src/main/java/com/tms/report/modules/settlement/dto/ApprovalRequestResponse.java: DTO for approval request listing. Fields with @JsonProperty: Long id, @JsonProperty(\"user_id\") Long userId, String section, String status, String description, String payload, @JsonProperty(\"reject_reason\") String rejectReason, @JsonProperty(\"created_at\") LocalDateTime createdAt, @JsonProperty(\"approved_at\") LocalDateTime approvedAt, @JsonProperty(\"rejected_at\") LocalDateTime rejectedAt, @JsonProperty(\"executed_at\") LocalDateTime executedAt. Use Lombok @Data, @Builder, @NoArgsConstructor, @AllArgsConstructor.",
+    "2. Add method to SettlementApprovalService: List<ApprovalRequestResponse> getApprovalRequests(Long merchantId). Implements native query: SELECT id, user_id, section, status, description, payload, reject_reason, created_at, approved_at, rejected_at, executed_at FROM supermerchant.pending_approvals WHERE user_id = :merchantId AND action_type = 'settlement_config' ORDER BY created_at DESC. Map results to ApprovalRequestResponse DTOs.",
+    "3. Add endpoint to SettlementConfigController: @GetMapping(\"/requests\") @Transactional(readOnly = true) public ApiResponse<List<ApprovalRequestResponse>> getRequests() { Get merchantId from MerchantScope; call service.getApprovalRequests(merchantId); return ApiResponse.success(results); }",
+    "4. Add method to SettlementApprovalService: boolean hasPendingRequest(Long merchantId, String section). Query: SELECT COUNT(*) > 0 FROM supermerchant.pending_approvals WHERE user_id = :merchantId AND section = :section AND status = 'pending'. This enables the UI to show whether a pending request exists."
+  ],
+  "acceptance_criteria": [
+    "ApprovalRequestResponse DTO has all fields needed to display approval status to merchants",
+    "GET /settlement-config/requests returns list of merchant's approval requests ordered by created_at DESC",
+    "hasPendingRequest method correctly checks for existing pending requests",
+    "All queries are scoped to the authenticated merchant's user_id",
+    "Merchant-Backend compiles: mvn compile -DskipTests passes"
+  ],
+  "verification": [
+    "Run `cd /Users/mathew/Merchant-Backend && mvn spotless:apply -B && mvn spotless:check -B && mvn compile -B -DskipTests` to verify Merchant-Backend compiles"
+  ],
+  "blocked_reason": null,
+  "findings": "All steps implemented successfully. Created ApprovalRequestResponse DTO with all required fields for displaying approval status. Added getApprovalRequests(merchantId) method to SettlementApprovalService that queries supermerchant.pending_approvals using native SQL and maps results to DTOs. Added GET /settlement-config/requests endpoint to SettlementConfigController. Added hasPendingRequest(merchantId, section) method for checking if a pending request exists for any section (complementing the existing hasPendingAccountRequest method). All acceptance criteria met - mvn compile passes."
+}

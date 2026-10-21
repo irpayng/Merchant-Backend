@@ -1,0 +1,37 @@
+{
+  "project_type": "Two Spring Boot 4.0.5 backends (Merchant-Backend port 8120, super-merchant port 8110) sharing a PostgreSQL database with separate schemas (merchant, supermerchant, public). Cross-schema access via native SQL.",
+  "language": "Java 21",
+  "build_system": "Maven 3.9+ with spotless-maven-plugin for code formatting. Uses Lombok, Spring Data JPA, and core-utils shared dependency.",
+  "test_framework": "Spring Boot Test with JUnit 5 and H2 for tests",
+  "build_command": "mvn clean compile -DskipTests",
+  "test_command": "mvn test",
+  "verification_instructions": "1. Run `mvn spotless:apply -B` to fix formatting. 2. Run `mvn spotless:check -B` to verify. 3. Run `mvn compile -B -DskipTests` to verify compilation passes.",
+  "snapshot_or_generated_files": null,
+  "environment_constraints": "Both projects must remain compatible. Changes to supermerchant.pending_approvals schema require coordination. Do not push without passing spotless:check.",
+  "contribution_requirements": "Use @Transactional for writes. Use native SQL (EntityManager.createNativeQuery) for cross-schema access in Merchant-Backend. Follow existing DTO patterns with @JsonProperty and Lombok @Builder.",
+  "key_patterns": {
+    "merchant_backend_native_queries": "See SettlementConfigController.java and BranchService.java for native query patterns. Uses entityManager.createNativeQuery() with setParameter().",
+    "merchant_backend_dto": "DTOs use Lombok @Builder, @Data, @NoArgsConstructor, @AllArgsConstructor with @JsonProperty for snake_case JSON. No @RegisterForReflection (Spring Boot, not Quarkus).",
+    "merchant_backend_api_response": "Controllers return ApiResponse<T>.success(data) or ApiResponse.success(data, message).",
+    "merchant_backend_auth": "Use MerchantScope to get merchantId(). MerchantUser has name, email, phoneNumber fields.",
+    "super_merchant_entity": "PendingApproval uses @Entity with schema=supermerchant. Fields use @JoinColumn for FK refs to Admin.",
+    "super_merchant_approval_dto": "SettlementConfigApprovalDto.java has maker_name/maker_email fields populated by toSettlementDto() in ApprovalService.",
+    "bank_code_resolution": "TenantScope.bankCodesForUser(userId) returns List<String> of banks that issued TIDs to a merchant. Use native query: SELECT DISTINCT bank_code FROM tids WHERE user_id = :id LIMIT 1"
+  },
+  "relevant_files": [
+    "/Users/mathew/super-merchant/src/main/java/com/tms/report/modules/checker/model/PendingApproval.java",
+    "/Users/mathew/super-merchant/src/main/java/com/tms/report/modules/checker/service/ApprovalService.java",
+    "/Users/mathew/super-merchant/src/main/java/com/tms/report/modules/checker/repository/PendingApprovalRepository.java",
+    "/Users/mathew/super-merchant/src/main/java/com/tms/report/modules/approval/dto/SettlementConfigApprovalDto.java",
+    "/Users/mathew/super-merchant/src/main/resources/db/admin-schema.sql",
+    "/Users/mathew/Merchant-Backend/src/main/java/com/tms/report/modules/settlement/controller/SettlementConfigController.java",
+    "/Users/mathew/Merchant-Backend/src/main/java/com/tms/report/modules/settlement/dto/SettlementConfigResponse.java",
+    "/Users/mathew/Merchant-Backend/src/main/java/com/tms/report/modules/merchantuser/model/MerchantUser.java",
+    "/Users/mathew/Merchant-Backend/src/main/java/com/tms/report/core/security/MerchantScope.java",
+    "/Users/mathew/Merchant-Backend/src/main/java/com/tms/report/modules/branch/service/BranchService.java"
+  ],
+  "directory_structure": {
+    "merchant_backend": "Merchant-Backend/src/main/java/com/tms/report/modules/{module}/{controller,service,dto,model}/ - Standard Spring module layout. Settlement module at modules/settlement/.",
+    "super_merchant": "super-merchant/src/main/java/com/tms/report/modules/{module}/ - Same structure. Checker module has PendingApproval model and ApprovalService. Approval module has DTOs and controllers."
+  }
+}
