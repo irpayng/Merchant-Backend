@@ -73,7 +73,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/auth/reset-password").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/request-activation").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/activate").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/auth/activate-otp").permitAll().anyRequest()
+                        .requestMatchers(HttpMethod.POST, "/auth/activate-otp").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/register/pg-merchant").permitAll().anyRequest()
                         .authenticated())
                 .exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) -> {
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);

@@ -580,6 +580,31 @@ public class GrpcClient {
         }
     }
 
+    /**
+     * Update a merchant's business name in tms-user. Called after PG merchant
+     * registration to set the business name that appears on receipts and virtual
+     * accounts.
+     *
+     * @param userId
+     *            the user's id in tms-user
+     * @param businessName
+     *            the business name to set
+     * @return map with success (boolean) and message
+     */
+    public Map<String, Object> updateMerchantBusinessName(long userId, String businessName) {
+        logRequest("UpdateMerchantBusinessName", String.valueOf(userId));
+        try {
+            var resp = userStub.updateMerchantBusinessName(com.tms.report.grpc.user.UpdateMerchantBusinessNameRequest
+                    .newBuilder().setUserId(userId).setBusinessName(businessName).build());
+            Map<String, Object> result = new HashMap<>();
+            result.put("success", resp.getSuccess());
+            result.put("message", resp.getMessage());
+            return result;
+        } catch (StatusRuntimeException e) {
+            throw grpcError("UpdateMerchantBusinessName", String.valueOf(userId), e);
+        }
+    }
+
     // ── Terminal commands → config-service ──
 
     public Map<String, Object> createTerminal(String serial, String make, String model, String os) {

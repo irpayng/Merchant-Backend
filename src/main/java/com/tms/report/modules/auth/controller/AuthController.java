@@ -8,6 +8,8 @@ import com.tms.report.modules.auth.dto.CrossLoginRequest;
 import com.tms.report.modules.auth.dto.ForgotPasswordRequest;
 import com.tms.report.modules.auth.dto.LoginRequest;
 import com.tms.report.modules.auth.dto.LoginResponse;
+import com.tms.report.modules.auth.dto.RegisterPgMerchantRequest;
+import com.tms.report.modules.auth.dto.RegisterPgMerchantResponse;
 import com.tms.report.modules.auth.dto.RequestActivationRequest;
 import com.tms.report.modules.auth.dto.ResetPasswordRequest;
 import com.tms.report.modules.auth.service.AuthService;
@@ -93,5 +95,26 @@ public class AuthController {
     public ApiResponse<Void> activateOtp(@Valid @RequestBody ActivateOtpRequest request) {
         authService.activateOtp(request);
         return ApiResponse.success(null);
+    }
+
+    // ── Payment Gateway merchant registration ──
+
+    /**
+     * Register a new payment gateway merchant. PG merchants are identified by user
+     * type 'pg_merchant', distinct from 'merchant' used by PTSP/agent banking.
+     *
+     * <p>
+     * This is a public endpoint (no JWT required). Rate limiting should be applied
+     * in production.
+     *
+     * @param request
+     *            the registration request
+     * @return the registration response with user details
+     */
+    // TODO: Add rate limiting to prevent abuse (e.g., 5 requests per IP per hour)
+    @PostMapping("/register/pg-merchant")
+    public ApiResponse<RegisterPgMerchantResponse> registerPgMerchant(
+            @Valid @RequestBody RegisterPgMerchantRequest request) {
+        return ApiResponse.success(authService.registerPgMerchant(request));
     }
 }

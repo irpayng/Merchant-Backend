@@ -12,6 +12,9 @@ service UserService {
   rpc FindUserByBvn (FindUserRequest) returns (UserExistsResponse);
   rpc UpdateUserTier (UpdateUserTierRequest) returns (UpdateUserResponse);
   rpc UpdateUserType (UpdateUserTypeRequest) returns (UpdateUserResponse);
+  // Update a merchant's business name. Called after PG merchant registration
+  // to set the business name that appears on receipts and virtual accounts.
+  rpc UpdateMerchantBusinessName (UpdateMerchantBusinessNameRequest) returns (UpdateUserResponse);
   rpc GetUserProfile (GetUserProfileRequest) returns (GetUserProfileResponse);
   // Admin commands (ported from tms-api gRPC)
   rpc CreateUser (CreateUserCommandRequest) returns (UserCommandResponse);
@@ -193,6 +196,11 @@ message UpdateUserTypeRequest {
 message UpdateUserResponse {
   bool success = 1;
   string message = 2;
+}
+
+message UpdateMerchantBusinessNameRequest {
+  int64 user_id = 1;
+  string business_name = 2;
 }
 
 message GetUserProfileRequest {

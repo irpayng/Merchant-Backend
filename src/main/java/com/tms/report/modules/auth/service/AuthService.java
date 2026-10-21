@@ -12,6 +12,8 @@ import com.tms.report.modules.auth.dto.CrossLoginRequest;
 import com.tms.report.modules.auth.dto.ForgotPasswordRequest;
 import com.tms.report.modules.auth.dto.LoginRequest;
 import com.tms.report.modules.auth.dto.LoginResponse;
+import com.tms.report.modules.auth.dto.RegisterPgMerchantRequest;
+import com.tms.report.modules.auth.dto.RegisterPgMerchantResponse;
 import com.tms.report.modules.auth.dto.RequestActivationRequest;
 import com.tms.report.modules.auth.dto.ResetPasswordRequest;
 import com.tms.report.modules.auth.dto.UserData;
@@ -316,6 +318,178 @@ public class AuthService {
                         .terminalId(merchantUser.getTerminalId()).emailIsVerified(verified).privileges(privileges)
                         .build())
                 .build();
+    }
+
+    /**
+     * Register a new payment gateway merchant. PG merchants are identified by user
+     * type {@code pg_merchant}, distinct from {@code merchant} used by PTSP/agent
+     * banking.
+     *
+     * <p>
+     * Flow:
+     * <ol>
+     * <li>Validate email and phone not already registered</li>
+     * <li>Normalize phone to 234... format (no + prefix)</li>
+     * <li>Create user in tms-user with type='pg_merchant'</li>
+     * <li>Set business name on the user</li>
+     * <li>Create local MerchantUser record for dashboard access</li>
+     * <li>Set up default roles</li>
+     * <li>Send welcome email</li>
+     * </ol>
+     *
+     * @param request
+     *            the registration request
+     * @return registration response with user details
+     */
+    @Transactional
+    public RegisterPgMerchantResponse registerPgMerchant(RegisterPgMerchantRequest request) {
+        // 1. Normalize inputs
+        String email = request.getEmail().trim().toLowerCase();
+        String phoneNumber = normalizePhoneNumber(request.getPhoneNumber());
+
+        // 2. Validate email not already registered
+        Map<String, Object> emailCheck = grpcClient.findUserByEmail(email);
+        if (Boolean.TRUE.equals(emailCheck.get("exists"))) {
+            throw new AppException("An account with this email already exists", HttpStatus.CONFLICT);
+        }
+
+        // 3. Validate phone not already registered
+        Map<String, Object> phoneCheck = grpcClient.findUserByPhoneNumber(phoneNumber);
+        if (Boolean.TRUE.equals(phoneCheck.get("exists"))) {
+            throw new AppException("An account with this phone number already exists", HttpStatus.CONFLICT);
+        }
+
+        // 4. Create user in tms-user with type='pg_merchant'
+        Map<String, Object> createData = new HashMap<>();
+        createData.put("email", email);
+        createData.put("phone_number", phoneNumber);
+        createData.put("password", request.getPassword());
+        createData.put("type", "pg_merchant");
+
+        Map<String, Object> createResult = grpcClient.createUser(createData);
+        if (!Boolean.TRUE.equals(createResult.get("success"))) {
+            String message = (String) createResult.get("message");
+            throw new AppException(message != null ? message : "Failed to create user",
+                    HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+        // Extract the created user ID from the response
+        Long userId = extractUserIdFromResponse(createResult);
+        if (userId == null) {
+            throw new AppException("Failed to create user: no user ID returned", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+        // 5. Set business name on the user
+        Map<String, Object> businessNameResult = grpcClient.updateMerchantBusinessName(userId,
+                request.getBusinessName());
+        if (!Boolean.TRUE.equals(businessNameResult.get("success"))) {
+            log.warn("Failed to set business name for userId={}: {}", userId, businessNameResult.get("message"));
+            // Continue anyway - the user was created successfully
+        }
+
+        // 6. Build display name
+        String displayName = buildDisplayName(request.getBusinessName(), request.getFirstName(), request.getLastName(),
+                email);
+
+        // 7. Create local MerchantUser record for dashboard access
+        MerchantUser merchantUser = MerchantUser.builder().merchantId(userId).email(email).phoneNumber(phoneNumber)
+                .name(displayName).role(MerchantUser.ROLE_OWNER).status(MerchantUser.STATUS_ACTIVE).build();
+        merchantUser = merchantUserRepository.save(merchantUser);
+        log.info("Created MerchantUser for PG merchant: merchantId={} email={}", userId, email);
+
+        // 8. Ensure default roles for the merchant
+        ensureDefaultRolesForMerchant(merchantUser);
+
+        // 9. Send welcome email
+        sendPgMerchantWelcomeEmail(email, request.getFirstName(), request.getBusinessName());
+
+        // 10. Return response
+        return RegisterPgMerchantResponse.builder().userId(userId).email(email).phoneNumber(phoneNumber)
+                .businessName(request.getBusinessName()).businessType(request.getBusinessType()).userType("pg_merchant")
+                .message("Registration successful. Welcome to IRPay Payment Gateway!").build();
+    }
+
+    /**
+     * Normalize a Nigerian phone number to the 234... format (no + prefix).
+     * Accepts:
+     * <ul>
+     * <li>07089... (local format, 11 digits)</li>
+     * <li>+23407089... (international with +)</li>
+     * <li>23407089... (international without +)</li>
+     * </ul>
+     *
+     * @param phoneNumber
+     *            the phone number to normalize
+     * @return normalized phone number in 234... format
+     */
+    private String normalizePhoneNumber(String phoneNumber) {
+        if (phoneNumber == null || phoneNumber.isBlank()) {
+            return null;
+        }
+        // Remove all non-digit characters (including +)
+        String digits = phoneNumber.replaceAll("[^0-9]", "");
+
+        // +234XXXXXXXXXX or 234XXXXXXXXXX (13 digits total)
+        if (digits.startsWith("234") && digits.length() == 13) {
+            return digits; // already in correct format
+        }
+        // 0XXXXXXXXXX (11 digits, local format)
+        if (digits.startsWith("0") && digits.length() == 11) {
+            return "234" + digits.substring(1);
+        }
+        // XXXXXXXXXX (10 digits, missing leading zero)
+        if (digits.length() == 10 && !digits.startsWith("0")) {
+            return "234" + digits;
+        }
+        // Return as-is if unrecognized (validation should catch invalid formats)
+        return digits;
+    }
+
+    /**
+     * Extract user ID from the CreateUser gRPC response.
+     */
+    @SuppressWarnings("unchecked")
+    private Long extractUserIdFromResponse(Map<String, Object> response) {
+        // The data_json field contains the created user's ID
+        String dataJson = (String) response.get("data");
+        if (dataJson != null && !dataJson.isBlank()) {
+            try {
+                var mapper = new tools.jackson.databind.ObjectMapper();
+                Map<String, Object> data = mapper.readValue(dataJson, Map.class);
+                Object id = data.get("id");
+                if (id instanceof Number) {
+                    return ((Number) id).longValue();
+                }
+                if (id instanceof String) {
+                    return Long.parseLong((String) id);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse user ID from response: {}", e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Send welcome email to a newly registered PG merchant.
+     */
+    private void sendPgMerchantWelcomeEmail(String email, String firstName, String businessName) {
+        try {
+            Map<String, String> data = new HashMap<>();
+            data.put("name", firstName != null && !firstName.isBlank() ? firstName : "there");
+            data.put("business_name", businessName != null ? businessName : "");
+            data.put("login_url", frontendUrl + "/login");
+
+            Map<String, Object> result = grpcClient.sendEmail(email, appName + " - Welcome to IRPay Payment Gateway",
+                    "pg-merchant-welcome", data);
+
+            if (!Boolean.TRUE.equals(result.get("success"))) {
+                log.warn("Failed to send welcome email to {}: {}", email, result.get("message"));
+            }
+        } catch (Exception e) {
+            // Don't fail registration if email sending fails
+            log.error("Failed to send welcome email to {}: {}", email, e.getMessage());
+        }
     }
 
     /**
