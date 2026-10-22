@@ -15,10 +15,14 @@ import com.tms.report.modules.auth.dto.LoginResponse;
 import com.tms.report.modules.auth.dto.RegisterPgMerchantRequest;
 import com.tms.report.modules.auth.dto.RegisterPgMerchantResponse;
 import com.tms.report.modules.auth.dto.RequestActivationRequest;
+import com.tms.report.modules.auth.dto.ResendPgMerchantOtpRequest;
 import com.tms.report.modules.auth.dto.ResetPasswordRequest;
 import com.tms.report.modules.auth.dto.UserData;
+import com.tms.report.modules.auth.dto.VerifyPgMerchantEmailRequest;
 import com.tms.report.modules.auth.model.PasswordReset;
+import com.tms.report.modules.auth.model.PgMerchantEmailToken;
 import com.tms.report.modules.auth.repository.PasswordResetRepository;
+import com.tms.report.modules.auth.repository.PgMerchantEmailTokenRepository;
 import com.tms.report.modules.grpc.service.GrpcClient;
 import com.tms.report.modules.merchantuser.model.ActivationToken;
 import com.tms.report.modules.merchantuser.model.MerchantUser;
@@ -61,6 +65,7 @@ public class AuthService {
     private final MerchantUserRepository merchantUserRepository;
     private final ActivationTokenRepository activationTokenRepository;
     private final PasswordResetRepository passwordResetRepository;
+    private final PgMerchantEmailTokenRepository pgMerchantEmailTokenRepository;
     private final RoleRepository roleRepository;
     private final PrivilegeRepository privilegeRepository;
     private final JwtService jwtService;
@@ -71,6 +76,7 @@ public class AuthService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final int RESET_TOKEN_EXPIRY_MINUTES = 60;
     private static final int OTP_EXPIRY_MINUTES = 15;
+    private static final int PG_OTP_EXPIRY_MINUTES = 15;
     private static final int LINK_EXPIRY_HOURS = 24;
     private static final int THROTTLE_SECONDS = 60;
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
@@ -387,26 +393,119 @@ public class AuthService {
             // Continue anyway - the user was created successfully
         }
 
-        // 6. Build display name
-        String displayName = buildDisplayName(request.getBusinessName(), request.getFirstName(), request.getLastName(),
-                email);
+        log.info("Created PG merchant: userId={} email={} businessName={}", userId, email, request.getBusinessName());
 
-        // 7. Create local MerchantUser record for dashboard access
-        MerchantUser merchantUser = MerchantUser.builder().merchantId(userId).email(email).phoneNumber(phoneNumber)
-                .name(displayName).role(MerchantUser.ROLE_OWNER).status(MerchantUser.STATUS_ACTIVE).build();
-        merchantUser = merchantUserRepository.save(merchantUser);
-        log.info("Created MerchantUser for PG merchant: merchantId={} email={}", userId, email);
+        // 6. Send email verification OTP
+        sendPgMerchantVerificationOtp(userId, email, request.getFirstName());
 
-        // 8. Ensure default roles for the merchant
-        ensureDefaultRolesForMerchant(merchantUser);
+        // Note: PG merchants use a separate Payment Gateway dashboard, not the
+        // Merchant-Backend dashboard. No MerchantUser record is created here.
+        // Email must be verified before the merchant can access the dashboard.
 
-        // 9. Send welcome email
-        sendPgMerchantWelcomeEmail(email, request.getFirstName(), request.getBusinessName());
-
-        // 10. Return response
+        // 7. Return response
         return RegisterPgMerchantResponse.builder().userId(userId).email(email).phoneNumber(phoneNumber)
                 .businessName(request.getBusinessName()).businessType(request.getBusinessType()).userType("pg_merchant")
-                .message("Registration successful. Welcome to IRPay Payment Gateway!").build();
+                .message("Registration successful. Please verify your email address.").build();
+    }
+
+    /**
+     * Verify a PG merchant's email address using the OTP sent during registration.
+     *
+     * @param request
+     *            the verification request containing email and OTP
+     */
+    @Transactional
+    public void verifyPgMerchantEmail(VerifyPgMerchantEmailRequest request) {
+        String email = request.getEmail().trim().toLowerCase();
+        String otp = request.getOtp().trim();
+
+        // Find the token
+        PgMerchantEmailToken token = pgMerchantEmailTokenRepository.findTopByEmailAndOtpOrderByCreatedAtDesc(email, otp)
+                .orElseThrow(() -> new AppException("Invalid or expired verification code", HttpStatus.BAD_REQUEST));
+
+        if (!token.isUsable()) {
+            if (token.isVerified()) {
+                throw new AppException("Email already verified", HttpStatus.CONFLICT);
+            }
+            throw new AppException("Verification code has expired. Please request a new one.", HttpStatus.BAD_REQUEST);
+        }
+
+        // Mark token as verified
+        token.setVerifiedAt(LocalDateTime.now());
+        pgMerchantEmailTokenRepository.save(token);
+
+        // Update user's email_verified_at in tms-user
+        // Note: This requires a gRPC call to tms-user to set email_verified_at
+        // For now, the token verification is tracked locally
+
+        // Send welcome email now that email is verified
+        sendPgMerchantWelcomeEmail(email, null, null);
+
+        log.info("PG merchant email verified: userId={} email={}", token.getUserId(), email);
+    }
+
+    /**
+     * Resend the email verification OTP to a PG merchant.
+     *
+     * @param request
+     *            the resend request containing the email address
+     */
+    @Transactional
+    public void resendPgMerchantOtp(ResendPgMerchantOtpRequest request) {
+        String email = request.getEmail().trim().toLowerCase();
+
+        // Find the existing token to get the userId
+        PgMerchantEmailToken existingToken = pgMerchantEmailTokenRepository.findTopByEmailOrderByCreatedAtDesc(email)
+                .orElseThrow(() -> new AppException(
+                        "No pending verification found for this email. Please register first.", HttpStatus.NOT_FOUND));
+
+        if (existingToken.isVerified()) {
+            throw new AppException("Email already verified", HttpStatus.CONFLICT);
+        }
+
+        // Check throttle - don't allow resend within 60 seconds
+        if (existingToken.getCreatedAt() != null
+                && existingToken.getCreatedAt().plusSeconds(THROTTLE_SECONDS).isAfter(LocalDateTime.now())) {
+            throw new AppException("Please wait before requesting another code", HttpStatus.TOO_MANY_REQUESTS);
+        }
+
+        // Generate and send new OTP
+        sendPgMerchantVerificationOtp(existingToken.getUserId(), email, null);
+        log.info("Resent PG merchant verification OTP: email={}", email);
+    }
+
+    /**
+     * Generate and send an email verification OTP to a PG merchant.
+     */
+    private void sendPgMerchantVerificationOtp(Long userId, String email, String firstName) {
+        // Generate 6-digit OTP
+        String otp = generateOtp();
+
+        // Delete any existing tokens for this email
+        pgMerchantEmailTokenRepository.deleteByEmail(email);
+
+        // Create new token
+        PgMerchantEmailToken token = PgMerchantEmailToken.builder().userId(userId).email(email).otp(otp)
+                .expiresAt(LocalDateTime.now().plusMinutes(PG_OTP_EXPIRY_MINUTES)).build();
+        pgMerchantEmailTokenRepository.save(token);
+
+        // Send verification email
+        try {
+            Map<String, String> data = new HashMap<>();
+            data.put("name", firstName != null && !firstName.isBlank() ? firstName : "there");
+            data.put("token", otp);
+            data.put("ttl", String.valueOf(PG_OTP_EXPIRY_MINUTES));
+
+            Map<String, Object> result = grpcClient.sendEmail(email, appName + " - Verify Your Email",
+                    "pg-merchant-verify-email", data);
+
+            if (!Boolean.TRUE.equals(result.get("success"))) {
+                log.warn("Failed to send verification email to {}: {}", email, result.get("message"));
+            }
+        } catch (Exception e) {
+            log.error("Failed to send verification email to {}: {}", email, e.getMessage());
+            // Don't fail registration if email sending fails - token is still saved
+        }
     }
 
     /**
@@ -477,8 +576,7 @@ public class AuthService {
         try {
             Map<String, String> data = new HashMap<>();
             data.put("name", firstName != null && !firstName.isBlank() ? firstName : "there");
-            data.put("business_name", businessName != null ? businessName : "");
-            data.put("login_url", frontendUrl + "/login");
+            data.put("businessName", businessName != null ? businessName : "");
 
             Map<String, Object> result = grpcClient.sendEmail(email, appName + " - Welcome to IRPay Payment Gateway",
                     "pg-merchant-welcome", data);

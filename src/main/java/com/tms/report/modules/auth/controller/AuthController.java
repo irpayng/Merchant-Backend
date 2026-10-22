@@ -11,7 +11,9 @@ import com.tms.report.modules.auth.dto.LoginResponse;
 import com.tms.report.modules.auth.dto.RegisterPgMerchantRequest;
 import com.tms.report.modules.auth.dto.RegisterPgMerchantResponse;
 import com.tms.report.modules.auth.dto.RequestActivationRequest;
+import com.tms.report.modules.auth.dto.ResendPgMerchantOtpRequest;
 import com.tms.report.modules.auth.dto.ResetPasswordRequest;
+import com.tms.report.modules.auth.dto.VerifyPgMerchantEmailRequest;
 import com.tms.report.modules.auth.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -116,5 +118,37 @@ public class AuthController {
     public ApiResponse<RegisterPgMerchantResponse> registerPgMerchant(
             @Valid @RequestBody RegisterPgMerchantRequest request) {
         return ApiResponse.success(authService.registerPgMerchant(request));
+    }
+
+    /**
+     * Verify a PG merchant's email address using the OTP sent during registration.
+     *
+     * <p>
+     * This is a public endpoint (no JWT required).
+     *
+     * @param request
+     *            the verification request with email and OTP
+     * @return success response
+     */
+    @PostMapping("/pg-merchant/verify-email")
+    public ApiResponse<Void> verifyPgMerchantEmail(@Valid @RequestBody VerifyPgMerchantEmailRequest request) {
+        authService.verifyPgMerchantEmail(request);
+        return ApiResponse.success(null, "Email verified successfully");
+    }
+
+    /**
+     * Resend email verification OTP to a PG merchant.
+     *
+     * <p>
+     * This is a public endpoint (no JWT required). Rate limited to prevent abuse.
+     *
+     * @param request
+     *            the resend request with email
+     * @return success response
+     */
+    @PostMapping("/pg-merchant/resend-otp")
+    public ApiResponse<Void> resendPgMerchantOtp(@Valid @RequestBody ResendPgMerchantOtpRequest request) {
+        authService.resendPgMerchantOtp(request);
+        return ApiResponse.success(null, "Verification code sent");
     }
 }
