@@ -576,11 +576,10 @@ public class UserService {
         Map<String, Object> filters = new HashMap<>();
         filters.put("tiers", tiers.stream().map(r -> Map.of("id", r[0].toString(), "name", r[1].toString())).toList());
         filters.put("pnd", List.of(Map.of("id", "yes", "name", "Yes"), Map.of("id", "no", "name", "No")));
-        filters.put("types",
-                List.of(Map.of("id", "user", "name", "User"), Map.of("id", "agent", "name", "Agent"),
-                        Map.of("id", "aggregator", "name", "Aggregator"),
-                        Map.of("id", "super_aggregator", "name", "Super Aggregator"),
-                        Map.of("id", "merchant", "name", "Merchant")));
+        filters.put("types", List.of(Map.of("id", "user", "name", "User"), Map.of("id", "agent", "name", "Agent"),
+                Map.of("id", "aggregator", "name", "Aggregator"),
+                Map.of("id", "super_aggregator", "name", "Super Aggregator"),
+                Map.of("id", "merchant", "name", "Merchant"), Map.of("id", "pg_merchant", "name", "PG Merchant")));
         filters.put("aggregators", listAggregators(null));
         return filters;
     }
