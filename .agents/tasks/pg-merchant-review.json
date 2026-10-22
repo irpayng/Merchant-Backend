@@ -1,0 +1,12 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "label": "Missing email template",
+      "confidence": "confirmed",
+      "severity": "non-blocking",
+      "description": "The code references template 'pg-merchant-welcome' which doesn't exist in tms-notification. Registration succeeds but the welcome email silently fails. Either create the template in tms-notification or switch to an existing template like 'merchant-onboarded'."
+    }
+  ],
+  "reviewDoc": "/Users/mathew/Merchant-Backend/.agents/tasks/pg-merchant-review.md"
+}
