@@ -31,6 +31,12 @@ jobs:
           distribution: 'graalvm'
           cache: maven
 
+      - name: Seed the Eclipse formatter
+        # Keeps the formatting check off download.eclipse.org; see .github/spotless/README.md.
+        run: |
+          mkdir -p ~/.m2/repository/dev/equo
+          tar xzf .github/spotless/eclipse-4.33-p2.tgz -C ~/.m2/repository/dev/equo
+
       - name: Check code formatting
         run: mvn spotless:check -B
 
