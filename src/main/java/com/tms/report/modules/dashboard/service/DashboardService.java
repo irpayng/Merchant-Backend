@@ -296,19 +296,26 @@ public class DashboardService {
     // ---------------------------------------------------------------------
 
     /**
-     * Fetch terminal status for the dashboard widget. Shows terminal serial, make,
-     * and status based on transaction activity (active if transacted in last 24h).
+     * Returns terminal status summary for the dashboard card. User name comes from
+     * profiles table (first_name || ' ' || last_name). Uses a pre-computed table of
+     * last transaction timestamps per terminal to avoid correlated subqueries.
      */
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> getTerminalStatus() {
-        String sql = """
+        // First, get the most recent transaction per terminal serial in one pass
+        String lastTxnSql = """
                 SELECT t.serial, t.make, t.last_seen_at,
-                       (SELECT MAX(tx.created_at) FROM transactions tx WHERE tx.terminal_id = t.serial OR tx.metadata->>'device_serial' = t.serial OR tx.metadata->>'serial' = t.serial) as last_txn
+                       lt.last_txn
                 FROM terminals t
+                LEFT JOIN (
+                    SELECT terminal_id, MAX(created_at) as last_txn
+                    FROM transactions
+                    WHERE terminal_id IS NOT NULL
+                    GROUP BY terminal_id
+                ) lt ON lt.terminal_id = t.serial
                 WHERE 1=1
-                """
-                + userScope("t.user_id") + " ORDER BY t.serial LIMIT 10";
-        Query q = entityManager.createNativeQuery(sql);
+                """ + userScope("t.user_id") + " ORDER BY lt.last_txn DESC NULLS LAST LIMIT 10";
+        Query q = entityManager.createNativeQuery(lastTxnSql);
         bindScope(q);
         List<Object[]> rows = q.getResultList();
 

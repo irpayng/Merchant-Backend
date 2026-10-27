@@ -448,10 +448,23 @@ public class TerminalController {
     public ApiResponse<Map<String, Object>> fleetHealth() {
         Map<String, Object> stats = new LinkedHashMap<>();
         try {
-            stats.put("reporting", terminalMetricRepository.countReporting());
-            stats.put("low_battery", terminalMetricRepository.countLowBattery(20));
-            stats.put("printer_not_ready", terminalMetricRepository.countPrinterNotReady());
-            stats.put("stale_24h", terminalMetricRepository.countStale(LocalDateTime.now().minusHours(24)));
+            // One loose-index-scan query returns the latest snapshot per device
+            // (~hundreds of rows); every count is derived from it in memory. This
+            // replaces four separate DISTINCT ON queries that each seq-scanned +
+            // on-disk-sorted the whole (unbounded, append-only) metrics table.
+            List<TerminalMetric> latest = terminalMetricRepository.findLatestPerSerial();
+            LocalDateTime staleCutoff = LocalDateTime.now().minusHours(24);
+
+            long lowBattery = latest.stream().filter(m -> m.getBatteryPct() != null && m.getBatteryPct() < 20).count();
+            long printerNotReady = latest.stream()
+                    .filter(m -> m.getPrinterStatus() != null && m.getPrinterStatus() != 0).count();
+            long stale = latest.stream().filter(m -> m.getCreatedAt() != null && m.getCreatedAt().isBefore(staleCutoff))
+                    .count();
+
+            stats.put("reporting", (long) latest.size());
+            stats.put("low_battery", lowBattery);
+            stats.put("printer_not_ready", printerNotReady);
+            stats.put("stale_24h", stale);
         } catch (Exception e) {
             // terminal_metrics may not be replicated yet on a fresh deploy
             stats.put("reporting", 0L);

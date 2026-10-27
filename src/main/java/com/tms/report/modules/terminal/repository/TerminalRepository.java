@@ -129,12 +129,21 @@ public interface TerminalRepository extends JpaRepository<Terminal, Long>, JpaSp
             @Param("dateTo") LocalDateTime dateTo, Pageable pageable);
 
     /**
-     * All terminals tied to a user. Used by the user-detail page on tms-ui to
-     * render the per-user POS devices tab. Ordered by latest first so the most
-     * recently provisioned device shows on top.
+     * All terminals tied to a user, limited to 100 to prevent unbounded result
+     * sets. Used by the user-detail page on tms-ui to render the per-user POS
+     * devices tab. Ordered by latest first so the most recently provisioned device
+     * shows on top.
      */
     @Query("SELECT t FROM Terminal t WHERE t.userId = :userId ORDER BY t.createdAt DESC")
-    List<Terminal> findByUserId(@Param("userId") Long userId);
+    List<Terminal> findByUserId(@Param("userId") Long userId, Pageable pageable);
+
+    /**
+     * All terminals tied to a user with a default limit of 100. Convenience
+     * overload for callers that don't need custom pagination.
+     */
+    default List<Terminal> findByUserId(Long userId) {
+        return findByUserId(userId, org.springframework.data.domain.PageRequest.of(0, 100));
+    }
 
     /**
      * Resolve the display name and email for a set of user ids in a single round
