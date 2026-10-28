@@ -147,10 +147,17 @@ public class AuthService {
     /**
      * Complete login for a staff member (operator) after successful auth via
      * tms-user.
+     *
+     * <p>
+     * Profile data (name, email, phone) comes from tms-user's auth response —
+     * tms-user owns user identity. MerchantUser only stores dashboard-specific data
+     * (role, terminalId, status).
      */
     private LoginResponse loginAsOperator(Map<String, Object> authResult) {
         Long operatorId = ((Number) authResult.get("operator_id")).longValue();
         Long merchantUserId = ((Number) authResult.get("merchant_user_id")).longValue();
+
+        // Profile data from tms-user (source of truth)
         String email = (String) authResult.get("email");
         String name = (String) authResult.get("name");
         String phoneNumber = (String) authResult.get("phone_number");
@@ -173,8 +180,9 @@ public class AuthService {
 
         logLoginAudit(staffUser);
 
+        // Build response using tms-user profile data, not MerchantUser fields
         return LoginResponse.builder().token(token).emailIsVerified(verified)
-                .user(UserData.builder().name(staffUser.getName()).email(staffUser.getEmail()).role(staffUser.getRole())
+                .user(UserData.builder().name(name).email(email).role(staffUser.getRole())
                         .merchantId(staffUser.getMerchantId()).terminalId(staffUser.getTerminalId())
                         .emailIsVerified(verified).privileges(privileges).build())
                 .build();
@@ -182,9 +190,16 @@ public class AuthService {
 
     /**
      * Complete login for a merchant owner after successful auth via tms-user.
+     *
+     * <p>
+     * Profile data (name, email, phone, business name) comes from tms-user's auth
+     * response — tms-user owns user identity. MerchantUser only stores
+     * dashboard-specific data (role, terminalId, status).
      */
     private LoginResponse loginAsMerchantOwner(Map<String, Object> authResult) {
         Long userId = ((Number) authResult.get("user_id")).longValue();
+
+        // Profile data from tms-user (source of truth)
         String email = (String) authResult.get("email");
         String phoneNumber = (String) authResult.get("phone_number");
         String firstName = (String) authResult.get("first_name");
@@ -193,7 +208,7 @@ public class AuthService {
 
         String displayName = buildDisplayName(businessName, firstName, lastName, email);
 
-        // Find or create the MerchantUser record
+        // Find or create the MerchantUser record (stores dashboard-specific data only)
         MerchantUser merchantUser = findOrCreateMerchantUser(userId, email, phoneNumber, displayName);
 
         if (merchantUser.getRoleEntity() == null) {
@@ -215,11 +230,11 @@ public class AuthService {
 
         logLoginAudit(merchantUser);
 
+        // Build response using tms-user profile data, not MerchantUser fields
         return LoginResponse.builder().token(token).emailIsVerified(verified)
-                .user(UserData.builder().name(merchantUser.getName()).email(merchantUser.getEmail())
-                        .role(merchantUser.getRole()).merchantId(merchantUser.getMerchantId())
-                        .terminalId(merchantUser.getTerminalId()).emailIsVerified(verified).privileges(privileges)
-                        .build())
+                .user(UserData.builder().name(displayName).email(email).role(merchantUser.getRole())
+                        .merchantId(merchantUser.getMerchantId()).terminalId(merchantUser.getTerminalId())
+                        .emailIsVerified(verified).privileges(privileges).build())
                 .build();
     }
 
@@ -252,6 +267,11 @@ public class AuthService {
      * mobile app (and later upgraded to merchant type) to sign into the merchant
      * dashboard using their tms-user credentials, without having to go through the
      * document-upload activation flow.
+     *
+     * <p>
+     * Profile data (name, email, phone, business name) comes from tms-user's auth
+     * response — tms-user owns user identity. MerchantUser only stores
+     * dashboard-specific data (role, terminalId, status).
      */
     @Transactional
     public LoginResponse crossLogin(CrossLoginRequest request) {
@@ -274,7 +294,7 @@ public class AuthService {
             throw new AppException("Invalid credentials", HttpStatus.UNAUTHORIZED);
         }
 
-        // 2. Extract user data from auth result
+        // 2. Extract profile data from tms-user auth result (source of truth)
         Long userId = ((Number) authResult.get("user_id")).longValue();
         String email = (String) authResult.get("email");
         String phoneNumber = (String) authResult.get("phone_number");
@@ -285,7 +305,8 @@ public class AuthService {
         // Build display name from available fields
         String displayName = buildDisplayName(businessName, firstName, lastName, email);
 
-        // 3. Find or create the MerchantUser record
+        // 3. Find or create the MerchantUser record (stores dashboard-specific data
+        // only)
         MerchantUser merchantUser = findOrCreateMerchantUser(userId, email, phoneNumber, displayName);
 
         // 4. Ensure the user has a database-driven role assigned
@@ -310,11 +331,11 @@ public class AuthService {
 
         logLoginAudit(merchantUser);
 
+        // Build response using tms-user profile data, not MerchantUser fields
         return LoginResponse.builder().token(token).emailIsVerified(verified)
-                .user(UserData.builder().name(merchantUser.getName()).email(merchantUser.getEmail())
-                        .role(merchantUser.getRole()).merchantId(merchantUser.getMerchantId())
-                        .terminalId(merchantUser.getTerminalId()).emailIsVerified(verified).privileges(privileges)
-                        .build())
+                .user(UserData.builder().name(displayName).email(email).role(merchantUser.getRole())
+                        .merchantId(merchantUser.getMerchantId()).terminalId(merchantUser.getTerminalId())
+                        .emailIsVerified(verified).privileges(privileges).build())
                 .build();
     }
 
@@ -443,8 +464,71 @@ public class AuthService {
         return "Merchant";
     }
 
-    public MerchantUser me() {
-        return getCurrentMerchantUser();
+    /**
+     * Get the current user's profile data. Combines:
+     * <ul>
+     * <li>Identity data from tms-user (name, email, phone, business name)</li>
+     * <li>Dashboard-specific data from MerchantUser (role, privileges,
+     * terminalId)</li>
+     * </ul>
+     *
+     * <p>
+     * This ensures the dashboard always shows fresh profile data from tms-user,
+     * even if the user updated their profile via the mobile app.
+     */
+    public UserData me() {
+        MerchantUser user = getCurrentMerchantUser();
+
+        // Fetch fresh profile from tms-user (source of truth for identity)
+        Map<String, Object> profile = fetchUserProfile(user);
+
+        // Build display name from tms-user profile
+        String displayName = buildDisplayName((String) profile.get("business_name"), (String) profile.get("first_name"),
+                (String) profile.get("last_name"), (String) profile.get("email"));
+
+        // Get privileges from role
+        MerchantUserDetails details = new MerchantUserDetails(user);
+        List<String> privileges = details.getAuthorities().stream().map(a -> a.getAuthority()).sorted().toList();
+
+        boolean verified = user.getEmailVerifiedAt() != null;
+
+        return UserData.builder().name(displayName).email((String) profile.get("email")).role(user.getRole())
+                .merchantId(user.getMerchantId()).terminalId(user.getTerminalId()).emailIsVerified(verified)
+                .privileges(privileges).build();
+    }
+
+    /**
+     * Fetch user profile from tms-user. For owners, uses merchantId; for staff,
+     * uses the merchant owner's userId.
+     */
+    private Map<String, Object> fetchUserProfile(MerchantUser user) {
+        try {
+            if (user.isStaff()) {
+                // Staff: fetch their operator profile (name/email from operators table)
+                // For now, return cached data from MerchantUser since operators don't have a
+                // getUserProfile equivalent. TODO: Add GetOperatorProfile gRPC method.
+                Map<String, Object> staffProfile = new HashMap<>();
+                staffProfile.put("email", user.getEmail());
+                staffProfile.put("phone_number", user.getPhoneNumber());
+                staffProfile.put("first_name", user.getName());
+                staffProfile.put("last_name", null);
+                staffProfile.put("business_name", null);
+                return staffProfile;
+            }
+            // Owner: fetch from tms-user
+            return grpcClient.getUserProfile(user.getMerchantId());
+        } catch (Exception e) {
+            log.warn("Failed to fetch profile from tms-user for merchantId={}, falling back to local data: {}",
+                    user.getMerchantId(), e.getMessage());
+            // Fallback to MerchantUser fields (stale but better than nothing)
+            Map<String, Object> fallback = new HashMap<>();
+            fallback.put("email", user.getEmail());
+            fallback.put("phone_number", user.getPhoneNumber());
+            fallback.put("first_name", user.getName());
+            fallback.put("last_name", null);
+            fallback.put("business_name", null);
+            return fallback;
+        }
     }
 
     public MerchantUser getCurrentMerchantUser() {

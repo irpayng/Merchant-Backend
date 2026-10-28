@@ -73,11 +73,32 @@ public class MerchantUser {
     @JoinColumn(name = "role_id")
     private Role roleEntity;
 
+    /**
+     * @deprecated Profile data should be fetched from tms-user via
+     *             {@code GrpcClient.getUserProfile()}. This field is retained for
+     *             backward compatibility during migration and for fallback when
+     *             tms-user is unavailable.
+     */
+    @Deprecated(since = "Phase 2 - tms-user as profile authority")
     private String name;
 
+    /**
+     * @deprecated Profile data should be fetched from tms-user via
+     *             {@code GrpcClient.getUserProfile()}. This field is retained for
+     *             backward compatibility during migration and for fallback when
+     *             tms-user is unavailable.
+     */
+    @Deprecated(since = "Phase 2 - tms-user as profile authority")
     @Column(unique = true)
     private String email;
 
+    /**
+     * @deprecated Profile data should be fetched from tms-user via
+     *             {@code GrpcClient.getUserProfile()}. This field is retained for
+     *             backward compatibility during migration and for fallback when
+     *             tms-user is unavailable.
+     */
+    @Deprecated(since = "Phase 2 - tms-user as profile authority")
     @Column(name = "phone_number")
     private String phoneNumber;
 

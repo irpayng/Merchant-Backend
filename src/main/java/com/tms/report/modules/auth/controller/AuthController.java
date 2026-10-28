@@ -10,6 +10,7 @@ import com.tms.report.modules.auth.dto.LoginRequest;
 import com.tms.report.modules.auth.dto.LoginResponse;
 import com.tms.report.modules.auth.dto.RequestActivationRequest;
 import com.tms.report.modules.auth.dto.ResetPasswordRequest;
+import com.tms.report.modules.auth.dto.UserData;
 import com.tms.report.modules.auth.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -44,7 +45,7 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ApiResponse<Object> me() {
+    public ApiResponse<UserData> me() {
         return ApiResponse.success(authService.me());
     }
 
