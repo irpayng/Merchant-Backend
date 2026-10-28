@@ -69,8 +69,8 @@ public class SessionService {
         }
     }
 
-    @Transactional
-    protected Session doCreateSession(MerchantUser user, String token, HttpServletRequest request) {
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public Session doCreateSession(MerchantUser user, String token, HttpServletRequest request) {
         String tokenHash = hashToken(token);
         LocalDateTime expiresAt = LocalDateTime.now().plusSeconds(jwtExpirationMs / 1000);
 
