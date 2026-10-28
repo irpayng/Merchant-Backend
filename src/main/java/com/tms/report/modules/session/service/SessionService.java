@@ -32,9 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SessionService {
 
     private final SessionRepository sessionRepository;
-
-    @Value("${app.jwt.expiration-ms}")
-    private long jwtExpirationMs;
+    private final SessionPersistenceService persistenceService;
 
     /**
      * Whether to require a session record for authentication. Set to false during
@@ -51,6 +49,11 @@ public class SessionService {
      * logs a warning but does not fail the login. This ensures backward
      * compatibility during deployment windows.
      *
+     * <p>
+     * Session creation runs in a separate transaction (REQUIRES_NEW) via
+     * SessionPersistenceService so that failures don't poison the caller's
+     * transaction.
+     *
      * @param user
      *            the MerchantUser who logged in
      * @param token
@@ -61,29 +64,13 @@ public class SessionService {
      */
     public Session createSession(MerchantUser user, String token, HttpServletRequest request) {
         try {
-            return doCreateSession(user, token, request);
+            String tokenHash = hashToken(token);
+            return persistenceService.persistSession(user, tokenHash, request);
         } catch (Exception e) {
             // During migration, the sessions table may not exist. Don't break login.
             log.warn("Failed to create session record (table may not exist yet): {}", e.getMessage());
             return null;
         }
-    }
-
-    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
-    public Session doCreateSession(MerchantUser user, String token, HttpServletRequest request) {
-        String tokenHash = hashToken(token);
-        LocalDateTime expiresAt = LocalDateTime.now().plusSeconds(jwtExpirationMs / 1000);
-
-        Session session = Session.builder().merchantUserId(user.getId())
-                .tmsUserId(user.isStaff() ? user.getOperatorId() : user.getMerchantId())
-                .userType(user.isStaff() ? "operator" : "user").tokenHash(tokenHash).channel("dashboard")
-                .deviceInfo(truncate(request.getHeader("User-Agent"), 500)).ipAddress(resolveClientIp(request))
-                .expiresAt(expiresAt).build();
-
-        session = sessionRepository.save(session);
-        log.info("Session created: id={} merchantUserId={} tmsUserId={}", session.getId(), user.getId(),
-                session.getTmsUserId());
-        return session;
     }
 
     /**
@@ -196,23 +183,5 @@ public class SessionService {
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("SHA-256 not available", e);
         }
-    }
-
-    private String resolveClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return truncate(forwarded.split(",")[0].trim(), 64);
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) {
-            return truncate(realIp, 64);
-        }
-        return truncate(request.getRemoteAddr(), 64);
-    }
-
-    private static String truncate(String value, int maxLength) {
-        if (value == null)
-            return null;
-        return value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 }
