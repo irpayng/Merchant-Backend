@@ -17,6 +17,13 @@ import org.springframework.security.core.userdetails.UserDetails;
  * derived from the user's assigned {@link Role} and its {@link Privilege} set.
  * Falls back to hardcoded defaults when no role entity is assigned (backward
  * compat for existing users not yet migrated).
+ *
+ * <p>
+ * The {@link #getUsername()} method returns a stable identifier used as the JWT
+ * subject. For owners this is the tms-user {@code users.id} (stored as
+ * {@code merchantId}); for staff it's the {@code operatorId}. Using a numeric
+ * ID rather than email/phone avoids identity mismatches when users change their
+ * contact info or onboard via phone-only (no email).
  */
 @Getter
 public class MerchantUserDetails implements UserDetails {
@@ -58,9 +65,30 @@ public class MerchantUserDetails implements UserDetails {
         return "";
     }
 
+    /**
+     * Returns a stable, unambiguous identifier for this user. This value becomes
+     * the JWT subject and is used for token validation lookups.
+     *
+     * <p>
+     * Format: {@code "u:<merchantId>"} for owners, {@code "o:<operatorId>"} for
+     * staff. The prefix disambiguates the ID namespace and makes legacy email/phone
+     * subjects easy to detect during the migration window.
+     */
     @Override
     public String getUsername() {
-        // Mobile-onboarded merchants may not have an email; use phone as fallback
+        if (merchantUser.isStaff()) {
+            // Staff: identified by operatorId (tms-user operators.id)
+            return "o:" + merchantUser.getOperatorId();
+        }
+        // Owner: identified by merchantId (tms-user users.id)
+        return "u:" + merchantUser.getMerchantId();
+    }
+
+    /**
+     * Returns the user's display email, or phone as fallback. Use this for UI
+     * display, not for identity/lookup.
+     */
+    public String getDisplayIdentifier() {
         String email = merchantUser.getEmail();
         if (email != null && !email.isBlank()) {
             return email;
