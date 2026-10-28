@@ -26,6 +26,7 @@ import com.tms.report.modules.role.model.Privilege;
 import com.tms.report.modules.role.model.Role;
 import com.tms.report.modules.role.repository.PrivilegeRepository;
 import com.tms.report.modules.role.repository.RoleRepository;
+import com.tms.report.modules.session.service.SessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -50,6 +51,11 @@ import org.springframework.transaction.annotation.Transactional;
  * forgot/reset, and account activation. Merchants are onboarded by document
  * upload (no password captured), so an account starts {@code pending} and is
  * activated — password set — via an emailed link OR an SMS/email OTP.
+ *
+ * <p>
+ * Sessions are tracked in the {@code sessions} table for revocation capability.
+ * When a user logs in, a session record is created; when they're blocked or
+ * change password, their sessions are revoked.
  */
 @Slf4j
 @Service
@@ -64,6 +70,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final GrpcClient grpcClient;
     private final AuditLogRepository auditLogRepository;
+    private final SessionService sessionService;
     private final HttpServletRequest httpRequest;
 
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -171,6 +178,10 @@ public class AuthService {
 
         // Issue JWT
         String token = jwtService.generateToken(new MerchantUserDetails(staffUser));
+
+        // Create session record for revocation capability
+        sessionService.createSession(staffUser, token, httpRequest);
+
         boolean verified = staffUser.getEmailVerifiedAt() != null;
 
         MerchantUserDetails details = new MerchantUserDetails(staffUser);
@@ -221,6 +232,10 @@ public class AuthService {
 
         // Issue JWT
         String token = jwtService.generateToken(new MerchantUserDetails(merchantUser));
+
+        // Create session record for revocation capability
+        sessionService.createSession(merchantUser, token, httpRequest);
+
         boolean verified = merchantUser.getEmailVerifiedAt() != null;
 
         MerchantUserDetails details = new MerchantUserDetails(merchantUser);
@@ -321,6 +336,10 @@ public class AuthService {
 
         // 6. Issue local JWT
         String token = jwtService.generateToken(new MerchantUserDetails(merchantUser));
+
+        // Create session record for revocation capability
+        sessionService.createSession(merchantUser, token, httpRequest);
+
         boolean verified = merchantUser.getEmailVerifiedAt() != null;
 
         // Resolve privilege codes from the role entity (or fallback)

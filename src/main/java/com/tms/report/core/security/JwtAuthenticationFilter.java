@@ -1,5 +1,6 @@
 package com.tms.report.core.security;
 
+import com.tms.report.modules.session.service.SessionService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,6 +21,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * login principal. Loads the account fresh from the database each request
  * (simple and correct for the dashboard's traffic); revoked/deactivated
  * accounts stop authenticating on their next call.
+ *
+ * <p>
+ * Session validation: after verifying the JWT signature, the filter checks that
+ * the session hasn't been revoked. This enables global session revocation when
+ * a user is blocked, password is changed, or device is reset in tms-user.
  */
 @Slf4j
 @Component
@@ -28,6 +34,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final MerchantUserDetailsService merchantUserDetailsService;
+    private final SessionService sessionService;
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response,
@@ -56,6 +63,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = merchantUserDetailsService.loadUserByUsername(username);
                 if (jwtService.isTokenValid(jwt, userDetails)) {
+                    // Check session hasn't been revoked
+                    if (!sessionService.isSessionValid(jwt)) {
+                        log.debug("Session revoked for user: {}", username);
+                        filterChain.doFilter(request, response);
+                        return;
+                    }
+
                     var authToken = new UsernamePasswordAuthenticationToken(userDetails, null,
                             userDetails.getAuthorities());
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
