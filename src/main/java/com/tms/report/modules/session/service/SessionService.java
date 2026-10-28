@@ -46,16 +46,31 @@ public class SessionService {
     /**
      * Create a session record for a newly issued JWT.
      *
+     * <p>
+     * Fail-safe: if the sessions table doesn't exist yet (migration not run), this
+     * logs a warning but does not fail the login. This ensures backward
+     * compatibility during deployment windows.
+     *
      * @param user
      *            the MerchantUser who logged in
      * @param token
      *            the JWT (will be hashed, not stored)
      * @param request
      *            HTTP request for device/IP info
-     * @return the created session
+     * @return the created session, or null if creation failed
      */
-    @Transactional
     public Session createSession(MerchantUser user, String token, HttpServletRequest request) {
+        try {
+            return doCreateSession(user, token, request);
+        } catch (Exception e) {
+            // During migration, the sessions table may not exist. Don't break login.
+            log.warn("Failed to create session record (table may not exist yet): {}", e.getMessage());
+            return null;
+        }
+    }
+
+    @Transactional
+    protected Session doCreateSession(MerchantUser user, String token, HttpServletRequest request) {
         String tokenHash = hashToken(token);
         LocalDateTime expiresAt = LocalDateTime.now().plusSeconds(jwtExpirationMs / 1000);
 
@@ -74,12 +89,27 @@ public class SessionService {
     /**
      * Check if a JWT's session is valid (not revoked, not expired).
      *
+     * <p>
+     * Fail-safe: if the sessions table doesn't exist yet, this returns true
+     * (allowing the request). This ensures backward compatibility during
+     * deployment.
+     *
      * @param token
      *            the JWT to check
      * @return true if session is valid or session tracking is disabled, false if
      *         revoked
      */
     public boolean isSessionValid(String token) {
+        try {
+            return doCheckSessionValid(token);
+        } catch (Exception e) {
+            // During migration, the sessions table may not exist. Allow the request.
+            log.warn("Failed to check session validity (table may not exist yet): {}", e.getMessage());
+            return true;
+        }
+    }
+
+    private boolean doCheckSessionValid(String token) {
         String tokenHash = hashToken(token);
 
         // Check if session exists and is active
