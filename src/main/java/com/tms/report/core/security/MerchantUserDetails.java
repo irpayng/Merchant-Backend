@@ -31,7 +31,7 @@ public class MerchantUserDetails implements UserDetails {
     /** Fallback: full read surface for the business owner (legacy). */
     private static final List<String> OWNER_AUTHORITIES = List.of("view_dashboard", "view_transaction",
             "manage_terminal", "access_financial_report", "manage_settlement", "audit", "manage_role", "manage_user",
-            "manage_notification", "manage_setting", "create_dispute");
+            "manage_notification", "manage_setting", "create_dispute", "manage_branch");
 
     /** Fallback: cashier view-only subset (legacy). */
     private static final List<String> CASHIER_AUTHORITIES = List.of("view_dashboard", "view_transaction",
