@@ -765,13 +765,31 @@ public class BranchService {
 
     /**
      * Get terminals not assigned to any branch (available for assignment).
+     *
+     * <p>
+     * Returns terminals where either:
+     * <ul>
+     * <li>{@code branch_id IS NULL} — never assigned to any branch</li>
+     * <li>{@code branch_id} points to a branch that doesn't belong to this merchant
+     * (orphaned assignment from legacy data or data migration)</li>
+     * </ul>
+     * </p>
      */
     @Transactional(readOnly = true)
     @SuppressWarnings("unchecked")
     public List<Terminal> getAvailableTerminals(Long merchantId) {
+        // Include terminals that are either:
+        // 1. Not assigned to any branch (branch_id IS NULL)
+        // 2. Assigned to a branch that doesn't exist in merchant_branches for this user
+        // (handles orphaned assignments from legacy data)
         String sql = """
                 SELECT t.* FROM terminals t
-                WHERE t.user_id = :merchantId AND t.branch_id IS NULL
+                WHERE t.user_id = :merchantId
+                  AND (t.branch_id IS NULL
+                       OR NOT EXISTS (
+                           SELECT 1 FROM merchant_branches mb
+                           WHERE mb.id = t.branch_id AND mb.user_id = :merchantId
+                       ))
                 ORDER BY t.serial
                 """;
         return entityManager.createNativeQuery(sql, Terminal.class).setParameter("merchantId", merchantId)
