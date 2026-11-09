@@ -142,12 +142,12 @@ public class BranchService {
                     .setParameter("branchId", branchId).getSingleResult()).longValue();
             result.put("terminal_count", terminalCount);
 
-            // Total volume from successful transactions via terminals
+            // Total volume from completed transactions via terminals
             Object volumeResult = entityManager.createNativeQuery("""
                     SELECT COALESCE(SUM(tx.amount), 0)
                     FROM terminals t
                     JOIN transactions tx ON tx.terminal_id = t.serial
-                    WHERE t.branch_id = :branchId AND tx.status_code = 'successful'
+                    WHERE t.branch_id = :branchId AND tx.status_code = 'completed'
                     """).setParameter("branchId", branchId).getSingleResult();
             result.put("total_volume", volumeResult != null ? ((Number) volumeResult).longValue() : 0L);
         } catch (Exception e) {
