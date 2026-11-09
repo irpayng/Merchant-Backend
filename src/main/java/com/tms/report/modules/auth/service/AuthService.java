@@ -222,9 +222,9 @@ public class AuthService {
         // Find or create the MerchantUser record (stores dashboard-specific data only)
         MerchantUser merchantUser = findOrCreateMerchantUser(userId, email, phoneNumber, displayName);
 
-        if (merchantUser.getRoleEntity() == null) {
-            ensureDefaultRolesForMerchant(merchantUser);
-        }
+        // Ensure role and privileges are up to date (handles new privileges added after
+        // initial role creation, e.g., manage_branch)
+        ensureDefaultRolesForMerchant(merchantUser);
 
         if (merchantUser.isRevoked()) {
             throw new AppException("Your access has been revoked", HttpStatus.FORBIDDEN);
@@ -324,10 +324,9 @@ public class AuthService {
         // only)
         MerchantUser merchantUser = findOrCreateMerchantUser(userId, email, phoneNumber, displayName);
 
-        // 4. Ensure the user has a database-driven role assigned
-        if (merchantUser.getRoleEntity() == null) {
-            ensureDefaultRolesForMerchant(merchantUser);
-        }
+        // 4. Ensure the user has a database-driven role assigned and privileges are up
+        // to date
+        ensureDefaultRolesForMerchant(merchantUser);
 
         // 5. Check access status
         if (merchantUser.isRevoked()) {
@@ -431,15 +430,35 @@ public class AuthService {
 
     /**
      * Ensure database-driven roles exist for a merchant and assign the owner role.
-     * Called on first cross-login when the MerchantUser has no roleEntity.
+     * Called on every login to ensure privileges stay up to date.
+     *
+     * <p>
+     * For existing system owner roles, this also ensures they have all current
+     * privileges. This handles cases where new privileges (e.g., manage_branch)
+     * were added after the role was originally created.
      */
     private void ensureDefaultRolesForMerchant(MerchantUser user) {
         Long merchantId = user.getMerchantId();
 
+        // Get all current privileges from the database
+        Set<Privilege> allPrivileges = new HashSet<>(privilegeRepository.findAll());
+
         // Find or create the owner role for this merchant
-        Role ownerRole = roleRepository.findByMerchantIdAndSlug(merchantId, "owner").orElseGet(() -> {
+        Role ownerRole = roleRepository.findByMerchantIdAndSlug(merchantId, "owner").map(existingRole -> {
+            // Ensure the system owner role has all current privileges
+            // (handles new privileges added after role creation, e.g., manage_branch)
+            if (existingRole.isSystemRole()) {
+                Set<Privilege> currentPrivileges = existingRole.getPrivileges();
+                if (currentPrivileges == null || currentPrivileges.size() < allPrivileges.size()) {
+                    existingRole.setPrivileges(allPrivileges);
+                    log.info("Updated owner role privileges for merchantId={}: added {} new privilege(s)", merchantId,
+                            allPrivileges.size() - (currentPrivileges != null ? currentPrivileges.size() : 0));
+                    return roleRepository.save(existingRole);
+                }
+            }
+            return existingRole;
+        }).orElseGet(() -> {
             // Create default owner role with all privileges
-            Set<Privilege> allPrivileges = new HashSet<>(privilegeRepository.findAll());
             Role role = Role.builder().merchantId(merchantId).name("Owner").slug("owner")
                     .description("Full access to all merchant features").systemRole(true).privileges(allPrivileges)
                     .build();
@@ -458,10 +477,12 @@ public class AuthService {
             roleRepository.save(cashierRole);
         }
 
-        // Assign owner role to the user
-        user.setRoleEntity(ownerRole);
-        merchantUserRepository.save(user);
-        log.info("Assigned owner role to merchantUser id={} merchantId={}", user.getId(), merchantId);
+        // Assign owner role to the user if not already assigned
+        if (user.getRoleEntity() == null || !user.getRoleEntity().getId().equals(ownerRole.getId())) {
+            user.setRoleEntity(ownerRole);
+            merchantUserRepository.save(user);
+            log.info("Assigned owner role to merchantUser id={} merchantId={}", user.getId(), merchantId);
+        }
     }
 
     /**
