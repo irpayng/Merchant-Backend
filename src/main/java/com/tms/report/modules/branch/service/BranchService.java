@@ -102,7 +102,7 @@ public class BranchService {
         List<Map<String, Object>> out = new ArrayList<>();
         for (Map<String, Object> branch : pagedBranches) {
             Long branchId = ((Number) branch.get("id")).longValue();
-            Map<String, Object> enrichment = getEnrichmentData(branchId);
+            Map<String, Object> enrichment = getEnrichmentData(branchId, merchantId);
 
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", branchId);
@@ -130,7 +130,7 @@ public class BranchService {
     /**
      * Get enrichment data (terminal count and volume) for a branch from local DB.
      */
-    private Map<String, Object> getEnrichmentData(Long branchId) {
+    private Map<String, Object> getEnrichmentData(Long branchId, Long merchantId) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("terminal_count", 0L);
         result.put("total_volume", 0L);
@@ -142,13 +142,14 @@ public class BranchService {
                     .setParameter("branchId", branchId).getSingleResult()).longValue();
             result.put("terminal_count", terminalCount);
 
-            // Total volume from completed transactions for this branch
+            // Total volume from completed transactions for this branch and merchant
             // Use branch_id directly on transaction when available, fall back to terminal
             // lookup
             Object volumeResult = entityManager.createNativeQuery("""
                     SELECT COALESCE(SUM(tx.amount), 0)
                     FROM transactions tx
-                    WHERE (
+                    WHERE tx.user_id = :merchantId
+                    AND (
                         tx.branch_id = :branchId
                         OR (tx.branch_id IS NULL AND EXISTS (
                             SELECT 1 FROM terminals t
@@ -156,7 +157,7 @@ public class BranchService {
                         ))
                     )
                     AND tx.status_code = 'completed'
-                    """).setParameter("branchId", branchId).getSingleResult();
+                    """).setParameter("branchId", branchId).setParameter("merchantId", merchantId).getSingleResult();
             result.put("total_volume", volumeResult != null ? ((Number) volumeResult).longValue() : 0L);
         } catch (Exception e) {
             log.warn("Failed to get enrichment data for branch {}: {}", branchId, e.getMessage());
@@ -178,7 +179,7 @@ public class BranchService {
         }
 
         // Get enrichment data from local database
-        Map<String, Object> enrichment = getEnrichmentData(branchId);
+        Map<String, Object> enrichment = getEnrichmentData(branchId, merchantId);
         Long terminalCount = (Long) enrichment.get("terminal_count");
         Long totalVolume = (Long) enrichment.get("total_volume");
 
