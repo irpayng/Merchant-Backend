@@ -143,19 +143,11 @@ public class BranchService {
             result.put("terminal_count", terminalCount);
 
             // Total volume from completed transactions for this branch and merchant
-            // Use branch_id directly on transaction when available, fall back to terminal
-            // lookup
             Object volumeResult = entityManager.createNativeQuery("""
                     SELECT COALESCE(SUM(tx.amount), 0)
                     FROM transactions tx
                     WHERE tx.user_id = :merchantId
-                    AND (
-                        tx.branch_id = :branchId
-                        OR (tx.branch_id IS NULL AND EXISTS (
-                            SELECT 1 FROM terminals t
-                            WHERE t.serial = tx.terminal_id AND t.branch_id = :branchId
-                        ))
-                    )
+                    AND tx.branch_id = :branchId
                     AND tx.status_code = 'completed'
                     """).setParameter("branchId", branchId).setParameter("merchantId", merchantId).getSingleResult();
             result.put("total_volume", volumeResult != null ? ((Number) volumeResult).longValue() : 0L);
