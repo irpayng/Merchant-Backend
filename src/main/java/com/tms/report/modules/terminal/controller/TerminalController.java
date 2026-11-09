@@ -441,30 +441,38 @@ public class TerminalController {
     /**
      * GET /terminals/metrics/fleet-health — single-shot summary used by the tms-ui
      * dashboard. Counts of devices reporting, low-battery, printer issues, and
-     * stale (no check-in in 24h).
+     * stale (no check-in in 24h), scoped to the current merchant's terminals only.
      */
     @GetMapping("/metrics/fleet-health")
     @PreAuthorize("hasAuthority('manage_terminal')")
+    @SuppressWarnings("unchecked")
     public ApiResponse<Map<String, Object>> fleetHealth() {
         Map<String, Object> stats = new LinkedHashMap<>();
+        Long merchantId = merchantScopeId();
         try {
-            // One loose-index-scan query returns the latest snapshot per device
-            // (~hundreds of rows); every count is derived from it in memory. This
-            // replaces four separate DISTINCT ON queries that each seq-scanned +
-            // on-disk-sorted the whole (unbounded, append-only) metrics table.
-            List<TerminalMetric> latest = terminalMetricRepository.findLatestPerSerial();
-            LocalDateTime staleCutoff = LocalDateTime.now().minusHours(24);
-
-            long lowBattery = latest.stream().filter(m -> m.getBatteryPct() != null && m.getBatteryPct() < 20).count();
-            long printerNotReady = latest.stream()
-                    .filter(m -> m.getPrinterStatus() != null && m.getPrinterStatus() != 0).count();
-            long stale = latest.stream().filter(m -> m.getCreatedAt() != null && m.getCreatedAt().isBefore(staleCutoff))
-                    .count();
-
-            stats.put("reporting", (long) latest.size());
-            stats.put("low_battery", lowBattery);
-            stats.put("printer_not_ready", printerNotReady);
-            stats.put("stale_24h", stale);
+            // Aggregate stats from the latest metric snapshot per terminal,
+            // filtered to only terminals belonging to this merchant.
+            // Joins terminal_metrics with terminals on serial to enforce merchant scope.
+            String sql = """
+                    SELECT COUNT(*),
+                           COALESCE(SUM(CASE WHEN m.battery_pct IS NOT NULL AND m.battery_pct < :battery THEN 1 ELSE 0 END), 0),
+                           COALESCE(SUM(CASE WHEN m.printer_status IS NOT NULL AND m.printer_status <> 0 THEN 1 ELSE 0 END), 0),
+                           COALESCE(SUM(CASE WHEN m.created_at < :cutoff THEN 1 ELSE 0 END), 0)
+                    FROM terminal_metrics m
+                    JOIN (SELECT serial, MAX(created_at) AS created_at FROM terminal_metrics GROUP BY serial) lm
+                      ON lm.serial = m.serial AND lm.created_at = m.created_at
+                    JOIN terminals t ON t.serial = m.serial
+                    WHERE t.user_id = :merchantId
+                    """;
+            var query = entityManager.createNativeQuery(sql);
+            query.setParameter("battery", 20);
+            query.setParameter("cutoff", LocalDateTime.now().minusHours(24));
+            query.setParameter("merchantId", merchantId);
+            Object[] row = (Object[]) query.getSingleResult();
+            stats.put("reporting", ((Number) row[0]).longValue());
+            stats.put("low_battery", ((Number) row[1]).longValue());
+            stats.put("printer_not_ready", ((Number) row[2]).longValue());
+            stats.put("stale_24h", ((Number) row[3]).longValue());
         } catch (Exception e) {
             // terminal_metrics may not be replicated yet on a fresh deploy
             stats.put("reporting", 0L);
