@@ -2149,9 +2149,9 @@ public class GrpcClient {
         String ref = Ulid.generate();
         logRequest("DeleteMerchantSettlementAccount", ref);
         try {
-            var resp = configStub.deleteMerchantSettlementAccount(
-                    com.tms.report.grpc.config.DeleteMerchantSettlementAccountRequest.newBuilder().setId(id)
-                            .setUserId(userId).build());
+            var resp = configStub
+                    .deleteMerchantSettlementAccount(com.tms.report.grpc.config.DeleteMerchantSettlementAccountRequest
+                            .newBuilder().setId(id).setUserId(userId).build());
             return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
         } catch (StatusRuntimeException e) {
             throw grpcError("DeleteMerchantSettlementAccount", ref, e);
