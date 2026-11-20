@@ -48,6 +48,8 @@ service ConfigService {
   rpc CheckInstantSettlement (CheckInstantSettlementRequest) returns (CheckInstantSettlementResponse);
   // Merchant Settlement Account RPCs (multi-branch structure)
   rpc ListMerchantSettlementAccounts (ListMerchantSettlementAccountsRequest) returns (ListMerchantSettlementAccountsResponse);
+  rpc SetDefaultMerchantSettlementAccount (SetDefaultMerchantSettlementAccountRequest) returns (ConfigCommandResponse);
+  rpc DeleteMerchantSettlementAccount (DeleteMerchantSettlementAccountRequest) returns (ConfigCommandResponse);
   // Get a merchant's configured settlement type (INSTANT, HOURLY, T+1, T+2, T+3)
   rpc GetMerchantSettlementType (GetMerchantSettlementTypeRequest) returns (GetMerchantSettlementTypeResponse);
   // Ensure a terminal has a TID mapping for its assigned branch. Called after
@@ -416,6 +418,16 @@ message MerchantSettlementAccount {
 
 message ListMerchantSettlementAccountsResponse {
   repeated MerchantSettlementAccount accounts = 1;
+}
+
+message SetDefaultMerchantSettlementAccountRequest {
+  int64 id = 1;
+  int64 user_id = 2;  // For ownership validation
+}
+
+message DeleteMerchantSettlementAccountRequest {
+  int64 id = 1;
+  int64 user_id = 2;  // For ownership validation
 }
 
 // ── Ensure TID mapping for branch-assigned terminal ──

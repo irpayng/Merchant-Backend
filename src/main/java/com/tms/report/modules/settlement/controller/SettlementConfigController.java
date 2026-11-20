@@ -1,7 +1,9 @@
 package com.tms.report.modules.settlement.controller;
 
 import com.tms.report.core.dto.ApiResponse;
+import com.tms.report.core.exception.AppException;
 import com.tms.report.core.security.MerchantScope;
+import com.tms.report.modules.activity.annotation.LogActivity;
 import com.tms.report.modules.grpc.service.GrpcClient;
 import com.tms.report.modules.settlement.dto.ApprovalRequestResponse;
 import com.tms.report.modules.settlement.dto.NameEnquiryRequestDto;
@@ -21,9 +23,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -240,6 +245,58 @@ public class SettlementConfigController {
         }
 
         return ApiResponse.success(accounts);
+    }
+
+    /**
+     * Mark one of the merchant's settlement accounts as the default. Ownership is
+     * enforced by tms-config (account must belong to the current merchant).
+     */
+    @LogActivity(action = "set-default", description = "{admin} set settlement account {id} as default")
+    @PostMapping("/accounts/{id}/set-default")
+    public ApiResponse<Map<String, Object>> setDefaultAccount(@PathVariable Long id) {
+        Long merchantId = requireMerchantId();
+
+        Map<String, Object> result = grpcClient.setDefaultMerchantSettlementAccount(id, merchantId);
+        if (!Boolean.TRUE.equals(result.get("success"))) {
+            throw new AppException(str(result.get("message")), HttpStatus.BAD_REQUEST);
+        }
+        return ApiResponse.success(result, "Settlement account set as default");
+    }
+
+    /**
+     * Delete one of the merchant's settlement accounts. The default account cannot
+     * be deleted — another account must be made default first. tms-config also
+     * refuses if any TID still settles into the account.
+     */
+    @LogActivity(action = "delete", description = "{admin} deleted settlement account {id}")
+    @DeleteMapping("/accounts/{id}")
+    public ApiResponse<Map<String, Object>> deleteAccount(@PathVariable Long id) {
+        Long merchantId = requireMerchantId();
+
+        Map<String, Object> account = grpcClient.listMerchantSettlementAccounts(merchantId).stream()
+                .filter(a -> id.equals(longVal(a.get("id")))).findFirst().orElse(null);
+        if (account == null) {
+            throw new AppException("Settlement account not found", HttpStatus.NOT_FOUND);
+        }
+        if (boolVal(account.get("is_default"))) {
+            throw new AppException(
+                    "Cannot delete the default settlement account. Set another account as default first.",
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        Map<String, Object> result = grpcClient.deleteMerchantSettlementAccount(id, merchantId);
+        if (!Boolean.TRUE.equals(result.get("success"))) {
+            throw new AppException(str(result.get("message")), HttpStatus.BAD_REQUEST);
+        }
+        return ApiResponse.success(result, "Settlement account deleted");
+    }
+
+    private Long requireMerchantId() {
+        Long merchantId = merchantScope.merchantId();
+        if (merchantId == null) {
+            throw new AppException("Not authenticated", HttpStatus.UNAUTHORIZED);
+        }
+        return merchantId;
     }
 
     private static Long longVal(Object o) {

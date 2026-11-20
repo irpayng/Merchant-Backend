@@ -2125,6 +2125,40 @@ public class GrpcClient {
     }
 
     /**
+     * Mark a settlement account as the merchant's default. tms-config validates
+     * ownership via userId and clears any previous default.
+     */
+    public Map<String, Object> setDefaultMerchantSettlementAccount(long id, long userId) {
+        String ref = Ulid.generate();
+        logRequest("SetDefaultMerchantSettlementAccount", ref);
+        try {
+            var resp = configStub.setDefaultMerchantSettlementAccount(
+                    com.tms.report.grpc.config.SetDefaultMerchantSettlementAccountRequest.newBuilder().setId(id)
+                            .setUserId(userId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("SetDefaultMerchantSettlementAccount", ref, e);
+        }
+    }
+
+    /**
+     * Delete a merchant settlement account. tms-config validates ownership via
+     * userId and refuses if any TID still references the account.
+     */
+    public Map<String, Object> deleteMerchantSettlementAccount(long id, long userId) {
+        String ref = Ulid.generate();
+        logRequest("DeleteMerchantSettlementAccount", ref);
+        try {
+            var resp = configStub.deleteMerchantSettlementAccount(
+                    com.tms.report.grpc.config.DeleteMerchantSettlementAccountRequest.newBuilder().setId(id)
+                            .setUserId(userId).build());
+            return toMap(resp.getSuccess(), ref, resp.getMessage(), resp.getDataJson());
+        } catch (StatusRuntimeException e) {
+            throw grpcError("DeleteMerchantSettlementAccount", ref, e);
+        }
+    }
+
+    /**
      * Get a merchant's current settlement type from tms-config. Returns found=true
      * with settlement_type if a record exists, found=false otherwise.
      */
